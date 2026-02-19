@@ -18,6 +18,7 @@ menu-print = Print
 menu-quit = Quit
 
 # Menu - Edit
+menu-edit = Edit
 menu-undo = Undo
 menu-redo = Redo
 menu-revert-all = Revert all changes
@@ -29,6 +30,7 @@ menu-rotate-left = Rotate left 90°
 menu-rotate-right = Rotate right 90°
 
 # Menu - View
+menu-view = View
 menu-zoom-in = Zoom in
 menu-zoom-out = Zoom out
 menu-fit-to-view = Fit to view

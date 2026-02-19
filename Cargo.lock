@@ -1095,7 +1095,11 @@ dependencies = [
 name = "cosmic-viewer"
 version = "0.1.0"
 dependencies = [
+ "i18n-embed",
+ "i18n-embed-fl",
  "libcosmic",
+ "once_cell",
+ "rust-embed",
 ]
 
 [[package]]
