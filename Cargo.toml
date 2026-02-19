@@ -1,0 +1,21 @@
+[workspace]
+
+resolver = "3"
+members = ["cosmic-viewer","viewer-core"]
+
+[workspace.package]
+description = "Image viewer for the COSMIC DE"
+edition = "2024"
+authors = ["Bryan Hyland <bryan.hyland32@gmail.com"]
+
+
+[workspace.dependencies.libcosmic]
+git = "https://github.com/pop-os/libcosmic.git"
+features = [
+  "autosize",
+  "tokio",
+  "winit",
+  "wgpu",
+  "a11y",
+  "surface-message"
+]
