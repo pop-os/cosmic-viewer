@@ -1,9 +1,10 @@
 [workspace]
 
 resolver = "3"
-members = ["cosmic-viewer","viewer-core"]
+members = ["cosmic-viewer","viewer-core", "viewer-widgets"]
 
 [workspace.package]
+version = "0.1.0"
 description = "Image viewer for the COSMIC DE"
 edition = "2024"
 authors = ["Bryan Hyland <bryan.hyland32@gmail.com"]
