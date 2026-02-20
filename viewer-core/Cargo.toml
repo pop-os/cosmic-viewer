@@ -6,4 +6,16 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+viewer-config = { path = "../viewer-config" }
+
 libcosmic.workspace = true
+fast_image_resize.workspace = true
+image.workspace = true
+kamadak-exif.workspace = true
+lru.workspace = true
+rayon.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+turbojpeg.workspace = true
+zune-image.workspace = true

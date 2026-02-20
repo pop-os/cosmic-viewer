@@ -1,14 +1,8 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+pub mod cache;
+pub mod loader;
+pub mod nav;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+// Re-exports
+pub use cache::{CachedImage, ImageCache};
+pub use loader::{LoadError, LoadedImage, load_image, load_thumbnail};
+pub use nav::{NavState, get_image_dir, is_supported_image, scan_dir};

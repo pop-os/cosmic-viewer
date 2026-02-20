@@ -7,10 +7,7 @@
 //! - Keyboard navigation (arrow keys)
 //! - Auto-scroll on focus change
 
-use std::{
-    cell::Cell,
-    path::PathBuf,
-};
+use super::grid_core as core;
 use cosmic::{
     Element, Renderer, Theme,
     iced::{
@@ -29,7 +26,7 @@ use cosmic::{
     },
     widget::{container, image::Handle, scrollable},
 };
-use super::grid_core as core;
+use std::{cell::Cell, path::PathBuf};
 
 /// An item in the image grid
 #[derive(Debug, Clone)]
@@ -151,7 +148,7 @@ impl<'a, M: Clone + 'static> ImageGrid<'a, M> {
     /// Callback when focus changes (hover or keyboard nav)
     pub fn on_focus<F>(mut self, f: F) -> Self
     where
-        F: Fn(usize) -> M + 'a
+        F: Fn(usize) -> M + 'a,
     {
         self.inner.on_focus = Some(Box::new(f));
         self
@@ -160,7 +157,7 @@ impl<'a, M: Clone + 'static> ImageGrid<'a, M> {
     /// Callback when item is activated (click or Enter)
     pub fn on_activate<F>(mut self, f: F) -> Self
     where
-        F: Fn(usize) -> M + 'a
+        F: Fn(usize) -> M + 'a,
     {
         self.inner.on_activate = Some(Box::new(f));
         self
@@ -169,7 +166,7 @@ impl<'a, M: Clone + 'static> ImageGrid<'a, M> {
     /// Callback when scroll is needed (for external scrollable container)
     pub fn on_scroll_request<F>(mut self, f: F) -> Self
     where
-        F: Fn(ScrollRequest) -> M + 'a
+        F: Fn(ScrollRequest) -> M + 'a,
     {
         self.inner.on_scroll_request = Some(Box::new(f));
         self
@@ -188,7 +185,7 @@ impl<'a, M: Clone + 'static> ImageGrid<'a, M> {
             .id(scroll_id)
             .width(Length::Fill)
             .height(Length::Fill)
-            into()
+            .into()
         } else {
             self.inner.into()
         }
@@ -196,7 +193,7 @@ impl<'a, M: Clone + 'static> ImageGrid<'a, M> {
 }
 
 /// Convience function
-pub fn image_grid<M: Clone + 'static>(items: Vec<ImageItem>) -> ImageGrid<'static, M> {
+pub fn image_grid<M: Clone + 'static>(items: Vec<GridItem>) -> ImageGrid<'static, M> {
     ImageGrid::new(items)
 }
 
@@ -229,7 +226,7 @@ impl<'a, M> ImageGridInner<'a, M> {
             return None;
         }
 
-        let rows = self.items.len().div_ciel(cols);
+        let rows = self.items.len().div_ceil(cols);
         let item_size = self.thumbnail_size as f32;
 
         // Conver to local coords
@@ -288,7 +285,7 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
             self.col_spacing as f32,
             1,
             None,
-            self.items.len()
+            self.items.len(),
         );
 
         let rows = self.items.len().div_ceil(cols);
@@ -296,7 +293,7 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
         // Calculate total height
         let row_height = cell_size;
         let total_height = (rows as f32 * row_height)
-            + ((rows.saturatin_sub(1)) as f32 * self.row_spacing as f32)
+            + ((rows.saturating_sub(1)) as f32 * self.row_spacing as f32)
             + self.padding.vertical();
 
         // Cache layout info for event handling
@@ -320,7 +317,7 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
         _style: &iced_renderer::Style,
         layout: Layout<'_>,
         cursor: Cursor,
-        _viewport: &Rectangle
+        _viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
         let cols = self.cached_cols.get();
@@ -349,13 +346,11 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
             let row = idx / cols;
             let col = idx % cols;
 
-            let x = bounds.x
-                + self.padding.left
-                + (col as f32 * (cell_size + self.col_spacing as f32));
+            let x =
+                bounds.x + self.padding.left + (col as f32 * (cell_size + self.col_spacing as f32));
 
-            let y = bounds.y
-                + self.padding.top
-                + (row as f32 * (row_height + self.row_spacing as f32));
+            let y =
+                bounds.y + self.padding.top + (row as f32 * (row_height + self.row_spacing as f32));
 
             let cell_bounds = Rectangle::new(Point::new(x, y), Size::new(cell_size, cell_size));
 
@@ -394,7 +389,7 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
             if let Some(ref handle) = item.handle {
                 // Calculate centered bounds maintaining aspect ratio
                 let centered = core::calculate_centered_item_bounds(
-                    item_bouds,
+                    item_bounds,
                     item.width as f32,
                     item.height as f32,
                 );
@@ -404,12 +399,12 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                     cosmic::iced::widget::image::FilterMethod::Linear,
                     centered,
                     cosmic::iced::Radians(0.0),
-                    1.0,     // opacity
-                    [0.0; 4] // snap
+                    1.0,      // opacity
+                    [0.0; 4], // snap
                 );
             } else {
                 // Draw placeholder (simple gray box)
-                let placehoder_size = item_size / 2.0;
+                let placeholder_size = item_size / 2.0;
                 let placeholder_bounds = Rectangle::new(
                     Point::new(
                         item_bounds.x + (item_size - placeholder_size) / 2.0,
@@ -424,7 +419,7 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                         border: cosmic::iced::Border::default(),
                         shadow: Default::default(),
                     },
-                    Color::from_rgba(0.5, 0.5, 0.5, 0.3)
+                    Color::from_rgba(0.5, 0.5, 0.5, 0.3),
                 );
             }
         }
@@ -445,7 +440,8 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
 
         match event {
             // Mouse hover - visual only, no messages (draw() handles highlight from cursor)
-            Event::Mouse(mouse::Event::CursorMoved { .. }) => { /* No-op: visual hover handled in draw() */ }
+            Event::Mouse(mouse::Event::CursorMoved { .. }) => { /* No-op: visual hover handled in draw() */
+            }
             // Click - activate
             Event::Mouse(mouse::Event::ButtonPressed(Button::Left)) => {
                 if let Some(pos) = cursor.position()
@@ -563,15 +559,16 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
         _tree: &mut Tree,
         _layout: Layout<'_>,
         _renderer: &Renderer,
-        _operation: &mut dyn Operation
-    ) { /* Not needed for this widget */ }
+        _operation: &mut dyn Operation,
+    ) { /* Not needed for this widget */
+    }
 
     fn overlay<'b>(
         &'b mut self,
         _tree: &'b mut Tree,
         _layout: Layout<'_>,
         _renderer: &Renderer,
-        _translation: cosmic::iced::Vector
+        _translation: cosmic::iced::Vector,
     ) -> Option<overlay::Element<'b, M, cosmic::Theme, Renderer>> {
         None
     }

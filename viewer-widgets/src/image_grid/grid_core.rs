@@ -1,6 +1,6 @@
 //! Shared grid layout utilties
 
-use cosmic::iced::{Padding, Point, Rectangle, Sized};
+use cosmic::iced::{Padding, Point, Rectangle, Size};
 
 /// Configuration for grid layout calculation
 #[derive(Debug, Clone)]
@@ -22,7 +22,7 @@ pub(crate) struct GridMetrics {
 }
 
 /// Calculate number of columns that fit in available width
-pub(crate) fn caculate_columns(
+pub(crate) fn calculate_columns(
     available_width: f32,
     item_width: f32,
     col_spacing: f32,
@@ -57,7 +57,7 @@ pub(crate) fn calculate_scroll_offset(
     }
 
     let row = target_idx / cols;
-    let item_top = padding_top + (row af f32 * (row_height + row_spacing));
+    let item_top = padding_top + (row as f32 * (row_height + row_spacing));
     let item_bottom = item_top + row_height;
 
     let viewport_bottom = viewport_top + viewport_height;
@@ -120,11 +120,7 @@ pub(crate) fn item_at_position(
     }
 
     let idx = row * cols + col;
-    if idx < item_count {
-        Some(idx)
-    } else {
-        None
-    }
+    if idx < item_count { Some(idx) } else { None }
 }
 
 /// Calculate centered position for an item within a cell
@@ -156,8 +152,5 @@ pub(crate) fn calculate_centered_item_bounds(
     let x = cell_bounds.x + (cell_bounds.width - scaled_width) / 2.0;
     let y = cell_bounds.y + (cell_bounds.height - scaled_height) / 2.0;
 
-    Rectangle::new(
-        Point::new(x, y),
-        Size::new(scaled_width, scaled_height),
-    )
+    Rectangle::new(Point::new(x, y), Size::new(scaled_width, scaled_height))
 }

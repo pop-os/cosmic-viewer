@@ -1,0 +1,10 @@
+[package]
+version.workspace = true
+name = "viewer-config"
+description.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+libcosmic.workspace = true
+serde.workspace = true
