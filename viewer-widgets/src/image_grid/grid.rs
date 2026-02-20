@@ -204,8 +204,8 @@ pub fn image_grid<M: Clone + 'static>(items: Vec<ImageItem>) -> ImageGrid<'stati
 struct ImageGridInner<'a, M> {
     items: Vec<GridItem>,
     thumbnail_size: u32,
-    focused_idx: Option<usize>
-    selected_indicies: Vec<usize>
+    focused_idx: Option<usize>,
+    selected_indicies: Vec<usize>,
     padding: Padding,
     col_spacing: u16,
     row_spacing: u16,
@@ -215,7 +215,7 @@ struct ImageGridInner<'a, M> {
     on_activate: Option<Box<dyn Fn(usize) -> M + 'a>>,
     on_scroll_request: Option<Box<dyn Fn(ScrollRequest) -> M + 'a>>,
     last_layout: Cell<(usize, u32)>,
-    cached_cols: Cell<usize>
+    cached_cols: Cell<usize>,
     cached_row_height: Cell<f32>,
     keyboard_nav_enabled: bool,
 }
