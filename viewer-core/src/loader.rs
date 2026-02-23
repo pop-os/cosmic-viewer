@@ -1,8 +1,9 @@
-use cosmic::widget::image::Handle;
+use cosmic::{iced::futures::io::BufReader, widget::image::Handle};
 use fast_image_resize::{PixelType, ResizeAlg, ResizeOptions, Resizer, images::Image as FirImage};
 use std::{
     fmt::{self, Debug, Formatter},
     fs::File,
+    io::BufReader as IoBufReader,
     path::{Path, PathBuf},
 };
 use thiserror::Error;
@@ -581,4 +582,16 @@ fn fast_resize_rgba(
         .map_err(|e| LoadError::UnsupportedFormat(e.to_string()))?;
 
     Ok((dst_width, dst_height, dst_image.into_vec()))
+}
+
+/// Read DPI from EXIF data (JPEG/TIFF only)
+pub fn read_dpi(path: &Path) -> Option<u32> {
+    let mut file = IoBufReader::new(File::open(path).ok()?);
+    let exif = exif::Reader::new().read_from_container(&mut file).ok()?;
+    let x_res = exif.get_field(exif::Tag::XResolution, exif::In::PRIMARY)?;
+
+    match x_res.value {
+        exif::Value::Rational(ref v) if !v.is_empty() => Some(v[0].to_f64() as u32),
+        _ => None,
+    }
 }

@@ -13,6 +13,7 @@ pub const EXTENSIONS: &[&str] = &[
 
 #[derive(Debug, Clone, Default)]
 pub struct NavState {
+    dir: Option<PathBuf>,
     images: Vec<PathBuf>,
     cur_idx: Option<usize>,
 }
@@ -38,6 +39,10 @@ impl NavState {
         self.images.len()
     }
 
+    pub fn dir(&self) -> Option<&Path> {
+        self.dir.as_deref()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.images.is_empty()
     }
@@ -46,7 +51,8 @@ impl NavState {
         &self.images
     }
 
-    pub fn set_images(&mut self, images: Vec<PathBuf>, select: Option<&Path>) {
+    pub fn set_images(&mut self, dir: PathBuf, images: Vec<PathBuf>, select: Option<&Path>) {
+        self.dir = Some(dir);
         self.images = images;
         self.cur_idx = select.and_then(|path| self.images.iter().position(|pos| pos == path));
     }
