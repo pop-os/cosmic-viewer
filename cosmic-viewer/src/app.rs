@@ -1,14 +1,15 @@
 use crate::{
     fl,
-    key_binds::{self, MenuAction},
+    key_binds::{self, MenuAction, keyboard_shortcut_handler},
     menu::menu_bar,
-    message::{ImageMessage, NavMessage, ViewerMessage},
+    message::{ContextMessage, ImageMessage, NavMessage, ViewerMessage},
 };
 use cosmic::{
     Action, Application, ApplicationExt, Core, Element, Task,
+    app::context_drawer,
     cosmic_config::CosmicConfigEntry,
     dialog::file_chooser::{self, FileFilter},
-    iced::{ContentFit, Length, alignment::Horizontal},
+    iced::{ContentFit, Length, Subscription, alignment::Horizontal, keyboard::on_key_press},
     iced_widget::scrollable::{AbsoluteOffset, scroll_to},
     task::future,
     widget::{
@@ -18,7 +19,8 @@ use cosmic::{
 use std::{collections::HashMap, path::PathBuf};
 use viewer_config::ViewerConfig;
 use viewer_core::{
-    CachedImage, ImageCache, NavState, get_image_dir, load_image, load_thumbnail, scan_dir,
+    CachedImage, ImageCache, NavState, get_image_dir, load_image, load_thumbnail, read_dpi,
+    scan_dir,
 };
 use viewer_widgets::{GridItem, ImageGrid, image_grid::image_grid};
 
@@ -31,6 +33,7 @@ pub struct CosmicViewer {
     cache: ImageCache,
     grid: ImageGrid<'static, Action<ViewerMessage>>,
     scroll_id: Id,
+    context_page: Option<ContextMessage>,
 }
 
 impl CosmicViewer {
@@ -171,6 +174,78 @@ impl CosmicViewer {
             }
         })
     }
+
+    fn image_details_page(&self) -> Element<'_, ViewerMessage> {
+        let spacing = cosmic::theme::active().cosmic().spacing;
+        let mut content = column().spacing(spacing.space_m);
+
+        let Some(path) = self.nav.current() else {
+            return content.push(text::body("No image loaded")).into();
+        };
+
+        // File name
+        if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+            content = content.push(text::heading(name));
+        }
+
+        // Type
+        if let Some(ext) = path.extension().and_then(|ext| ext.to_str()) {
+            content = content.push(detail_row(fl!("image-type"), friendly_type_name(ext)));
+        }
+
+        // File metadata (size, timestamps)
+        if let Ok(meta) = std::fs::metadata(path) {
+            content = content.push(detail_row(
+                fl!("image-file-size"),
+                format_file_size(meta.len()),
+            ));
+
+            if let Ok(created) = meta.created() {
+                content = content.push(detail_row(
+                    fl!("image-created"),
+                    format_system_time(created),
+                ));
+            }
+
+            if let Ok(modified) = meta.modified() {
+                content = content.push(detail_row(
+                    fl!("image-modified"),
+                    format_system_time(modified),
+                ));
+            }
+
+            if let Ok(accessed) = meta.accessed() {
+                content = content.push(detail_row(
+                    fl!("image-accessed"),
+                    format_system_time(accessed),
+                ));
+            }
+        }
+
+        // Image dimensions
+        if let Some(cached) = self.cache.get_full(path) {
+            content = content.push(detail_row(
+                fl!("image-size"),
+                format!("{} x {}", cached.width, cached.height),
+            ));
+        }
+
+        // DPI (JPEG/TIFF only)
+        if let Some(dpi) = read_dpi(path) {
+            content = content.push(detail_row(fl!("image-dpi"), format!("{dpi} pixels/inch")));
+        }
+
+        // Folder name
+        if let Some(name) = path
+            .parent()
+            .and_then(|parent| parent.file_name())
+            .and_then(|name| name.to_str())
+        {
+            content = content.push(detail_row(fl!("image-folder"), name.to_string()));
+        }
+
+        content.into()
+    }
 }
 
 impl Application for CosmicViewer {
@@ -217,6 +292,7 @@ impl Application for CosmicViewer {
             cache: ImageCache::with_defaults(),
             grid,
             scroll_id,
+            context_page: None,
         };
 
         tasks
@@ -231,6 +307,19 @@ impl Application for CosmicViewer {
 
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
         vec![menu_bar(&self.core, &self.key_binds, &vec![])]
+    }
+
+    fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Self::Message>> {
+        let page = self.context_page?;
+        let content = match page {
+            ContextMessage::ImageDetails => self.image_details_page(),
+            ContextMessage::About => return None,
+        };
+
+        let drawer = context_drawer::context_drawer(content, ViewerMessage::Context(page))
+            .title(fl!("menu-image-details"))
+            .into();
+        Some(drawer)
     }
 
     fn nav_model(&self) -> Option<&nav_bar::Model> {
@@ -385,9 +474,7 @@ impl Application for CosmicViewer {
             ViewerMessage::Open(path) => tasks.push(self.open_path(path)),
             ViewerMessage::OpenRecent(_idx) => {}
             ViewerMessage::OpenContaining => {
-                if let Some(path) = self.nav.current()
-                    && let Some(dir) = path.parent()
-                {
+                if let Some(dir) = self.nav.dir() {
                     if let Err(e) = open::that(dir) {
                         eprintln!("Failed to open containing folder: {e}");
                     }
@@ -403,8 +490,7 @@ impl Application for CosmicViewer {
             ViewerMessage::Quit => {}
             ViewerMessage::Nav(msg) => match msg {
                 NavMessage::ScanComplete(dir, images, select) => {
-                    let dir = dir.clone();
-                    self.nav.set_images(dir.clone(), images, select.as_deref());
+                    self.nav.set_images(dir, images, select.as_deref());
                     self.rebuild_grid_items();
 
                     // If no image is selected on load, start loading from image 1 (idx = 0)
@@ -467,7 +553,15 @@ impl Application for CosmicViewer {
                 }
                 ImageMessage::LoadError(_path) => {}
             },
-            ViewerMessage::Context(_msg) => {}
+            ViewerMessage::Context(page) => {
+                if self.context_page == Some(page) {
+                    self.context_page = None;
+                } else {
+                    self.context_page = Some(page);
+                }
+
+                self.set_show_context(self.context_page.is_some());
+            }
             ViewerMessage::Viewport(_msg) => {}
             ViewerMessage::Edit(_msg) => {}
             ViewerMessage::Surface(action) => {
@@ -481,4 +575,77 @@ impl Application for CosmicViewer {
             Task::batch(tasks)
         }
     }
+
+    fn subscription(&self) -> Subscription<Self::Message> {
+        on_key_press(keyboard_shortcut_handler)
+    }
+}
+
+// HELPER FUNCTIONS
+
+fn detail_row<'a>(label: String, value: String) -> Element<'a, ViewerMessage> {
+    column()
+        .push(text::caption(label))
+        .push(text::body(value))
+        .spacing(2)
+        .into()
+}
+
+fn friendly_type_name(ext: &str) -> String {
+    match ext.to_lowercase().as_str() {
+        "jpg" | "jpeg" => "JPEG image",
+        "png" => "PNG image",
+        "gif" => "GIF image",
+        "webp" => "WebP image",
+        "bmp" => "BMP image",
+        "tiff" | "tif" => "TIFF image",
+        "ico" => "ICO image",
+        "avif" => "AVIF image",
+        "hdr" => "HDR image",
+        "jxl" => "JPEG XL image",
+        "ppm" => "PPM image",
+        "pgm" => "PGM image",
+        "pbm" => "PBM image",
+        "pnm" => "PNM image",
+        "qoi" => "QOI image",
+        "ff" | "farbfeld" => "Farbfeld image",
+        _ => "Image",
+    }
+    .to_string()
+}
+
+fn format_file_size(bytes: u64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = 1024.0 * KB;
+    const GB: f64 = 1024.0 * MB;
+
+    let human_readable = if bytes as f64 >= GB {
+        format!("{:.1} GB", bytes as f64 / GB)
+    } else if bytes as f64 >= MB {
+        format!("{:.1} MB", bytes as f64 / MB)
+    } else if bytes as f64 >= KB {
+        format!("{:.1} KB", bytes as f64 / KB)
+    } else {
+        format!("{bytes} B")
+    };
+
+    format!("{human_readable} ({} bytes)", format_number(bytes))
+}
+
+fn format_number(num: u64) -> String {
+    let s = num.to_string();
+    let mut result = String::with_capacity(s.len() + s.len() / 3);
+    for (idx, ch) in s.chars().enumerate() {
+        if idx > 0 && (s.len() - idx) % 3 == 0 {
+            result.push(',');
+        }
+
+        result.push(ch);
+    }
+    result
+}
+
+fn format_system_time(time: std::time::SystemTime) -> String {
+    let date_time: chrono::DateTime<chrono::Local> = time.into();
+    date_time.format("%a %d %b %Y %I:%M:%S %p %Z").to_string()
 }

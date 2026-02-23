@@ -1,6 +1,9 @@
-use crate::message::{ContextMessage, EditMessage, ViewerMessage, ViewportMessage};
+use crate::{
+    key_binds,
+    message::{ContextMessage, EditMessage, ViewerMessage, ViewportMessage},
+};
 use cosmic::{
-    iced::keyboard::{Key, key::Named},
+    iced::keyboard::{Key, Modifiers, key::Named},
     widget::menu::{
         Action,
         key_bind::{KeyBind, Modifier},
@@ -166,4 +169,33 @@ pub fn init_keybinds() -> HashMap<KeyBind, MenuAction> {
     );
 
     binds
+}
+
+pub fn keyboard_shortcut_handler(key: Key, modifiers: Modifiers) -> Option<ViewerMessage> {
+    let mut mods = vec![];
+
+    if modifiers.control() {
+        mods.push(Modifier::Ctrl);
+    }
+
+    if modifiers.shift() {
+        mods.push(Modifier::Shift);
+    }
+
+    if modifiers.alt() {
+        mods.push(Modifier::Alt);
+    }
+
+    if modifiers.logo() {
+        mods.push(Modifier::Super);
+    }
+
+    let key_bind = KeyBind {
+        modifiers: mods,
+        key: key.clone(),
+    };
+
+    init_keybinds()
+        .get(&key_bind)
+        .map(|action| action.message())
 }
