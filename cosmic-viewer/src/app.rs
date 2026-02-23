@@ -9,7 +9,9 @@ use cosmic::{
     app::context_drawer,
     cosmic_config::CosmicConfigEntry,
     dialog::file_chooser::{self, FileFilter},
-    iced::{ContentFit, Length, Subscription, alignment::Horizontal, keyboard::on_key_press},
+    iced::{
+        ContentFit, Length, Subscription, alignment::Horizontal, clipboard, keyboard::on_key_press,
+    },
     iced_widget::scrollable::{AbsoluteOffset, scroll_to},
     task::future,
     widget::{
@@ -19,8 +21,8 @@ use cosmic::{
 use std::{collections::HashMap, path::PathBuf};
 use viewer_config::ViewerConfig;
 use viewer_core::{
-    CachedImage, ImageCache, NavState, get_image_dir, load_image, load_thumbnail, read_dpi,
-    scan_dir,
+    CachedImage, ClipboardImage, ImageCache, NavState, get_image_dir, image_mime_type, load_image,
+    load_thumbnail, read_dpi, scan_dir,
 };
 use viewer_widgets::{GridItem, ImageGrid, image_grid::image_grid};
 
@@ -401,7 +403,21 @@ impl Application for CosmicViewer {
 
         match message {
             ViewerMessage::Copy => {}
-            ViewerMessage::CopyToClipboard => {}
+            ViewerMessage::CopyToClipboard => {
+                if let Some(path) = self.nav.current().cloned()
+                    && let Some(mime) = path
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .and_then(image_mime_type)
+                {
+                    if let Ok(data) = std::fs::read(&path) {
+                        return clipboard::write_data(ClipboardImage {
+                            data,
+                            mime: mime.to_string(),
+                        });
+                    }
+                }
+            }
             ViewerMessage::Cut => {}
             ViewerMessage::OpenFileDialog => {
                 return future(async move {
