@@ -38,7 +38,7 @@ pub enum ViewerMessage {
 
 #[derive(Debug, Clone)]
 pub enum NavMessage {
-    ScanComplete(Vec<PathBuf>, Option<PathBuf>),
+    ScanComplete(PathBuf, Vec<PathBuf>, Option<PathBuf>),
     GridActivate(usize),
     GridFocus(usize),
     GridScroll(f32),

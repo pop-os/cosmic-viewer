@@ -41,6 +41,13 @@ fn build_file_menu(recent_folders: &[String]) -> Vec<menu::Item<MenuAction, Stri
         None,
         MenuAction::OpenFolder,
     ));
+
+    items.push(menu::Item::Button(
+        fl!("menu-open-containing"),
+        None,
+        MenuAction::OpenContaining,
+    ));
+
     items.push(menu::Item::Button(
         fl!("menu-close-file"),
         None,

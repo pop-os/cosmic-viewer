@@ -43,10 +43,13 @@ impl CosmicViewer {
         let include_hidden = self.config.show_hidden_files;
         let sort_mode = self.config.sort_mode;
         let sort_order = self.config.sort_order;
+        let dir_clone = dir.clone();
 
         future(async move {
             let images = scan_dir(&dir, include_hidden, sort_mode, sort_order).await;
-            Action::App(ViewerMessage::Nav(NavMessage::ScanComplete(images, select)))
+            Action::App(ViewerMessage::Nav(NavMessage::ScanComplete(
+                dir_clone, images, select,
+            )))
         })
     }
 
@@ -381,7 +384,15 @@ impl Application for CosmicViewer {
             }
             ViewerMessage::Open(path) => tasks.push(self.open_path(path)),
             ViewerMessage::OpenRecent(_idx) => {}
-            ViewerMessage::OpenContaining => {}
+            ViewerMessage::OpenContaining => {
+                if let Some(path) = self.nav.current()
+                    && let Some(dir) = path.parent()
+                {
+                    if let Err(e) = open::that(dir) {
+                        eprintln!("Failed to open containing folder: {e}");
+                    }
+                }
+            }
             ViewerMessage::Paste => {}
             ViewerMessage::CloseFile => {}
             ViewerMessage::Save => {}
@@ -391,10 +402,17 @@ impl Application for CosmicViewer {
             ViewerMessage::Cancelled => {}
             ViewerMessage::Quit => {}
             ViewerMessage::Nav(msg) => match msg {
-                NavMessage::ScanComplete(images, select) => {
-                    self.nav.set_images(images, select.as_deref());
+                NavMessage::ScanComplete(dir, images, select) => {
+                    let dir = dir.clone();
+                    self.nav.set_images(dir.clone(), images, select.as_deref());
                     self.rebuild_grid_items();
 
+                    // If no image is selected on load, start loading from image 1 (idx = 0)
+                    if !self.nav.is_empty() {
+                        tasks.push(self.load_remaining_thumbnails());
+                    }
+
+                    // Load the selected image and the 40 images around it (20 up and 20 down)
                     if let Some(idx) = self.nav.index() {
                         if let Some(path) = self.nav.current().cloned() {
                             tasks.push(self.load_full_image(path));
