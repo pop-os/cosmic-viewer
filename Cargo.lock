@@ -1257,6 +1257,7 @@ dependencies = [
  "libcosmic",
  "once_cell",
  "rust-embed",
+ "tracing",
  "viewer-config",
  "viewer-core",
  "viewer-widgets",

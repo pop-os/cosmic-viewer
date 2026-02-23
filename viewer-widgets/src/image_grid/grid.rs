@@ -109,6 +109,34 @@ impl<'a, M: Clone + 'static> ImageGrid<'a, M> {
         self
     }
 
+    pub fn get_focused(&self) -> Option<usize> {
+        self.inner.focused_idx
+    }
+
+    pub fn set_focused(&mut self, idx: Option<usize>) {
+        self.inner.focused_idx = idx;
+    }
+
+    pub fn get_selected(&self) -> &[usize] {
+        &self.inner.selected_indicies
+    }
+
+    pub fn set_selected(&mut self, indices: Vec<usize>) {
+        self.inner.selected_indicies = indices;
+    }
+
+    pub fn items(&self) -> &[GridItem] {
+        &self.inner.items
+    }
+
+    pub fn set_items(&mut self, items: Vec<GridItem>) {
+        self.inner.items = items;
+    }
+
+    pub fn items_mut(&mut self) -> &mut Vec<GridItem> {
+        &mut self.inner.items
+    }
+
     pub fn padding(mut self, padding: impl Into<Padding>) -> Self {
         self.inner.padding = padding.into();
         self

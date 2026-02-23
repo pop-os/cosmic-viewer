@@ -43,7 +43,7 @@ pub(crate) fn calculate_columns(
 }
 
 /// Calculate the scroll offset needed to bring an item into view
-pub(crate) fn calculate_scroll_offset(
+pub fn calculate_scroll_offset(
     target_idx: usize,
     cols: usize,
     row_height: f32,

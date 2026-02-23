@@ -31,5 +31,6 @@ features = [
   "winit",
   "wgpu",
   "a11y",
-  "surface-message"
+  "surface-message",
+  "rfd"
 ]

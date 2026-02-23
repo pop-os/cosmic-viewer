@@ -93,6 +93,13 @@ impl ImageCache {
         }
     }
 
+    pub fn pending_thumbnail_count(&self) -> usize {
+        self.pending_thumbnails
+            .lock()
+            .map(|set| set.len())
+            .unwrap_or(0)
+    }
+
     pub fn is_thumbnail_pending(&self, path: &PathBuf) -> bool {
         self.pending_thumbnails
             .lock()

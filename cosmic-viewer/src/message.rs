@@ -23,6 +23,7 @@ pub enum ViewerMessage {
     SaveAs,
     Share,
     Print,
+    Cancelled,
     Quit,
     Nav(NavMessage),
     Image(ImageMessage),

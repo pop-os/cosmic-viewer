@@ -2,14 +2,14 @@ use crate::{
     fl,
     key_binds::{self, MenuAction},
     menu::menu_bar,
-    message::{
-        ContextMessage, EditMessage, ImageMessage, NavMessage, ViewerMessage, ViewportMessage,
-    },
+    message::{ImageMessage, NavMessage, ViewerMessage},
 };
 use cosmic::{
     Action, Application, ApplicationExt, Core, Element, Task,
     cosmic_config::CosmicConfigEntry,
+    dialog::file_chooser::{self, FileFilter},
     iced::{ContentFit, Length, alignment::Horizontal},
+    iced_widget::scrollable::{AbsoluteOffset, scroll_to},
     task::future,
     widget::{
         Id, column, container, image, menu::KeyBind, nav_bar, responsive, text, vertical_space,
@@ -20,7 +20,7 @@ use viewer_config::ViewerConfig;
 use viewer_core::{
     CachedImage, ImageCache, NavState, get_image_dir, load_image, load_thumbnail, scan_dir,
 };
-use viewer_widgets::{GridItem, image_grid};
+use viewer_widgets::{GridItem, ImageGrid, image_grid::image_grid};
 
 pub struct CosmicViewer {
     core: Core,
@@ -29,8 +29,7 @@ pub struct CosmicViewer {
     nav: NavState,
     nav_bar_model: nav_bar::Model,
     cache: ImageCache,
-    grid_items: Vec<GridItem>,
-    grid_focused: Option<usize>,
+    grid: ImageGrid<'static, Action<ViewerMessage>>,
     scroll_id: Id,
 }
 
@@ -52,7 +51,7 @@ impl CosmicViewer {
     }
 
     fn rebuild_grid_items(&mut self) {
-        self.grid_items = self
+        let items = self
             .nav
             .images()
             .iter()
@@ -61,10 +60,54 @@ impl CosmicViewer {
                 GridItem::new(path.clone(), handle, 0, 0)
             })
             .collect();
-        self.grid_focused = self.nav.index();
+
+        self.grid.set_items(items);
+        self.grid.set_focused(self.nav.index());
+        self.grid
+            .set_selected(self.nav.index().into_iter().collect());
     }
 
-    fn load_pending_thumbnails(&self) -> Task<Action<ViewerMessage>> {
+    fn load_nearby_thumbnails(&self, center: usize, radius: usize) -> Task<Action<ViewerMessage>> {
+        let max_size = self.config.thumbnail_size.pixels();
+        let images = self.nav.images();
+        let total = images.len();
+
+        let start = center.saturating_sub(radius);
+        let end = (center + radius + 1).min(total);
+
+        let tasks: Vec<_> = images[start..end]
+            .iter()
+            .filter(|path| {
+                self.cache.get_thumbnail(path).is_none() && !self.cache.is_thumbnail_pending(path)
+            })
+            .cloned()
+            .map(|path| {
+                self.cache.set_thumbnail_pending(path.clone());
+                let cache = self.cache.clone();
+                future(async move {
+                    match load_thumbnail(path.clone(), max_size).await {
+                        Ok(loaded) => {
+                            cache.insert_thumbnail(loaded.path.clone(), loaded.handle);
+                            Action::App(ViewerMessage::Image(ImageMessage::ThumbnailReady(
+                                loaded.path,
+                                loaded.width,
+                                loaded.height,
+                            )))
+                        }
+                        Err(_) => Action::App(ViewerMessage::Image(ImageMessage::LoadError(path))),
+                    }
+                })
+            })
+            .collect();
+
+        if tasks.is_empty() {
+            Task::none()
+        } else {
+            Task::batch(tasks)
+        }
+    }
+
+    fn load_remaining_thumbnails(&self) -> Task<Action<ViewerMessage>> {
         let max_size = self.config.thumbnail_size.pixels();
 
         let tasks: Vec<_> = self
@@ -100,6 +143,31 @@ impl CosmicViewer {
             Task::batch(tasks)
         }
     }
+
+    fn load_full_image(&mut self, path: PathBuf) -> Task<Action<ViewerMessage>> {
+        if self.cache.get_full(&path).is_some() || self.cache.is_pending(&path) {
+            return Task::none();
+        }
+
+        self.cache.set_pending(path.clone());
+        let cache = self.cache.clone();
+        future(async move {
+            match load_image(path.clone()).await {
+                Ok(loaded) => {
+                    cache.insert_full(
+                        loaded.path.clone(),
+                        CachedImage {
+                            handle: loaded.handle,
+                            width: loaded.width,
+                            height: loaded.height,
+                        },
+                    );
+                    Action::App(ViewerMessage::Image(ImageMessage::ImageReady(loaded.path)))
+                }
+                Err(_) => Action::App(ViewerMessage::Image(ImageMessage::LoadError(path))),
+            }
+        })
+    }
 }
 
 impl Application for CosmicViewer {
@@ -126,6 +194,17 @@ impl Application for CosmicViewer {
             .and_then(|h| ViewerConfig::get_entry(h).ok())
             .unwrap_or_default();
 
+        let scroll_id = Id::unique();
+
+        let grid = ImageGrid::new(Vec::new())
+            .thumbnail_size(config.thumbnail_size.pixels())
+            .on_activate(|idx| Action::App(ViewerMessage::Nav(NavMessage::GridActivate(idx))))
+            .on_focus(|idx| Action::App(ViewerMessage::Nav(NavMessage::GridFocus(idx))))
+            .on_scroll_request(|req| {
+                Action::App(ViewerMessage::Nav(NavMessage::GridScroll(req.offset_y)))
+            })
+            .scrollable(scroll_id.clone());
+
         let mut viewer = Self {
             core,
             key_binds: key_binds::init_keybinds(),
@@ -133,9 +212,8 @@ impl Application for CosmicViewer {
             nav: NavState::new(),
             nav_bar_model: nav_bar::Model::default(),
             cache: ImageCache::with_defaults(),
-            grid_items: Vec::new(),
-            grid_focused: None,
-            scroll_id: Id::unique(),
+            grid,
+            scroll_id,
         };
 
         tasks
@@ -165,9 +243,10 @@ impl Application for CosmicViewer {
         let col_spacing: f32 = 8.0;
         let panel_width = thumbnail_size as f32 + col_spacing * 2.0 + 20.;
 
-        let grid = image_grid(self.grid_items.clone())
-            .thumbnail_size(self.config.thumbnail_size.pixels())
-            .focused(self.grid_focused)
+        let grid = image_grid(self.grid.items().to_vec())
+            .thumbnail_size(thumbnail_size)
+            .focused(self.grid.get_focused())
+            .selected(self.grid.get_selected().to_vec())
             .on_activate(|idx| Action::App(ViewerMessage::Nav(NavMessage::GridActivate(idx))))
             .on_focus(|idx| Action::App(ViewerMessage::Nav(NavMessage::GridFocus(idx))))
             .on_scroll_request(|req| {
@@ -232,8 +311,74 @@ impl Application for CosmicViewer {
             ViewerMessage::Copy => {}
             ViewerMessage::CopyToClipboard => {}
             ViewerMessage::Cut => {}
-            ViewerMessage::OpenFileDialog => {}
-            ViewerMessage::OpenFolderDialog => {}
+            ViewerMessage::OpenFileDialog => {
+                return future(async move {
+                    let dialog = file_chooser::open::Dialog::new()
+                        .title("Open Image")
+                        .filter(
+                            FileFilter::new("All")
+                                .extension("jpg")
+                                .extension("jpeg")
+                                .extension("png")
+                                .extension("gif")
+                                .extension("webp")
+                                .extension("bmp")
+                                .extension("tiff")
+                                .extension("tif")
+                                .extension("ico")
+                                .extension("avif")
+                                .extension("hdr"),
+                        )
+                        .filter(FileFilter::new("jpeg").extension("jpg").extension("jpeg"))
+                        .filter(FileFilter::new("png").extension("png"))
+                        .filter(FileFilter::new("gif").extension("gif"))
+                        .filter(FileFilter::new("webp").extension("webp"))
+                        .filter(FileFilter::new("bmp").extension("bmp"))
+                        .filter(FileFilter::new("tiff").extension("tiff").extension("tif"))
+                        .filter(FileFilter::new("avif").extension("avif"))
+                        .filter(FileFilter::new("ico").extension("ico"))
+                        .filter(FileFilter::new("hdr").extension("hdr"));
+
+                    match dialog.open_file().await {
+                        Ok(response) => {
+                            if let Ok(path) = response.url().to_file_path() {
+                                Action::App(ViewerMessage::Open(path))
+                            } else {
+                                Action::App(ViewerMessage::Cancelled)
+                            }
+                        }
+                        Err(file_chooser::Error::Cancelled) => {
+                            Action::App(ViewerMessage::Cancelled)
+                        }
+                        Err(e) => {
+                            tracing::error!("File dialog error: {e}");
+                            Action::App(ViewerMessage::Cancelled)
+                        }
+                    }
+                });
+            }
+            ViewerMessage::OpenFolderDialog => {
+                return future(async move {
+                    let dialog = file_chooser::open::Dialog::new().title("Open Folder");
+
+                    match dialog.open_folder().await {
+                        Ok(response) => {
+                            if let Ok(path) = response.url().to_file_path() {
+                                Action::App(ViewerMessage::Open(path))
+                            } else {
+                                Action::App(ViewerMessage::Cancelled)
+                            }
+                        }
+                        Err(file_chooser::Error::Cancelled) => {
+                            Action::App(ViewerMessage::Cancelled)
+                        }
+                        Err(e) => {
+                            tracing::error!("Folder dialog error: {e}");
+                            Action::App(ViewerMessage::Cancelled)
+                        }
+                    }
+                });
+            }
             ViewerMessage::Open(path) => tasks.push(self.open_path(path)),
             ViewerMessage::OpenRecent(_idx) => {}
             ViewerMessage::OpenContaining => {}
@@ -243,59 +388,65 @@ impl Application for CosmicViewer {
             ViewerMessage::SaveAs => {}
             ViewerMessage::Share => {}
             ViewerMessage::Print => {}
+            ViewerMessage::Cancelled => {}
             ViewerMessage::Quit => {}
             ViewerMessage::Nav(msg) => match msg {
                 NavMessage::ScanComplete(images, select) => {
                     self.nav.set_images(images, select.as_deref());
                     self.rebuild_grid_items();
-                    tasks.push(self.load_pending_thumbnails());
+
+                    if let Some(idx) = self.nav.index() {
+                        if let Some(path) = self.nav.current().cloned() {
+                            tasks.push(self.load_full_image(path));
+                        }
+
+                        let thumb_size = self.config.thumbnail_size.pixels() as f32;
+                        let button_padding = 8.0;
+                        let cell_size = thumb_size + (button_padding * 2.0);
+                        let row_spacing = 8.0;
+                        let offset = idx as f32 * (cell_size + row_spacing);
+                        tasks.push(scroll_to(
+                            self.scroll_id.clone(),
+                            AbsoluteOffset { x: 0.0, y: offset },
+                        ));
+                    }
                 }
                 NavMessage::GridActivate(idx) => {
                     if let Some(path) = self.nav.select(idx) {
                         let path = path.clone();
-                        self.grid_focused = Some(idx);
-
-                        if self.cache.get_full(&path).is_none() && !self.cache.is_pending(&path) {
-                            self.cache.set_pending(path.clone());
-                            let cache = self.cache.clone();
-                            tasks.push(future(async move {
-                                match load_image(path.clone()).await {
-                                    Ok(loaded) => {
-                                        cache.insert_full(
-                                            loaded.path.clone(),
-                                            CachedImage {
-                                                handle: loaded.handle,
-                                                width: loaded.width,
-                                                height: loaded.height,
-                                            },
-                                        );
-                                        Action::App(ViewerMessage::Image(ImageMessage::ImageReady(
-                                            loaded.path,
-                                        )))
-                                    }
-                                    Err(_) => Action::App(ViewerMessage::Image(
-                                        ImageMessage::LoadError(path),
-                                    )),
-                                }
-                            }));
-                        }
+                        self.grid.set_focused(Some(idx));
+                        tasks.push(self.load_full_image(path));
                     }
                 }
-                NavMessage::GridFocus(idx) => self.grid_focused = Some(idx),
-                NavMessage::GridScroll(_offset) => {}
+                NavMessage::GridFocus(idx) => self.grid.set_focused(Some(idx)),
+                NavMessage::GridScroll(offset) => {
+                    tasks.push(scroll_to(
+                        self.scroll_id.clone(),
+                        AbsoluteOffset { x: 0.0, y: offset },
+                    ));
+                }
             },
             ViewerMessage::Image(msg) => match msg {
                 ImageMessage::ThumbnailReady(path, width, height) => {
                     if let Some(handle) = self.cache.get_thumbnail(&path)
-                        && let Some(item) =
-                            self.grid_items.iter_mut().find(|item| item.path == path)
+                        && let Some(item) = self
+                            .grid
+                            .items_mut()
+                            .iter_mut()
+                            .find(|item| item.path == path)
                     {
                         item.handle = Some(handle);
                         item.width = width;
                         item.height = height;
                     }
+
+                    tasks.push(self.load_remaining_thumbnails());
                 }
-                ImageMessage::ImageReady(_path) => {}
+                ImageMessage::ImageReady(_path) => {
+                    if let Some(idx) = self.nav.index() {
+                        tasks.push(self.load_nearby_thumbnails(idx, 20));
+                    }
+                }
                 ImageMessage::LoadError(_path) => {}
             },
             ViewerMessage::Context(_msg) => {}
