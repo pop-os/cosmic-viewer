@@ -37,6 +37,16 @@ menu-zoom-out = Zoom out
 menu-fit-to-view = Fit to view
 menu-fullscreen = Fullscreen
 
+# Toolbar
+toolbar-crop = Crop
+toolbar-rotate-left = Rotate Left
+toolbar-rotate-right = Rotate Right
+toolbar-zoom-in = Zoom in
+toolbar-zoom-out = Zoom out
+toolbar-save = Save
+toolbar-save-as  = Save As
+toolbar-fullscreen = Fullscreen
+
 # Shapes Tool
 shapes-rectangle = Rectangle
 shapes-line = Line

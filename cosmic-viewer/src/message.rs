@@ -64,6 +64,7 @@ pub enum ViewportMessage {
 
 #[derive(Debug, Clone)]
 pub enum EditMessage {
+    Crop,
     RotateLeft,
     RotateRight,
     Undo,

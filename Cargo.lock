@@ -1276,6 +1276,7 @@ dependencies = [
  "viewer-canvas",
  "viewer-config",
  "viewer-core",
+ "viewer-toolbar",
  "viewer-widgets",
 ]
 
@@ -6160,6 +6161,20 @@ dependencies = [
  "turbojpeg",
  "viewer-config",
  "zune-image",
+]
+
+[[package]]
+name = "viewer-toolbar"
+version = "0.1.0"
+dependencies = [
+ "libcosmic",
+]
+
+[[package]]
+name = "viewer-tools"
+version = "0.1.0"
+dependencies = [
+ "libcosmic",
 ]
 
 [[package]]

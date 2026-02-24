@@ -17,7 +17,7 @@ use cosmic::{
     iced_widget::scrollable::{AbsoluteOffset, scroll_to},
     task::future,
     widget::{
-        self, Id, button, column, container, context_menu, divider, image,
+        self, Id, button, column, container, context_menu, divider, icon, image,
         menu::{self, KeyBind, Tree, menu_button},
         nav_bar, responsive, text, vertical_space,
     },
@@ -30,6 +30,7 @@ use viewer_core::{
     load_thumbnail, read_dpi, scan_dir,
 };
 use viewer_widgets::{GridItem, ImageGrid, image_grid::image_grid};
+use viewer_toolbar::toolbar;
 
 pub struct CosmicViewer {
     core: Core,
@@ -299,6 +300,61 @@ impl CosmicViewer {
         .width(Length::Fixed(240.0))
         .into()
     }
+
+    fn build_toolbar(&self) -> Element<'_, ViewerMessage> {
+        let icon_btn = |name: &'static str, tooltip: String, msg: ViewerMessage| -> Element<'_, ViewerMessage> {
+            button::icon(icon::from_name(name))
+                .tooltip(tooltip)
+                .on_press(msg)
+                .into()
+        };
+
+        let zoom_pct = format!("{}%", (self.viewer_canvas.zoom * 100.0).round() as u32);
+
+        toolbar()
+            .start(icon_btn(
+                "edit-cut-symbolic",
+                fl!("toolbar-crop"),
+                ViewerMessage::Edit(EditMessage::Crop),
+            ))
+            .start(icon_btn(
+                "object-rotate-left-symbolic",
+                fl!("toolbar-rotate-left"),
+                ViewerMessage::Edit(EditMessage::RotateLeft),
+            ))
+            .start(icon_btn(
+                "object-rotate-right-symbolic",
+                fl!("toolbar-rotate-right"),
+                ViewerMessage::Edit(EditMessage::RotateRight),
+            ))
+            .center(icon_btn(
+                "list-remove-symbolic",
+                fl!("toolbar-zoom-out"),
+                ViewerMessage::Canvas(CanvasMessage::ZoomOut),
+            ))
+            .center(text::body(zoom_pct))
+            .center(icon_btn(
+                "list-add-symbolic",
+                fl!("toolbar-zoom-in"),
+                ViewerMessage::Canvas(CanvasMessage::ZoomIn),
+            ))
+            .end(icon_btn(
+                "document-save-symbolic",
+                fl!("toolbar-save"),
+                ViewerMessage::Save
+            ))
+            .end(icon_btn(
+                "document-save-as-symbolic",
+                fl!("toolbar-save-as"),
+                ViewerMessage::SaveAs,
+            ))
+            .end(icon_btn(
+                "view-fullscreen-symbolic",
+                fl!("toolbar-fullscreen"),
+                ViewerMessage::Canvas(CanvasMessage::Fullscreen),
+            ))
+            .into()
+    }
 }
 
 impl Application for CosmicViewer {
@@ -431,7 +487,19 @@ impl Application for CosmicViewer {
                 .into()
         };
 
-        let mut pop = widget::popover(content);
+        let spacing = cosmic::theme::active().cosmic().spacing;
+
+        let main = column()
+            .push(content)
+            .push(
+                container(self.build_toolbar())
+                    .center_x(Length::Fill)
+                    .padding([spacing.space_xxs, 0, spacing.space_xxs, 0]),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        let mut pop = widget::popover(main);
         if let Some(point) = self.context_menu_position {
             pop = pop
                 .popup(self.build_context_menu_element())
