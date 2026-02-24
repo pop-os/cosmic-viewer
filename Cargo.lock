@@ -6174,6 +6174,7 @@ dependencies = [
 name = "viewer-tools"
 version = "0.1.0"
 dependencies = [
+ "image",
  "libcosmic",
 ]
 
