@@ -2,7 +2,7 @@ use crate::{
     fl,
     key_binds::{self, MenuAction, keyboard_shortcut_handler},
     menu::menu_bar,
-    message::{ContextMessage, ImageMessage, NavMessage, ViewerMessage},
+    message::{ContextMessage, EditMessage, ImageMessage, NavMessage, ViewerMessage},
 };
 use cosmic::{
     Action, Application, ApplicationExt, Core, Element, Task,
@@ -10,15 +10,20 @@ use cosmic::{
     cosmic_config::CosmicConfigEntry,
     dialog::file_chooser::{self, FileFilter},
     iced::{
-        ContentFit, Length, Subscription, alignment::Horizontal, clipboard, keyboard::on_key_press,
+        Background, Length, Point, Subscription, Vector, alignment::Horizontal, clipboard,
+        keyboard::on_key_press,
     },
+    iced_core::Border,
     iced_widget::scrollable::{AbsoluteOffset, scroll_to},
     task::future,
     widget::{
-        Id, column, container, image, menu::KeyBind, nav_bar, responsive, text, vertical_space,
+        self, Id, button, column, container, context_menu, divider, image,
+        menu::{self, KeyBind, Tree, menu_button},
+        nav_bar, responsive, text, vertical_space,
     },
 };
 use std::{collections::HashMap, path::PathBuf};
+use viewer_canvas::{CanvasImage, CanvasMessage, ClipElement, ViewerCanvas};
 use viewer_config::ViewerConfig;
 use viewer_core::{
     CachedImage, ClipboardImage, ImageCache, NavState, get_image_dir, image_mime_type, load_image,
@@ -35,7 +40,9 @@ pub struct CosmicViewer {
     cache: ImageCache,
     grid: ImageGrid<'static, Action<ViewerMessage>>,
     scroll_id: Id,
+    viewer_canvas: ViewerCanvas,
     context_page: Option<ContextMessage>,
+    context_menu_position: Option<Point>,
 }
 
 impl CosmicViewer {
@@ -248,6 +255,50 @@ impl CosmicViewer {
 
         content.into()
     }
+
+    fn build_context_menu_element(&self) -> Element<'_, ViewerMessage> {
+        let menu_item = |label: String, message: ViewerMessage| {
+            menu_button(vec![text(label).into()]).on_press(message)
+        };
+
+        container(
+            column()
+                .push(menu_item(
+                    fl!("menu-copy-to-clipboard"),
+                    ViewerMessage::CopyToClipboard,
+                ))
+                .push(menu_item(
+                    fl!("menu-copy-file-path"),
+                    ViewerMessage::CopyFilePath,
+                ))
+                .push(menu_item(
+                    fl!("menu-revert-all"),
+                    ViewerMessage::Edit(EditMessage::RevertAll),
+                ))
+                .push(menu_item(
+                    fl!("menu-image-details"),
+                    ViewerMessage::Context(ContextMessage::ImageDetails),
+                )),
+        )
+        .padding(1)
+        .style(|theme| {
+            let cosmic = theme.cosmic();
+            let component = &cosmic.background.component;
+            container::Style {
+                icon_color: Some(component.on.into()),
+                text_color: Some(component.on.into()),
+                background: Some(Background::Color(component.base.into())),
+                border: Border {
+                    radius: cosmic.radius_s().map(|x| x + 1.0).into(),
+                    width: 1.0,
+                    color: component.divider.into(),
+                },
+                ..Default::default()
+            }
+        })
+        .width(Length::Fixed(240.0))
+        .into()
+    }
 }
 
 impl Application for CosmicViewer {
@@ -294,7 +345,9 @@ impl Application for CosmicViewer {
             cache: ImageCache::with_defaults(),
             grid,
             scroll_id,
+            viewer_canvas: ViewerCanvas::default(),
             context_page: None,
+            context_menu_position: None,
         };
 
         tasks
@@ -359,33 +412,14 @@ impl Application for CosmicViewer {
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
-        if let Some(path) = self.nav.current()
-            && let Some(cached) = self.cache.get_full(path)
-        {
-            let handle = cached.handle.clone();
-            let img_width = cached.width as f32;
-            let img_height = cached.height as f32;
+        let content: Element<'_, Self::Message> = if self.viewer_canvas.image.is_some() {
+            let canvas_el: Element<'_, CanvasMessage> = widget::canvas(&self.viewer_canvas)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into();
 
-            responsive(move |size| {
-                let spacing = cosmic::theme::active().cosmic().spacing;
-                let pad = (spacing.space_xs * 2) as f32;
-                let avail_width = size.width - pad;
-                let avail_height = size.height - pad;
-
-                let scale = (avail_width / img_width).min(avail_height / img_height);
-                let scaled_width = img_width * scale;
-                let scaled_height = img_height * scale;
-
-                container(
-                    image(handle.clone())
-                        .content_fit(ContentFit::Fill)
-                        .width(Length::Fixed(scaled_width))
-                        .height(Length::Fixed(scaled_height)),
-                )
-                .center(Length::Fill)
-                .into()
-            })
-            .into()
+            let clipped: Element<'_, CanvasMessage> = ClipElement::new(canvas_el).into();
+            clipped.map(ViewerMessage::Canvas)
         } else {
             column()
                 .push(vertical_space().height(Length::Fill))
@@ -395,15 +429,28 @@ impl Application for CosmicViewer {
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
+        };
+
+        let mut pop = widget::popover(content);
+        if let Some(point) = self.context_menu_position {
+            pop = pop
+                .popup(self.build_context_menu_element())
+                .position(widget::popover::Position::Point(point))
+                .on_close(ViewerMessage::Canvas(CanvasMessage::ContextMenu(None)));
         }
+
+        pop.into()
     }
 
     fn update(&mut self, message: Self::Message) -> Task<Action<Self::Message>> {
         let mut tasks = vec![];
 
         match message {
-            ViewerMessage::Copy => {}
+            ViewerMessage::Copy => {
+                self.context_menu_position = None;
+            }
             ViewerMessage::CopyToClipboard => {
+                self.context_menu_position = None;
                 if let Some(path) = self.nav.current().cloned()
                     && let Some(mime) = path
                         .extension()
@@ -416,6 +463,12 @@ impl Application for CosmicViewer {
                             mime: mime.to_string(),
                         });
                     }
+                }
+            }
+            ViewerMessage::CopyFilePath => {
+                self.context_menu_position = None;
+                if let Some(path) = self.nav.current() {
+                    return cosmic::iced::clipboard::write(path.display().to_string());
                 }
             }
             ViewerMessage::Cut => {}
@@ -506,6 +559,10 @@ impl Application for CosmicViewer {
             ViewerMessage::Quit => {}
             ViewerMessage::Nav(msg) => match msg {
                 NavMessage::ScanComplete(dir, images, select) => {
+                    self.viewer_canvas.image = None;
+                    self.viewer_canvas.zoom = 1.0;
+                    self.viewer_canvas.pan = Vector::ZERO;
+
                     self.nav.set_images(dir, images, select.as_deref());
                     self.rebuild_grid_items();
 
@@ -535,6 +592,20 @@ impl Application for CosmicViewer {
                     if let Some(path) = self.nav.select(idx) {
                         let path = path.clone();
                         self.grid.set_focused(Some(idx));
+
+                        // Reset viewport and update canvas
+                        self.viewer_canvas.zoom = 1.0;
+                        self.viewer_canvas.pan = Vector::ZERO;
+                        if let Some(cached) = self.cache.get_full(&path) {
+                            self.viewer_canvas.image = Some(CanvasImage {
+                                handle: cached.handle,
+                                width: cached.width,
+                                height: cached.height,
+                            });
+                        } else {
+                            self.viewer_canvas.image = None;
+                        }
+
                         tasks.push(self.load_full_image(path));
                     }
                 }
@@ -562,14 +633,24 @@ impl Application for CosmicViewer {
 
                     tasks.push(self.load_remaining_thumbnails());
                 }
-                ImageMessage::ImageReady(_path) => {
+                ImageMessage::ImageReady(path) => {
                     if let Some(idx) = self.nav.index() {
+                        if self.nav.current() == Some(&path) {
+                            if let Some(cached) = self.cache.get_full(&path) {
+                                self.viewer_canvas.image = Some(CanvasImage {
+                                    handle: cached.handle,
+                                    width: cached.width,
+                                    height: cached.height,
+                                });
+                            }
+                        }
                         tasks.push(self.load_nearby_thumbnails(idx, 20));
                     }
                 }
                 ImageMessage::LoadError(_path) => {}
             },
             ViewerMessage::Context(page) => {
+                self.context_menu_position = None;
                 if self.context_page == Some(page) {
                     self.context_page = None;
                 } else {
@@ -578,8 +659,25 @@ impl Application for CosmicViewer {
 
                 self.set_show_context(self.context_page.is_some());
             }
-            ViewerMessage::Viewport(_msg) => {}
-            ViewerMessage::Edit(_msg) => {}
+            ViewerMessage::Canvas(msg) => match msg {
+                CanvasMessage::ContextMenu(point) => self.context_menu_position = point,
+                CanvasMessage::ZoomIn => {
+                    self.viewer_canvas.zoom = (self.viewer_canvas.zoom * 1.25).min(10.0);
+                }
+                CanvasMessage::ZoomOut => {
+                    let new_zoom = (self.viewer_canvas.zoom / 1.25).max(1.0);
+                    self.viewer_canvas.zoom = new_zoom;
+                    if new_zoom <= 1.0 {
+                        self.viewer_canvas.pan = Vector::ZERO;
+                    }
+                }
+                CanvasMessage::Pan(pan) => self.viewer_canvas.pan = pan,
+                CanvasMessage::FitToView => {}
+                CanvasMessage::Fullscreen => {}
+            },
+            ViewerMessage::Edit(_msg) => {
+                self.context_menu_position = None;
+            }
             ViewerMessage::Surface(action) => {
                 return cosmic::task::message(Action::Cosmic(cosmic::app::Action::Surface(action)));
             }

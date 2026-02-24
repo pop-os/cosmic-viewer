@@ -1,7 +1,7 @@
 [workspace]
 
 resolver = "3"
-members = ["cosmic-viewer", "viewer-config", "viewer-core", "viewer-widgets"]
+members = ["cosmic-viewer", "viewer-canvas", "viewer-config", "viewer-core", "viewer-widgets", "viewer-toolbar", "viewer-tools"]
 
 [workspace.package]
 version = "0.1.0"

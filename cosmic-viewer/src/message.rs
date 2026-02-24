@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use viewer_canvas::CanvasMessage;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContextMessage {
@@ -10,6 +11,7 @@ pub enum ContextMessage {
 pub enum ViewerMessage {
     Copy,
     CopyToClipboard,
+    CopyFilePath,
     Cut,
     // Path resolved from CLI arg or dialog
     Open(PathBuf),
@@ -30,7 +32,7 @@ pub enum ViewerMessage {
     // Context page message passing
     Context(ContextMessage),
     // Viewport message passing
-    Viewport(ViewportMessage),
+    Canvas(CanvasMessage),
     // Edit message passing
     Edit(EditMessage),
     Surface(cosmic::surface::Action),

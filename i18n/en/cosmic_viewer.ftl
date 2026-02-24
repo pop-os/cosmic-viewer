@@ -26,6 +26,7 @@ menu-cut = Cut
 menu-copy = Copy
 menu-paste = Paste
 menu-copy-to-clipboard = Copy image to clipboard
+menu-copy-file-path = Copy file path
 menu-rotate-left = Rotate left 90°
 menu-rotate-right = Rotate right 90°
 

@@ -1,0 +1,9 @@
+[package]
+version.workspace = true
+name = "viewer-canvas"
+description.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+libcosmic.workspace = true

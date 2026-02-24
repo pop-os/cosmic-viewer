@@ -1,6 +1,6 @@
 use crate::{
     key_binds,
-    message::{ContextMessage, EditMessage, ViewerMessage, ViewportMessage},
+    message::{ContextMessage, EditMessage, ViewerMessage},
 };
 use cosmic::{
     iced::keyboard::{Key, Modifiers, key::Named},
@@ -10,6 +10,7 @@ use cosmic::{
     },
 };
 use std::collections::HashMap;
+use viewer_canvas::CanvasMessage;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MenuAction {
@@ -62,10 +63,10 @@ impl MenuAction {
             MenuAction::ImageDetails => ViewerMessage::Context(ContextMessage::ImageDetails),
             MenuAction::About => ViewerMessage::Context(ContextMessage::About),
             // Viewport Actions
-            MenuAction::ZoomIn => ViewerMessage::Viewport(ViewportMessage::ZoomIn),
-            MenuAction::ZoomOut => ViewerMessage::Viewport(ViewportMessage::ZoomOut),
-            MenuAction::FitToView => ViewerMessage::Viewport(ViewportMessage::FitToView),
-            MenuAction::Fullscreen => ViewerMessage::Viewport(ViewportMessage::Fullscreen),
+            MenuAction::ZoomIn => ViewerMessage::Canvas(CanvasMessage::ZoomIn),
+            MenuAction::ZoomOut => ViewerMessage::Canvas(CanvasMessage::ZoomOut),
+            MenuAction::FitToView => ViewerMessage::Canvas(CanvasMessage::FitToView),
+            MenuAction::Fullscreen => ViewerMessage::Canvas(CanvasMessage::Fullscreen),
             // Edit Messages
             MenuAction::RotateLeft => ViewerMessage::Edit(EditMessage::RotateLeft),
             MenuAction::RotateRight => ViewerMessage::Edit(EditMessage::RotateRight),

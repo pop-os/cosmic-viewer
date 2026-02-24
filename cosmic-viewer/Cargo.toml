@@ -6,6 +6,7 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+viewer-canvas = { path = "../viewer-canvas" }
 viewer-core = { path = "../viewer-core" }
 viewer-config = { path = "../viewer-config" }
 viewer-widgets = { path = "../viewer-widgets" }
