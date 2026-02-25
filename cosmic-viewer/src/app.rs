@@ -17,20 +17,21 @@ use cosmic::{
     iced_widget::scrollable::{AbsoluteOffset, scroll_to},
     task::future,
     widget::{
-        self, Id, button, column, container, context_menu, divider, icon, image,
+        self, Id, button, column, container, context_menu, divider, dropdown, icon, image,
         menu::{self, KeyBind, Tree, menu_button},
         nav_bar, responsive, text, vertical_space,
     },
 };
 use std::{collections::HashMap, path::PathBuf};
-use viewer_canvas::{CanvasImage, CanvasMessage, ClipElement, ViewerCanvas};
+use viewer_canvas::{CanvasImage, CanvasMessage, ToolKind, ViewportManager};
 use viewer_config::ViewerConfig;
 use viewer_core::{
     CachedImage, ClipboardImage, ImageCache, NavState, get_image_dir, image_mime_type, load_image,
     load_thumbnail, read_dpi, scan_dir,
 };
-use viewer_widgets::{GridItem, ImageGrid, image_grid::image_grid};
 use viewer_toolbar::toolbar;
+use viewer_tools::crop::{CropRatio, CropSelection};
+use viewer_widgets::{GridItem, ImageGrid, image_grid::image_grid};
 
 pub struct CosmicViewer {
     core: Core,
@@ -41,9 +42,10 @@ pub struct CosmicViewer {
     cache: ImageCache,
     grid: ImageGrid<'static, Action<ViewerMessage>>,
     scroll_id: Id,
-    viewer_canvas: ViewerCanvas,
+    viewport: ViewportManager,
     context_page: Option<ContextMessage>,
     context_menu_position: Option<Point>,
+    crop_ratio: CropRatio,
 }
 
 impl CosmicViewer {
@@ -302,14 +304,24 @@ impl CosmicViewer {
     }
 
     fn build_toolbar(&self) -> Element<'_, ViewerMessage> {
-        let icon_btn = |name: &'static str, tooltip: String, msg: ViewerMessage| -> Element<'_, ViewerMessage> {
+        match self.viewport.active_tool() {
+            Some(ToolKind::Crop) => self.build_crop_toolbar(),
+            _ => self.build_default_toolbar(),
+        }
+    }
+
+    fn build_default_toolbar(&self) -> Element<'_, ViewerMessage> {
+        let icon_btn = |name: &'static str,
+                        tooltip: String,
+                        msg: ViewerMessage|
+         -> Element<'_, ViewerMessage> {
             button::icon(icon::from_name(name))
                 .tooltip(tooltip)
                 .on_press(msg)
                 .into()
         };
 
-        let zoom_pct = format!("{}%", (self.viewer_canvas.zoom * 100.0).round() as u32);
+        let zoom_pct = format!("{}%", (self.viewport.zoom() * 100.0).round() as u32);
 
         toolbar()
             .start(icon_btn(
@@ -341,7 +353,7 @@ impl CosmicViewer {
             .end(icon_btn(
                 "document-save-symbolic",
                 fl!("toolbar-save"),
-                ViewerMessage::Save
+                ViewerMessage::Save,
             ))
             .end(icon_btn(
                 "document-save-as-symbolic",
@@ -352,6 +364,56 @@ impl CosmicViewer {
                 "view-fullscreen-symbolic",
                 fl!("toolbar-fullscreen"),
                 ViewerMessage::Canvas(CanvasMessage::Fullscreen),
+            ))
+            .into()
+    }
+
+    fn build_crop_toolbar(&self) -> Element<'_, ViewerMessage> {
+        let icon_btn = |name: &'static str,
+                        tooltip: String,
+                        msg: ViewerMessage|
+         -> Element<'_, ViewerMessage> {
+            button::icon(icon::from_name(name))
+                .tooltip(tooltip)
+                .on_press(msg)
+                .into()
+        };
+
+        let is_portrait = self
+            .viewport
+            .image_size()
+            .map(|size| size.height > size.width)
+            .unwrap_or(false);
+        let presets = CropRatio::presets();
+        let labels: Vec<String> = presets
+            .iter()
+            .map(|ratio| ratio.label(is_portrait).to_string())
+            .collect();
+        let selected = presets.iter().position(|ratio| *ratio == self.crop_ratio);
+
+        toolbar()
+            .start(icon_btn(
+                "edit-undo-symbolic",
+                fl!("menu-undo"),
+                ViewerMessage::Edit(EditMessage::Undo),
+            ))
+            .start(icon_btn(
+                "edit-redo-symbolic",
+                fl!("menu-redo"),
+                ViewerMessage::Edit(EditMessage::Redo),
+            ))
+            .start(icon_btn(
+                "object-rotate-right-symbolic",
+                fl!("menu-rotate-right"),
+                ViewerMessage::Edit(EditMessage::RotateRight),
+            ))
+            .center(dropdown(labels, selected, |idx| {
+                ViewerMessage::Edit(EditMessage::CropRatio(CropRatio::presets()[idx]))
+            }))
+            .end(icon_btn(
+                "window-close-symbolic",
+                fl!("toolbar-apply"),
+                ViewerMessage::Edit(EditMessage::CropApply),
             ))
             .into()
     }
@@ -401,9 +463,10 @@ impl Application for CosmicViewer {
             cache: ImageCache::with_defaults(),
             grid,
             scroll_id,
-            viewer_canvas: ViewerCanvas::default(),
+            viewport: ViewportManager::default(),
             context_page: None,
             context_menu_position: None,
+            crop_ratio: CropRatio::Custom,
         };
 
         tasks
@@ -468,14 +531,8 @@ impl Application for CosmicViewer {
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
-        let content: Element<'_, Self::Message> = if self.viewer_canvas.image.is_some() {
-            let canvas_el: Element<'_, CanvasMessage> = widget::canvas(&self.viewer_canvas)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into();
-
-            let clipped: Element<'_, CanvasMessage> = ClipElement::new(canvas_el).into();
-            clipped.map(ViewerMessage::Canvas)
+        let content: Element<'_, Self::Message> = if self.viewport.image().is_some() {
+            self.viewport.element().map(ViewerMessage::Canvas)
         } else {
             column()
                 .push(vertical_space().height(Length::Fill))
@@ -627,9 +684,8 @@ impl Application for CosmicViewer {
             ViewerMessage::Quit => {}
             ViewerMessage::Nav(msg) => match msg {
                 NavMessage::ScanComplete(dir, images, select) => {
-                    self.viewer_canvas.image = None;
-                    self.viewer_canvas.zoom = 1.0;
-                    self.viewer_canvas.pan = Vector::ZERO;
+                    self.viewport.cancel_tool();
+                    self.viewport.set_image(None);
 
                     self.nav.set_images(dir, images, select.as_deref());
                     self.rebuild_grid_items();
@@ -660,18 +716,17 @@ impl Application for CosmicViewer {
                     if let Some(path) = self.nav.select(idx) {
                         let path = path.clone();
                         self.grid.set_focused(Some(idx));
+                        self.grid.set_selected(vec![idx]);
+                        self.viewport.cancel_tool();
 
-                        // Reset viewport and update canvas
-                        self.viewer_canvas.zoom = 1.0;
-                        self.viewer_canvas.pan = Vector::ZERO;
                         if let Some(cached) = self.cache.get_full(&path) {
-                            self.viewer_canvas.image = Some(CanvasImage {
+                            self.viewport.set_image(Some(CanvasImage {
                                 handle: cached.handle,
                                 width: cached.width,
                                 height: cached.height,
-                            });
+                            }));
                         } else {
-                            self.viewer_canvas.image = None;
+                            self.viewport.set_image(None);
                         }
 
                         tasks.push(self.load_full_image(path));
@@ -705,11 +760,11 @@ impl Application for CosmicViewer {
                     if let Some(idx) = self.nav.index() {
                         if self.nav.current() == Some(&path) {
                             if let Some(cached) = self.cache.get_full(&path) {
-                                self.viewer_canvas.image = Some(CanvasImage {
+                                self.viewport.set_image(Some(CanvasImage {
                                     handle: cached.handle,
                                     width: cached.width,
                                     height: cached.height,
-                                });
+                                }));
                             }
                         }
                         tasks.push(self.load_nearby_thumbnails(idx, 20));
@@ -729,22 +784,54 @@ impl Application for CosmicViewer {
             }
             ViewerMessage::Canvas(msg) => match msg {
                 CanvasMessage::ContextMenu(point) => self.context_menu_position = point,
-                CanvasMessage::ZoomIn => {
-                    self.viewer_canvas.zoom = (self.viewer_canvas.zoom * 1.25).min(10.0);
-                }
+                CanvasMessage::ZoomIn => self
+                    .viewport
+                    .set_zoom((self.viewport.zoom() * 1.25).min(10.0)),
                 CanvasMessage::ZoomOut => {
-                    let new_zoom = (self.viewer_canvas.zoom / 1.25).max(1.0);
-                    self.viewer_canvas.zoom = new_zoom;
+                    let new_zoom = (self.viewport.zoom() / 1.25).max(1.0);
+                    self.viewport.set_zoom(new_zoom);
                     if new_zoom <= 1.0 {
-                        self.viewer_canvas.pan = Vector::ZERO;
+                        self.viewport.set_pan(Vector::ZERO);
                     }
                 }
-                CanvasMessage::Pan(pan) => self.viewer_canvas.pan = pan,
+                CanvasMessage::Pan(pan) => self.viewport.set_pan(pan),
                 CanvasMessage::FitToView => {}
                 CanvasMessage::Fullscreen => {}
             },
-            ViewerMessage::Edit(_msg) => {
+            ViewerMessage::Edit(msg) => {
                 self.context_menu_position = None;
+                match msg {
+                    EditMessage::Crop => {
+                        if self.viewport.active_tool() != Some(ToolKind::Crop) {
+                            self.viewport.set_active_tool(Some(ToolKind::Crop));
+                            let mut selection = CropSelection::new();
+                            if let Some(size) = self.viewport.image_size() {
+                                selection.activate(CropRatio::Custom, size);
+                                self.crop_ratio = CropRatio::Custom;
+                            }
+                            self.viewport.set_preview(Some(Box::new(selection)));
+                        }
+                    }
+                    EditMessage::CropApply => {
+                        self.viewport.apply_tool();
+                    }
+                    EditMessage::CropCancel => self.viewport.cancel_tool(),
+                    EditMessage::CropRatio(ratio) => {
+                        let size = self.viewport.image_size();
+                        if let Some(preview) = self.viewport.preview_mut()
+                            && let Some(crop) = preview.as_any_mut().downcast_mut::<CropSelection>()
+                            && let Some(size) = size
+                        {
+                            crop.set_ratio(ratio, size);
+                            self.crop_ratio = ratio;
+                        }
+                    }
+                    EditMessage::RotateLeft => {}
+                    EditMessage::RotateRight => {}
+                    EditMessage::Undo => self.viewport.undo(),
+                    EditMessage::Redo => self.viewport.redo(),
+                    EditMessage::RevertAll => self.viewport.revert_all(),
+                }
             }
             ViewerMessage::Surface(action) => {
                 return cosmic::task::message(Action::Cosmic(cosmic::app::Action::Surface(action)));

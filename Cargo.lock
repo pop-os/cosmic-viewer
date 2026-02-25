@@ -1277,6 +1277,7 @@ dependencies = [
  "viewer-config",
  "viewer-core",
  "viewer-toolbar",
+ "viewer-tools",
  "viewer-widgets",
 ]
 
@@ -6135,6 +6136,7 @@ name = "viewer-canvas"
 version = "0.1.0"
 dependencies = [
  "libcosmic",
+ "viewer-tools",
 ]
 
 [[package]]

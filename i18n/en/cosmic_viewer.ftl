@@ -39,6 +39,7 @@ menu-fullscreen = Fullscreen
 
 # Toolbar
 toolbar-crop = Crop
+toolbar-apply = Apply
 toolbar-rotate-left = Rotate Left
 toolbar-rotate-right = Rotate Right
 toolbar-zoom-in = Zoom in

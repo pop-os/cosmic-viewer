@@ -2,5 +2,5 @@ pub mod program;
 pub mod state;
 
 // Re-exports
-pub use program::{ClipElement, ViewerCanvas};
-pub use state::{CanvasImage, CanvasMessage, Interaction};
+pub use program::manager::ViewportManager;
+pub use state::{CanvasImage, CanvasMessage, Interaction, ToolKind};

@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use viewer_canvas::CanvasMessage;
+use viewer_tools::crop::CropRatio;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContextMessage {
@@ -65,6 +66,9 @@ pub enum ViewportMessage {
 #[derive(Debug, Clone)]
 pub enum EditMessage {
     Crop,
+    CropApply,
+    CropCancel,
+    CropRatio(CropRatio),
     RotateLeft,
     RotateRight,
     Undo,

@@ -1,5 +1,5 @@
 use super::{handle::DragHandle, ratio::CropRatio};
-use crate::ToolOperation;
+use crate::{ToolOperation, crop::CropOperation};
 use cosmic::{
     Renderer,
     iced::{Color, Point, Rectangle, Size},
@@ -8,7 +8,7 @@ use cosmic::{
 use image::DynamicImage;
 
 const MIN_SIZE: f32 = 10.0;
-const HANDLE_SIZE: f32 = 8.0;
+const HANDLE_SIZE: f32 = 16.0;
 
 /// Live crop selection state.
 /// Transparent, which means never committed to undo/redo.
@@ -269,11 +269,19 @@ impl CropSelection {
         (a.x - b.x).abs() < threshold && (a.y - b.y).abs() < threshold
     }
 
-    fn draw_handle(frame: &mut Frame<Renderer>, center: Point) {
-        let half = HANDLE_SIZE / 2.0;
+    fn draw_handle(
+        frame: &mut Frame<Renderer>,
+        center: Point,
+        handle_size: f32,
+        anchor_x: f32,
+        anchor_y: f32,
+    ) {
         let rect = Rectangle::new(
-            Point::new(center.x - half, center.y - half),
-            Size::new(HANDLE_SIZE, HANDLE_SIZE),
+            Point::new(
+                center.x - handle_size * anchor_x,
+                center.y - handle_size * anchor_y,
+            ),
+            Size::new(handle_size, handle_size),
         );
 
         frame.fill_rectangle(rect.position(), rect.size(), Fill::from(Color::WHITE));
@@ -285,14 +293,17 @@ impl CropSelection {
 }
 
 impl ToolOperation for CropSelection {
-    fn draw(&self, frame: &mut Frame<Renderer>) {
+    fn draw(&self, frame: &mut Frame<Renderer>, image_size: Size, scale: f32) {
         if !self.visible || self.region.width < MIN_SIZE {
             return;
         }
 
         let region = self.region;
-        let frame_size = frame.size();
+        let frame_size = image_size;
         let overlay_color = Color::from_rgba(0.0, 0.0, 0.0, 0.5);
+        let border_width = 0.75 / scale;
+        let grid_width = 1.0 / scale;
+        let handle_size = HANDLE_SIZE / scale;
 
         // Dark overlay outside selection
         frame.fill_rectangle(
@@ -323,9 +334,15 @@ impl ToolOperation for CropSelection {
         );
 
         // Selection border
+        let inset = border_width / 2.0;
         frame.stroke(
-            &Path::rectangle(region.position(), region.size()),
-            Stroke::default().with_color(Color::WHITE).with_width(2.0),
+            &Path::rectangle(
+                Point::new(region.x + inset, region.y + inset),
+                Size::new(region.width - border_width, region.height - border_width),
+            ),
+            Stroke::default()
+                .with_color(Color::WHITE)
+                .with_width(border_width),
         );
 
         // Rule of thirds grid lines
@@ -333,7 +350,7 @@ impl ToolOperation for CropSelection {
         let third_h = region.height / 3.0;
         let grid_stroke = Stroke::default()
             .with_color(Color::from_rgba(1.0, 1.0, 1.0, 0.4))
-            .with_width(1.0);
+            .with_width(grid_width);
 
         for line in 1..3 {
             let x = region.x + third_w * line as f32;
@@ -358,27 +375,74 @@ impl ToolOperation for CropSelection {
             );
         }
 
-        // Handles
-        Self::draw_handle(frame, Point::new(region.x, region.y));
-        Self::draw_handle(frame, Point::new(region.x + region.width, region.y));
-        Self::draw_handle(frame, Point::new(region.x, region.y + region.height));
+        // Corner Handles
+        Self::draw_handle(frame, Point::new(region.x, region.y), handle_size, 0.0, 0.0);
+        Self::draw_handle(
+            frame,
+            Point::new(region.x + region.width, region.y),
+            handle_size,
+            1.0,
+            0.0,
+        );
+        Self::draw_handle(
+            frame,
+            Point::new(region.x, region.y + region.height),
+            handle_size,
+            0.0,
+            1.0,
+        );
         Self::draw_handle(
             frame,
             Point::new(region.x + region.width, region.y + region.height),
+            handle_size,
+            1.0,
+            1.0,
         );
-        Self::draw_handle(frame, Point::new(region.x + region.width / 2.0, region.y));
+
+        // Edge Handles
+        Self::draw_handle(
+            frame,
+            Point::new(region.x + region.width / 2.0, region.y),
+            handle_size,
+            0.5,
+            0.0,
+        );
         Self::draw_handle(
             frame,
             Point::new(region.x + region.width / 2.0, region.y + region.height),
+            handle_size,
+            0.5,
+            1.0,
         );
-        Self::draw_handle(frame, Point::new(region.x, region.y + region.height / 2.0));
+        Self::draw_handle(
+            frame,
+            Point::new(region.x, region.y + region.height / 2.0),
+            handle_size,
+            0.0,
+            0.5,
+        );
         Self::draw_handle(
             frame,
             Point::new(region.x + region.width, region.y + region.height / 2.0),
+            handle_size,
+            1.0,
+            0.5,
         );
     }
 
     fn apply(&self, _image: &mut DynamicImage) {
         // Transparent - never modifies pixels.
+    }
+
+    fn commit(&self) -> Option<Box<dyn ToolOperation>> {
+        if self.visible && self.region.width >= MIN_SIZE && self.region.height >= MIN_SIZE {
+            Some(Box::new(CropOperation::new(self.region)))
+        } else {
+            None
+        }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }

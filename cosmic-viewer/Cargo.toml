@@ -11,6 +11,7 @@ viewer-core = { path = "../viewer-core" }
 viewer-config = { path = "../viewer-config" }
 viewer-widgets = { path = "../viewer-widgets" }
 viewer-toolbar = { path = "../viewer-toolbar" }
+viewer-tools = { path = "../viewer-tools" }
 
 i18n-embed = { version = "0.16.0", features = ["fluent-system", "desktop-requester"] }
 i18n-embed-fl = "0.10.0"

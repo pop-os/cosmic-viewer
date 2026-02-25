@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use crate::ToolOperation;
 use cosmic::{
     Renderer,
@@ -21,13 +23,13 @@ impl CropOperation {
 }
 
 impl ToolOperation for CropOperation {
-    fn draw(&self, frame: &mut Frame<Renderer>) {
+    fn draw(&self, frame: &mut Frame<Renderer>, image_size: Size, scale: f32) {
         // Show the crop boundary as a subtle dashed outline
         let region = self.region;
 
         // Dim everything outside of the crop region
         let overlay_color = Color::from_rgba(0.0, 0.0, 0.0, 0.3);
-        let frame_size = frame.size();
+        let frame_size = image_size;
 
         frame.fill_rectangle(
             Point::ORIGIN,
@@ -61,7 +63,7 @@ impl ToolOperation for CropOperation {
             &Path::rectangle(region.position(), region.size()),
             Stroke::default()
                 .with_color(Color::from_rgba(1.0, 1.0, 1.0, 0.6))
-                .with_width(1.0),
+                .with_width(1.0 / scale),
         );
     }
 
@@ -73,5 +75,13 @@ impl ToolOperation for CropOperation {
             region.width as u32,
             region.height as u32,
         );
+    }
+
+    fn commit(&self) -> Option<Box<dyn ToolOperation>> {
+        None
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
