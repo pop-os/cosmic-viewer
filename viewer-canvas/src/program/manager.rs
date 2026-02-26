@@ -6,7 +6,7 @@ use cosmic::{
         Event, Length, Limits, Point, Rectangle, Renderer, Size, Vector,
         advanced::renderer as iced_renderer,
         event,
-        mouse::{self, Cursor},
+        mouse::{self, Button, Cursor, Event as MouseEvent},
         overlay,
     },
     iced_core::{
@@ -24,6 +24,7 @@ pub struct ViewportManager {
     zoom: f32,
     pan: Vector,
     active_tool: Option<ToolKind>,
+    pub tool_dragging: bool,
     /// Committed operations (undo stack)
     operations: Vec<Box<dyn ToolOperation>>,
     redo_stack: Vec<Box<dyn ToolOperation>>,
@@ -44,6 +45,7 @@ impl ViewportManager {
             zoom: 1.0,
             pan: Vector::ZERO,
             active_tool: None,
+            tool_dragging: false,
             operations: Vec::new(),
             redo_stack: Vec::new(),
             active_preview: None,
@@ -54,6 +56,8 @@ impl ViewportManager {
         self.image = image;
         self.zoom = 1.0;
         self.pan = Vector::ZERO;
+        self.active_preview = None;
+        self.active_tool = None;
     }
 
     pub fn image(&self) -> Option<&CanvasImage> {
@@ -101,6 +105,7 @@ impl ViewportManager {
             self.redo_stack.clear();
             self.active_preview = None;
             self.active_tool = None;
+            self.tool_dragging = false;
             return true;
         }
 
@@ -111,6 +116,7 @@ impl ViewportManager {
     pub fn cancel_tool(&mut self) {
         self.active_preview = None;
         self.active_tool = None;
+        self.tool_dragging = false;
     }
 
     /// Mutable access to the active preview for tool specific config.
@@ -173,6 +179,10 @@ impl ViewportManager {
         !self.redo_stack.is_empty()
     }
 
+    pub fn tool_dragging(&self) -> bool {
+        self.tool_dragging
+    }
+
     /// Build the element for use in `view()`
     pub fn element(&self) -> Element<'_, CanvasMessage> {
         Element::new(Viewport { manager: self })
@@ -187,7 +197,7 @@ struct Viewport<'a> {
 
 impl<'a> Viewport<'a> {
     /// Image only canvas (no tool overlays).
-    fn canvas_element(&self) -> Element<'a, CanvasMessage> {
+    fn canvas_element(&self) -> Element<'_, CanvasMessage> {
         let mgr = self.manager;
         let canvas = ViewerCanvas {
             image: mgr.image.as_ref(),
@@ -206,7 +216,7 @@ impl<'a> Viewport<'a> {
     }
 
     /// Overlay only canvas (tool overlays, no image).
-    fn overlay_element(&self) -> Element<'a, CanvasMessage> {
+    fn overlay_element(&self) -> Element<'_, CanvasMessage> {
         let mgr = self.manager;
         let canvas = ViewerCanvas {
             image: mgr.image.as_ref(),
@@ -310,6 +320,41 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
         shell: &mut Shell<'_, CanvasMessage>,
         viewport: &Rectangle,
     ) -> event::Status {
+        let bounds = layout.bounds();
+
+        // Tool interaction takes priority
+        if self.manager.active_tool.is_some()
+            && let Event::Mouse(mouse_event) = &event
+            && let Some(position) = cursor.position_in(bounds)
+        {
+            let img_point = self.manager.screen_to_image(position, bounds);
+
+            match mouse_event {
+                MouseEvent::ButtonPressed(Button::Left) => {
+                    if let Some(pt) = img_point {
+                        shell.publish(CanvasMessage::ToolStart(pt));
+                        return event::Status::Captured;
+                    }
+                }
+                MouseEvent::CursorMoved { .. } => {
+                    if self.manager.tool_dragging
+                        && let Some(pt) = img_point
+                    {
+                        shell.publish(CanvasMessage::ToolDrag(pt));
+                        return event::Status::Captured;
+                    }
+                }
+                MouseEvent::ButtonReleased(Button::Left) => {
+                    if self.manager.tool_dragging {
+                        shell.publish(CanvasMessage::ToolEnd);
+                        return event::Status::Captured;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Fall through to base canvas for zoom, context menu, etc.
         let mut element = self.canvas_element();
         element.as_widget_mut().on_event(
             &mut tree.children[0],
@@ -331,6 +376,23 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
         viewport: &Rectangle,
         renderer: &Renderer,
     ) -> mouse::Interaction {
+        let bounds = layout.bounds();
+
+        // Handle tool cursors
+        if self.manager.active_tool.is_some() {
+            if let Some(position) = cursor.position_in(bounds)
+                && let (Some(preview), Some(img_point)) = (
+                    self.manager.active_preview.as_deref(),
+                    self.manager.screen_to_image(position, bounds),
+                )
+            {
+                return preview.cursor_at(img_point);
+            }
+
+            return mouse::Interaction::Crosshair;
+        }
+
+        // Delegate to base canvas for non-tool cursors
         let element = self.canvas_element();
         element.as_widget().mouse_interaction(
             &tree.children[0],

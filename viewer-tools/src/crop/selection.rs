@@ -2,7 +2,7 @@ use super::{handle::DragHandle, ratio::CropRatio};
 use crate::{ToolOperation, crop::CropOperation};
 use cosmic::{
     Renderer,
-    iced::{Color, Point, Rectangle, Size},
+    iced::{Color, Point, Rectangle, Size, mouse},
     iced_widget::canvas::{Fill, Frame, Path, Stroke},
 };
 use image::DynamicImage;
@@ -444,5 +444,30 @@ impl ToolOperation for CropSelection {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+
+    fn on_press(&mut self, point: Point, image_size: Size) -> mouse::Interaction {
+        let handle = self.hit_test(point);
+        if handle != DragHandle::None {
+            self.start_handle_drag(handle, point);
+        } else if matches!(self.ratio, CropRatio::Custom) {
+            // Click outside region in Custom mode starts a new selection
+            self.start_new(point);
+        }
+        self.active_handle.cursor()
+    }
+
+    fn on_drag(&mut self, point: Point, image_size: Size) {
+        if self.active_handle != DragHandle::None {
+            self.update_drag(point, image_size);
+        }
+    }
+
+    fn on_release(&mut self, _point: Point, _image_size: Size) {
+        self.end_drag();
+    }
+
+    fn cursor_at(&self, point: Point) -> mouse::Interaction {
+        self.hit_test(point).cursor()
     }
 }

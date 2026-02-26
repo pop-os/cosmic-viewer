@@ -17,9 +17,9 @@ use cosmic::{
     iced_widget::scrollable::{AbsoluteOffset, scroll_to},
     task::future,
     widget::{
-        self, Id, button, column, container, context_menu, divider, dropdown, icon, image,
-        menu::{self, KeyBind, Tree, menu_button},
-        nav_bar, responsive, text, vertical_space,
+        self, Id, button, column, container, dropdown, icon,
+        menu::{KeyBind, menu_button},
+        nav_bar, text, vertical_space,
     },
 };
 use std::{collections::HashMap, path::PathBuf};
@@ -412,6 +412,11 @@ impl CosmicViewer {
             }))
             .end(icon_btn(
                 "window-close-symbolic",
+                fl!("toolbar-cancel"),
+                ViewerMessage::Edit(EditMessage::CropCancel),
+            ))
+            .end(icon_btn(
+                "object-select-symbolic",
                 fl!("toolbar-apply"),
                 ViewerMessage::Edit(EditMessage::CropApply),
             ))
@@ -759,6 +764,12 @@ impl Application for CosmicViewer {
                 ImageMessage::ImageReady(path) => {
                     if let Some(idx) = self.nav.index() {
                         if self.nav.current() == Some(&path) {
+                            // Clear any tool that is active when reselecting a new image.
+                            if self.viewport.active_tool().is_some() {
+                                self.viewport.cancel_tool();
+                            }
+
+                            // Set the selected image to canvas image.
                             if let Some(cached) = self.cache.get_full(&path) {
                                 self.viewport.set_image(Some(CanvasImage {
                                     handle: cached.handle,
@@ -797,6 +808,29 @@ impl Application for CosmicViewer {
                 CanvasMessage::Pan(pan) => self.viewport.set_pan(pan),
                 CanvasMessage::FitToView => {}
                 CanvasMessage::Fullscreen => {}
+                CanvasMessage::ToolStart(point) => {
+                    if let Some(size) = self.viewport.image_size()
+                        && let Some(preview) = self.viewport.preview_mut()
+                    {
+                        preview.on_press(point, size);
+                        self.viewport.tool_dragging = true;
+                    }
+                }
+                CanvasMessage::ToolDrag(point) => {
+                    if let Some(size) = self.viewport.image_size()
+                        && let Some(preview) = self.viewport.preview_mut()
+                    {
+                        preview.on_drag(point, size);
+                    }
+                }
+                CanvasMessage::ToolEnd => {
+                    self.viewport.tool_dragging = false;
+                    if let Some(size) = self.viewport.image_size()
+                        && let Some(preview) = self.viewport.preview_mut()
+                    {
+                        preview.on_release(Point::ORIGIN, size);
+                    }
+                }
             },
             ViewerMessage::Edit(msg) => {
                 self.context_menu_position = None;

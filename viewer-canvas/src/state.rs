@@ -40,6 +40,12 @@ pub enum CanvasMessage {
     FitToView,
     /// View fullscreen
     Fullscreen,
+    /// Tool click event
+    ToolStart(Point),
+    /// Tool dragging event
+    ToolDrag(Point),
+    /// Tool button release
+    ToolEnd,
 }
 
 /// Active tool on the canvas

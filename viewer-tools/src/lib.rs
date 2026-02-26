@@ -1,6 +1,10 @@
 pub mod crop;
 
-use cosmic::{Renderer, iced::Size, iced_widget::canvas::Frame};
+use cosmic::{
+    Renderer,
+    iced::{Point, Size, mouse},
+    iced_widget::canvas::Frame,
+};
 use image::DynamicImage;
 use std::{any::Any, fmt::Debug};
 
@@ -25,4 +29,26 @@ pub trait ToolOperation: Debug {
 
     /// Downcast support for tool-specific config.
     fn as_any_mut(&mut self) -> &mut dyn Any;
+
+    /// Called on left mouse press.
+    fn on_press(&mut self, point: Point, image_size: Size) -> mouse::Interaction {
+        let _ = (point, image_size);
+        mouse::Interaction::default()
+    }
+
+    /// Called on mouse drag while pressed.
+    fn on_drag(&mut self, point: Point, image_size: Size) {
+        let _ = (point, image_size);
+    }
+
+    /// Called on mouse release.
+    fn on_release(&mut self, point: Point, image_size: Size) {
+        let _ = (point, image_size);
+    }
+
+    /// Returns the cursor to show when hovering at this point.
+    fn cursor_at(&self, point: Point) -> mouse::Interaction {
+        let _ = point;
+        mouse::Interaction::default()
+    }
 }

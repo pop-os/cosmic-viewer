@@ -13,7 +13,17 @@ fn main() -> cosmic::iced::Result {
     let settings = cosmic::app::Settings::default();
 
     // Get the image if opened from the file manager or cli
-    let optional_image = std::env::args().nth(1).map(PathBuf::from);
+    let mut optional_image = std::env::args().nth(1).map(PathBuf::from);
+
+    // Make /home/$USER/Pictures the default directory to open to.
+    if let None = optional_image {
+        optional_image = Some(
+            std::env::var("HOME")
+                .map(PathBuf::from)
+                .expect("/home/$USER should exist")
+                .join("Pictures"),
+        );
+    }
 
     cosmic::app::run::<CosmicViewer>(settings, optional_image)
 }
