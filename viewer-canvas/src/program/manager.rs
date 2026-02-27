@@ -14,13 +14,15 @@ use cosmic::{
         layout::Node,
         widget::{Tree, tree},
     },
-    widget::{self, Operation, Widget},
+    widget::{self, Operation, Widget, image::Handle},
 };
+use image::DynamicImage;
 use viewer_tools::ToolOperation;
 
 /// Orchestrator that owns the canvas state, edit operations, and undo/redo history.
 pub struct ViewportManager {
     image: Option<CanvasImage>,
+    working_image: Option<DynamicImage>,
     zoom: f32,
     pan: Vector,
     active_tool: Option<ToolKind>,
@@ -42,6 +44,7 @@ impl ViewportManager {
     pub fn new() -> Self {
         Self {
             image: None,
+            working_image: None,
             zoom: 1.0,
             pan: Vector::ZERO,
             active_tool: None,
@@ -52,16 +55,47 @@ impl ViewportManager {
         }
     }
 
+    pub fn operations(&self) -> &Vec<Box<dyn ToolOperation>> {
+        &self.operations
+    }
+
     pub fn set_image(&mut self, image: Option<CanvasImage>) {
         self.image = image;
         self.zoom = 1.0;
         self.pan = Vector::ZERO;
         self.active_preview = None;
         self.active_tool = None;
+        self.working_image = None;
     }
 
     pub fn image(&self) -> Option<&CanvasImage> {
         self.image.as_ref()
+    }
+
+    pub fn rebuild_image(&mut self, original: &DynamicImage) {
+        let mut working = original.clone();
+        for op in &self.operations {
+            op.apply(&mut working);
+        }
+
+        let rgba = working.to_rgba8();
+        let (width, height) = rgba.dimensions();
+        let handle = Handle::from_rgba(width, height, rgba.into_raw());
+        self.image = Some(CanvasImage {
+            handle,
+            width,
+            height,
+        });
+        self.zoom = 1.0;
+        self.pan = Vector::ZERO;
+
+        self.operations.clear();
+        self.redo_stack.clear();
+        self.working_image = Some(working);
+    }
+
+    pub fn working_image(&self) -> Option<&DynamicImage> {
+        self.working_image.as_ref()
     }
 
     pub fn zoom(&self) -> f32 {
@@ -143,6 +177,7 @@ impl ViewportManager {
         self.operations.clear();
         self.redo_stack.clear();
         self.active_preview = None;
+        self.working_image = None;
     }
 
     /// Set the active tool's live preview; not committed to undo stack.

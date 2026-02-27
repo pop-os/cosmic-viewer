@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 use viewer_canvas::CanvasMessage;
-use viewer_tools::crop::CropRatio;
+use viewer_tools::{
+    annotate::{AnnotateColor, AnnotateTool},
+    crop::CropRatio,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContextMessage {
@@ -24,6 +27,7 @@ pub enum ViewerMessage {
     CloseFile,
     Save,
     SaveAs,
+    SavedAs(PathBuf),
     Share,
     Print,
     Cancelled,
@@ -65,6 +69,11 @@ pub enum ViewportMessage {
 
 #[derive(Debug, Clone)]
 pub enum EditMessage {
+    Annotate,
+    AnnotateCancel,
+    AnnotateApply,
+    AnnotateTool(AnnotateTool),
+    AnnotateColor(AnnotateColor),
     Crop,
     CropApply,
     CropCancel,

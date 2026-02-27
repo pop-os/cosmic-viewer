@@ -1,5 +1,6 @@
-use cosmic::{iced::futures::io::BufReader, widget::image::Handle};
+use cosmic::widget::image::Handle;
 use fast_image_resize::{PixelType, ResizeAlg, ResizeOptions, Resizer, images::Image as FirImage};
+use image::{DynamicImage, RgbaImage};
 use std::{
     fmt::{self, Debug, Formatter},
     fs::File,
@@ -23,6 +24,7 @@ pub enum LoadError {
 #[derive(Clone)]
 pub struct LoadedImage {
     pub handle: Handle,
+    pub image: DynamicImage,
     pub width: u32,
     pub height: u32,
     pub path: PathBuf,
@@ -83,6 +85,7 @@ fn load_image_sync(path: &Path) -> Result<LoadedImage, LoadError> {
 
     Ok(LoadedImage {
         handle,
+        image: img,
         width,
         height,
         path: path.to_path_buf(),
@@ -123,10 +126,15 @@ fn load_jpeg_full(path: &Path) -> Result<LoadedImage, LoadError> {
         .decompress(&jpeg_data, output.as_deref_mut())
         .map_err(|e| LoadError::UnsupportedFormat(format!("JPEG decode error: {}", e)))?;
 
+    let rgba_image = RgbaImage::from_raw(width as u32, height as u32, pixels.clone())
+        .expect("pixel buffer matches dimensions");
+    let dynamic_image = DynamicImage::ImageRgba8(rgba_image);
+
     let handle = Handle::from_rgba(width as u32, height as u32, pixels);
 
     Ok(LoadedImage {
         handle,
+        image: dynamic_image,
         width: width as u32,
         height: height as u32,
         path: path.to_path_buf(),
@@ -168,10 +176,15 @@ fn load_with_zune(path: &Path) -> Result<LoadedImage, LoadError> {
         .next()
         .ok_or_else(|| LoadError::UnsupportedFormat("No pixel data".into()))?;
 
+    let rgba_image = RgbaImage::from_raw(width as u32, height as u32, pixels.clone())
+        .expect("pixel buffer matches dimensions");
+    let dynamic_image = DynamicImage::ImageRgba8(rgba_image);
+
     let handle = Handle::from_rgba(width as u32, height as u32, pixels);
 
     Ok(LoadedImage {
         handle,
+        image: dynamic_image,
         width: width as u32,
         height: height as u32,
         path: path.to_path_buf(),
@@ -180,7 +193,7 @@ fn load_with_zune(path: &Path) -> Result<LoadedImage, LoadError> {
 
 fn load_with_image(path: &Path) -> Result<LoadedImage, LoadError> {
     let img = image::open(path)?;
-    let rgba = img.into_rgba8();
+    let rgba = img.to_rgba8();
     let (width, height) = rgba.dimensions();
     let pixels = rgba.into_raw();
 
@@ -188,6 +201,7 @@ fn load_with_image(path: &Path) -> Result<LoadedImage, LoadError> {
 
     Ok(LoadedImage {
         handle,
+        image: img,
         width,
         height,
         path: path.to_path_buf(),
@@ -215,9 +229,15 @@ fn load_thumbnail_sync(path: &Path, max_size: u32) -> Result<LoadedImage, LoadEr
     // 1. For JPEGs, try EXIF thumbnail extraction (very fast, no full decode)
     if matches!(extension.as_str(), "jpg" | "jpeg") {
         if let Ok((width, height, pixels)) = extract_exif_thumbnail(path, max_size) {
-            let handle = Handle::from_rgba(width, height, pixels);
+            let handle = Handle::from_rgba(width, height, pixels.clone());
+
+            let rgba_image = RgbaImage::from_raw(width as u32, height as u32, pixels)
+                .expect("pixel buffer matches dimensions");
+            let dynamic_image = DynamicImage::ImageRgba8(rgba_image);
+
             return Ok(LoadedImage {
                 handle,
+                image: dynamic_image,
                 width,
                 height,
                 path: path.to_path_buf(),
@@ -226,9 +246,15 @@ fn load_thumbnail_sync(path: &Path, max_size: u32) -> Result<LoadedImage, LoadEr
 
         // 2. For JPEGs without EXIF, use turbojpeg with DCT scaling (4-8x faster)
         if let Ok((width, height, pixels)) = decode_jpeg_scaled(path, max_size) {
-            let handle = Handle::from_rgba(width, height, pixels);
+            let handle = Handle::from_rgba(width, height, pixels.clone());
+
+            let rgba_image = RgbaImage::from_raw(width as u32, height as u32, pixels)
+                .expect("pixel buffer matches dimensions");
+            let dynamic_image = DynamicImage::ImageRgba8(rgba_image);
+
             return Ok(LoadedImage {
                 handle,
+                image: dynamic_image,
                 width,
                 height,
                 path: path.to_path_buf(),
@@ -246,10 +272,15 @@ fn load_thumbnail_sync(path: &Path, max_size: u32) -> Result<LoadedImage, LoadEr
         decode_and_resize_image(path, max_size)?
     };
 
-    let handle = Handle::from_rgba(width, height, pixels);
+    let handle = Handle::from_rgba(width, height, pixels.clone());
+
+    let rgba_image = RgbaImage::from_raw(width as u32, height as u32, pixels)
+        .expect("pixel buffer matches dimensions");
+    let dynamic_image = DynamicImage::ImageRgba8(rgba_image);
 
     Ok(LoadedImage {
         handle,
+        image: dynamic_image,
         width,
         height,
         path: path.to_path_buf(),

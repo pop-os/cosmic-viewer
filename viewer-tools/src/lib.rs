@@ -1,3 +1,4 @@
+pub mod annotate;
 pub mod crop;
 
 use cosmic::{
@@ -50,5 +51,11 @@ pub trait ToolOperation: Debug {
     fn cursor_at(&self, point: Point) -> mouse::Interaction {
         let _ = point;
         mouse::Interaction::default()
+    }
+
+    /// Called when the viewport zoom level changes.
+    /// Tools can adjust their coordinates to maintain visual stability.
+    fn on_zoom_changed(&mut self, old_zoom: f32, new_zoom: f32, image_size: Size) {
+        let _ = (old_zoom, new_zoom, image_size);
     }
 }

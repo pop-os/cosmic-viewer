@@ -21,3 +21,4 @@ rust-embed = "8.11.0"
 tracing.workspace = true
 open = "5.3.3"
 chrono = "0.4.44"
+image.workspace = true

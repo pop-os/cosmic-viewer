@@ -1,4 +1,5 @@
 use cosmic::widget::image::Handle;
+use image::DynamicImage;
 use lru::LruCache;
 use std::{
     collections::HashSet,
@@ -10,6 +11,7 @@ use std::{
 #[derive(Clone)]
 pub struct CachedImage {
     pub handle: Handle,
+    pub image: DynamicImage,
     pub width: u32,
     pub height: u32,
 }

@@ -7,4 +7,5 @@ authors.workspace = true
 
 [dependencies]
 libcosmic.workspace = true
+image.workspace = true
 viewer-tools = { path = "../viewer-tools" }

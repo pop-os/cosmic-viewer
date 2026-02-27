@@ -53,10 +53,8 @@ pub enum CanvasMessage {
 pub enum ToolKind {
     Crop,
     Rotate,
-    Draw,
-    Highlight,
-    Text,
-    Shape,
+    Annotate,
+    Pan,
 }
 
 /// Widget-internal interaction state machine.

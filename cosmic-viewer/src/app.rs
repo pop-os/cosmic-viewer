@@ -10,18 +10,19 @@ use cosmic::{
     cosmic_config::CosmicConfigEntry,
     dialog::file_chooser::{self, FileFilter},
     iced::{
-        Background, Length, Point, Subscription, Vector, alignment::Horizontal, clipboard,
+        Background, Color, Length, Point, Subscription, Vector, alignment::Horizontal, clipboard,
         keyboard::on_key_press,
     },
     iced_core::Border,
     iced_widget::scrollable::{AbsoluteOffset, scroll_to},
     task::future,
     widget::{
-        self, Id, button, column, container, dropdown, icon,
+        self, Id, Space, button, column, container, divider, dropdown, icon,
         menu::{KeyBind, menu_button},
         nav_bar, text, vertical_space,
     },
 };
+use image::DynamicImage;
 use std::{collections::HashMap, path::PathBuf};
 use viewer_canvas::{CanvasImage, CanvasMessage, ToolKind, ViewportManager};
 use viewer_config::ViewerConfig;
@@ -30,7 +31,10 @@ use viewer_core::{
     load_thumbnail, read_dpi, scan_dir,
 };
 use viewer_toolbar::toolbar;
-use viewer_tools::crop::{CropRatio, CropSelection};
+use viewer_tools::{
+    annotate::{AnnotateColor, AnnotateTool, PenPreview},
+    crop::{CropRatio, CropSelection},
+};
 use viewer_widgets::{GridItem, ImageGrid, image_grid::image_grid};
 
 pub struct CosmicViewer {
@@ -45,6 +49,8 @@ pub struct CosmicViewer {
     viewport: ViewportManager,
     context_page: Option<ContextMessage>,
     context_menu_position: Option<Point>,
+    annotate_tool: AnnotateTool,
+    annotate_color: AnnotateColor,
     crop_ratio: CropRatio,
 }
 
@@ -176,6 +182,7 @@ impl CosmicViewer {
                         loaded.path.clone(),
                         CachedImage {
                             handle: loaded.handle,
+                            image: loaded.image,
                             width: loaded.width,
                             height: loaded.height,
                         },
@@ -306,6 +313,7 @@ impl CosmicViewer {
     fn build_toolbar(&self) -> Element<'_, ViewerMessage> {
         match self.viewport.active_tool() {
             Some(ToolKind::Crop) => self.build_crop_toolbar(),
+            Some(ToolKind::Annotate) => self.build_annotate_toolbar(),
             _ => self.build_default_toolbar(),
         }
     }
@@ -324,6 +332,11 @@ impl CosmicViewer {
         let zoom_pct = format!("{}%", (self.viewport.zoom() * 100.0).round() as u32);
 
         toolbar()
+            .start(icon_btn(
+                "edit-symbolic",
+                fl!("toolbar-annotate"),
+                ViewerMessage::Edit(EditMessage::Annotate),
+            ))
             .start(icon_btn(
                 "edit-cut-symbolic",
                 fl!("toolbar-crop"),
@@ -422,6 +435,122 @@ impl CosmicViewer {
             ))
             .into()
     }
+
+    fn build_annotate_toolbar(&self) -> Element<'_, ViewerMessage> {
+        let icon_btn = |name: &'static str,
+                        tooltip: String,
+                        msg: ViewerMessage|
+         -> Element<'_, ViewerMessage> {
+            button::icon(icon::from_name(name))
+                .tooltip(tooltip)
+                .on_press(msg)
+                .into()
+        };
+
+        let mut toolbar = toolbar()
+            .start(icon_btn(
+                "edit-undo-symbolic",
+                fl!("menu-undo"),
+                ViewerMessage::Edit(EditMessage::Undo),
+            ))
+            .start(icon_btn(
+                "edit-redo-symbolic",
+                fl!("menu-redo"),
+                ViewerMessage::Edit(EditMessage::Redo),
+            ))
+            .start(divider::vertical::light().height(Length::Fixed(24.0)))
+            .center(icon_btn(
+                AnnotateTool::Text.icon_name(),
+                fl!("text-tool"),
+                ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Text)),
+            ))
+            .center(dropdown(
+                vec![fl!("drawing-pen"), fl!("drawing-pencil")],
+                AnnotateTool::draw_tools()
+                    .iter()
+                    .position(|tool| *tool == self.annotate_tool),
+                |idx| {
+                    ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::draw_tools()[idx]))
+                },
+            ))
+            .center(icon_btn(
+                AnnotateTool::Highlighter.icon_name(),
+                fl!("drawing-highlighter"),
+                ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Highlighter)),
+            ))
+            .center(dropdown(
+                vec![
+                    fl!("shapes-rectangle"),
+                    fl!("shapes-ellipse"),
+                    fl!("shapes-line"),
+                    fl!("shapes-arrow"),
+                    fl!("shapes-polygon"),
+                    fl!("shapes-star"),
+                ],
+                AnnotateTool::shape_tools()
+                    .iter()
+                    .position(|tool| *tool == self.annotate_tool),
+                |idx| {
+                    ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::shape_tools()[idx]))
+                },
+            ))
+            .center(divider::vertical::light().height(Length::Fixed(24.0)));
+
+        let colors = AnnotateColor::presets();
+        for color in &colors {
+            let c = *color;
+            let is_selected = c == self.annotate_color;
+            toolbar = toolbar.center(
+                button::custom(container(Space::new(12, 12)).class(
+                    cosmic::theme::Container::custom(move |_theme| container::Style {
+                        background: Some(Background::Color(c.0)),
+                        border: Border {
+                            radius: 6.0.into(),
+                            width: if is_selected { 2.0 } else { 1.0 },
+                            color: if is_selected {
+                                Color::WHITE
+                            } else {
+                                Color::from_rgba(1.0, 1.0, 1.0, 0.3)
+                            },
+                        },
+                        ..Default::default()
+                    }),
+                ))
+                .on_press(ViewerMessage::Edit(EditMessage::AnnotateColor(c))),
+            );
+        }
+
+        toolbar = toolbar
+            .end(icon_btn(
+                "window-close-symbolic",
+                fl!("toolbar-cancel"),
+                ViewerMessage::Edit(EditMessage::AnnotateCancel),
+            ))
+            .end(icon_btn(
+                "object-select-symbolic",
+                fl!("toolbar-apply"),
+                ViewerMessage::Edit(EditMessage::AnnotateApply),
+            ));
+
+        toolbar.into()
+    }
+
+    fn flatten_image(&self) -> Option<DynamicImage> {
+        let base = if let Some(working) = self.viewport.working_image() {
+            working.clone()
+        } else {
+            let current = self.nav.current()?;
+            let cached = self.cache.get_full(&current)?;
+            cached.image.clone()
+        };
+
+        let mut image = base;
+        for op in self.viewport.operations() {
+            op.apply(&mut image);
+        }
+
+        Some(image)
+    }
 }
 
 impl Application for CosmicViewer {
@@ -471,6 +600,8 @@ impl Application for CosmicViewer {
             viewport: ViewportManager::default(),
             context_page: None,
             context_menu_position: None,
+            annotate_tool: AnnotateTool::default(),
+            annotate_color: AnnotateColor::default(),
             crop_ratio: CropRatio::Custom,
         };
 
@@ -681,8 +812,65 @@ impl Application for CosmicViewer {
             }
             ViewerMessage::Paste => {}
             ViewerMessage::CloseFile => {}
-            ViewerMessage::Save => {}
-            ViewerMessage::SaveAs => {}
+            ViewerMessage::Save => {
+                if let (Some(image), Some(path)) = (self.flatten_image(), self.nav.current()) {
+                    if let Err(e) = image.save(&path) {
+                        tracing::error!("Failed to save image: {e}");
+                    } else {
+                        self.viewport.revert_all();
+                        self.cache.remove_full(&path);
+                        self.viewport.cancel_tool();
+                        tasks.push(self.load_full_image(path.clone()));
+                    }
+                }
+            }
+            ViewerMessage::SaveAs => {
+                let suggested = self
+                    .nav
+                    .current()
+                    .and_then(|path| {
+                        path.file_name()
+                            .map(|name| name.to_string_lossy().to_string())
+                    })
+                    .unwrap_or_else(|| "image.png".to_string());
+
+                return future(async move {
+                    let dialog = file_chooser::save::Dialog::new()
+                        .title("Save Image As...".to_string())
+                        .file_name(suggested);
+
+                    match dialog.save_file().await {
+                        Ok(response) => {
+                            if let Ok(path) = response
+                                .url()
+                                .expect("response.url should be vaild")
+                                .to_file_path()
+                            {
+                                Action::App(ViewerMessage::SavedAs(path))
+                            } else {
+                                Action::App(ViewerMessage::Cancelled)
+                            }
+                        }
+                        Err(file_chooser::Error::Cancelled) => {
+                            Action::App(ViewerMessage::Cancelled)
+                        }
+                        Err(e) => {
+                            tracing::error!("Save dialog error: {e}");
+                            Action::App(ViewerMessage::Cancelled)
+                        }
+                    }
+                });
+            }
+            ViewerMessage::SavedAs(path) => {
+                if let Some(image) = self.flatten_image()
+                    && let Err(e) = image.save(&path)
+                {
+                    tracing::error!("Failed to save image: {e}");
+                }
+
+                self.viewport.cancel_tool();
+                self.viewport.revert_all();
+            }
             ViewerMessage::Share => {}
             ViewerMessage::Print => {}
             ViewerMessage::Cancelled => {}
@@ -722,7 +910,10 @@ impl Application for CosmicViewer {
                         let path = path.clone();
                         self.grid.set_focused(Some(idx));
                         self.grid.set_selected(vec![idx]);
+
+                        // Clear any tool and any unsaved tool operations
                         self.viewport.cancel_tool();
+                        self.viewport.revert_all();
 
                         if let Some(cached) = self.cache.get_full(&path) {
                             self.viewport.set_image(Some(CanvasImage {
@@ -795,15 +986,25 @@ impl Application for CosmicViewer {
             }
             ViewerMessage::Canvas(msg) => match msg {
                 CanvasMessage::ContextMenu(point) => self.context_menu_position = point,
-                CanvasMessage::ZoomIn => self
-                    .viewport
-                    .set_zoom((self.viewport.zoom() * 1.25).min(10.0)),
-                CanvasMessage::ZoomOut => {
-                    let new_zoom = (self.viewport.zoom() / 1.25).max(1.0);
-                    self.viewport.set_zoom(new_zoom);
-                    if new_zoom <= 1.0 {
-                        self.viewport.set_pan(Vector::ZERO);
+                CanvasMessage::ZoomIn => {
+                    let old_zoom = self.viewport.zoom();
+                    let new_zoom = (old_zoom * 1.25).min(10.0);
+                    if let Some(size) = self.viewport.image_size()
+                        && let Some(preview) = self.viewport.preview_mut()
+                    {
+                        preview.on_zoom_changed(old_zoom, new_zoom, size);
                     }
+                    self.viewport.set_zoom(new_zoom);
+                }
+                CanvasMessage::ZoomOut => {
+                    let old_zoom = self.viewport.zoom();
+                    let new_zoom = (old_zoom * 1.25).min(1.0);
+                    if let Some(size) = self.viewport.image_size()
+                        && let Some(preview) = self.viewport.preview_mut()
+                    {
+                        preview.on_zoom_changed(old_zoom, new_zoom, size);
+                    }
+                    self.viewport.set_zoom(new_zoom);
                 }
                 CanvasMessage::Pan(pan) => self.viewport.set_pan(pan),
                 CanvasMessage::FitToView => {}
@@ -830,11 +1031,52 @@ impl Application for CosmicViewer {
                     {
                         preview.on_release(Point::ORIGIN, size);
                     }
+
+                    // Auto-commit for annotation, each stroke goes on the undo stack
+                    if self.viewport.active_tool() == Some(ToolKind::Annotate) {
+                        self.viewport.apply_tool();
+                        self.viewport.set_active_tool(Some(ToolKind::Annotate));
+                        self.viewport.set_preview(Some(Box::new(PenPreview::new(
+                            self.annotate_color.0,
+                            2.0,
+                        ))));
+                    }
                 }
             },
             ViewerMessage::Edit(msg) => {
                 self.context_menu_position = None;
                 match msg {
+                    EditMessage::Annotate => {
+                        if self.viewport.active_tool() != Some(ToolKind::Annotate) {
+                            self.viewport.set_active_tool(Some(ToolKind::Annotate));
+                            self.viewport.set_preview(Some(Box::new(PenPreview::new(
+                                self.annotate_color.0,
+                                2.0,
+                            ))));
+                        }
+                    }
+                    EditMessage::AnnotateApply => {
+                        self.viewport.set_active_tool(None);
+                        self.viewport.set_preview(None);
+                    }
+                    EditMessage::AnnotateCancel => {
+                        self.viewport.cancel_tool();
+                        self.viewport.revert_all();
+                    }
+                    EditMessage::AnnotateTool(tool) => {
+                        self.annotate_tool = tool;
+                        // TODO: swap preview type when other tools are implemented
+                    }
+                    EditMessage::AnnotateColor(color) => {
+                        self.annotate_color = color;
+
+                        // Update the active preview's color if one exists
+                        if let Some(preview) = self.viewport.preview_mut()
+                            && let Some(pen) = preview.as_any_mut().downcast_mut::<PenPreview>()
+                        {
+                            pen.color = color.0;
+                        }
+                    }
                     EditMessage::Crop => {
                         if self.viewport.active_tool() != Some(ToolKind::Crop) {
                             self.viewport.set_active_tool(Some(ToolKind::Crop));
@@ -847,9 +1089,21 @@ impl Application for CosmicViewer {
                         }
                     }
                     EditMessage::CropApply => {
-                        self.viewport.apply_tool();
+                        if self.viewport.apply_tool()
+                            && let Some(current) = self.nav.current()
+                            && let Some(cached) = self.cache.get_full(&current)
+                        {
+                            self.viewport.rebuild_image(&cached.image);
+                        }
                     }
-                    EditMessage::CropCancel => self.viewport.cancel_tool(),
+                    EditMessage::CropCancel => {
+                        self.viewport.cancel_tool();
+                        if let Some(current) = self.nav.current() {
+                            self.viewport.revert_all();
+                            self.cache.remove_full(&current);
+                            tasks.push(self.load_full_image(current.to_path_buf()));
+                        }
+                    }
                     EditMessage::CropRatio(ratio) => {
                         let size = self.viewport.image_size();
                         if let Some(preview) = self.viewport.preview_mut()

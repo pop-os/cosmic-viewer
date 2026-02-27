@@ -39,6 +39,7 @@ menu-fullscreen = Fullscreen
 
 # Toolbar
 toolbar-crop = Crop
+toolbar-annotate = Annotate
 toolbar-apply = Apply
 toolbar-cancel = Cancel
 toolbar-rotate-left = Rotate Left
@@ -57,7 +58,11 @@ shapes-ellipse = Ellipse
 shapes-polygon = Polygon
 shapes-star = Star
 
+# Text tool
+text-tool = Text
+
 # Drawing Tool
+drawing-highlighter = Highlighter
 drawing-pen = Pen
 drawing-pencil = Pencil
 
