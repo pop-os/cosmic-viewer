@@ -26,6 +26,7 @@ pub struct ViewportManager {
     zoom: f32,
     pan: Vector,
     active_tool: Option<ToolKind>,
+    stroke: usize,
     pub tool_dragging: bool,
     /// Committed operations (undo stack)
     operations: Vec<Box<dyn ToolOperation>>,
@@ -48,6 +49,7 @@ impl ViewportManager {
             zoom: 1.0,
             pan: Vector::ZERO,
             active_tool: None,
+            stroke: 2,
             tool_dragging: false,
             operations: Vec::new(),
             redo_stack: Vec::new(),

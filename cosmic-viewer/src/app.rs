@@ -10,7 +10,7 @@ use cosmic::{
     cosmic_config::CosmicConfigEntry,
     dialog::file_chooser::{self, FileFilter},
     iced::{
-        Background, Color, Length, Point, Subscription, Vector, alignment::Horizontal, clipboard,
+        Background, Color, Length, Point, Subscription, alignment::Horizontal, clipboard,
         keyboard::on_key_press,
     },
     iced_core::Border,
@@ -32,7 +32,8 @@ use viewer_core::{
 };
 use viewer_toolbar::toolbar;
 use viewer_tools::{
-    annotate::{AnnotateColor, AnnotateTool, PenPreview},
+    ToolOperation,
+    annotate::{AnnotateColor, AnnotateTool, HighlighterPreview, PenPreview, PencilPreview},
     crop::{CropRatio, CropSelection},
 };
 use viewer_widgets::{GridItem, ImageGrid, image_grid::image_grid};
@@ -51,6 +52,7 @@ pub struct CosmicViewer {
     context_menu_position: Option<Point>,
     annotate_tool: AnnotateTool,
     annotate_color: AnnotateColor,
+    annotate_stroke_size: f32,
     crop_ratio: CropRatio,
 }
 
@@ -458,7 +460,6 @@ impl CosmicViewer {
                 fl!("menu-redo"),
                 ViewerMessage::Edit(EditMessage::Redo),
             ))
-            .start(divider::vertical::light().height(Length::Fixed(24.0)))
             .center(icon_btn(
                 AnnotateTool::Text.icon_name(),
                 fl!("text-tool"),
@@ -519,6 +520,15 @@ impl CosmicViewer {
                 .on_press(ViewerMessage::Edit(EditMessage::AnnotateColor(c))),
             );
         }
+
+        let sizes = vec![2., 4., 6., 8., 10.];
+        toolbar = toolbar.center(dropdown(
+            vec!["2px", "4px", "6px", "8px", "10px"],
+            sizes
+                .iter()
+                .position(|size| *size == self.annotate_stroke_size),
+            |idx| ViewerMessage::Edit(EditMessage::AnnotateStroke(idx)),
+        ));
 
         toolbar = toolbar
             .end(icon_btn(
@@ -602,6 +612,7 @@ impl Application for CosmicViewer {
             context_menu_position: None,
             annotate_tool: AnnotateTool::default(),
             annotate_color: AnnotateColor::default(),
+            annotate_stroke_size: 2.,
             crop_ratio: CropRatio::Custom,
         };
 
@@ -1036,10 +1047,21 @@ impl Application for CosmicViewer {
                     if self.viewport.active_tool() == Some(ToolKind::Annotate) {
                         self.viewport.apply_tool();
                         self.viewport.set_active_tool(Some(ToolKind::Annotate));
-                        self.viewport.set_preview(Some(Box::new(PenPreview::new(
-                            self.annotate_color.0,
-                            2.0,
-                        ))));
+                        let preview: Box<dyn ToolOperation> = match self.annotate_tool {
+                            AnnotateTool::Highlighter => Box::new(HighlighterPreview::new(
+                                self.annotate_color.0,
+                                self.annotate_stroke_size,
+                            )),
+                            AnnotateTool::Pencil => Box::new(PencilPreview::new(
+                                self.annotate_color.0,
+                                self.annotate_stroke_size,
+                            )),
+                            _ => Box::new(PenPreview::new(
+                                self.annotate_color.0,
+                                self.annotate_stroke_size,
+                            )),
+                        };
+                        self.viewport.set_preview(Some(preview));
                     }
                 }
             },
@@ -1063,18 +1085,67 @@ impl Application for CosmicViewer {
                         self.viewport.cancel_tool();
                         self.viewport.revert_all();
                     }
+                    EditMessage::AnnotateStroke(size) => {
+                        let sizes: [f32; 5] = [2., 4., 6., 8., 10.];
+                        if let Some(&size) = sizes.get(size) {
+                            self.annotate_stroke_size = size;
+                            if let Some(preview) = self.viewport.preview_mut() {
+                                if let Some(pen) = preview.as_any_mut().downcast_mut::<PenPreview>()
+                                {
+                                    pen.width = size;
+                                } else if let Some(pencil) =
+                                    preview.as_any_mut().downcast_mut::<PencilPreview>()
+                                {
+                                    pencil.width = size;
+                                } else if let Some(highlighter) =
+                                    preview.as_any_mut().downcast_mut::<HighlighterPreview>()
+                                {
+                                    highlighter.width = size;
+                                }
+                            }
+                        }
+                    }
                     EditMessage::AnnotateTool(tool) => {
                         self.annotate_tool = tool;
-                        // TODO: swap preview type when other tools are implemented
+                        match tool {
+                            AnnotateTool::Highlighter => {
+                                self.viewport
+                                    .set_preview(Some(Box::new(HighlighterPreview::new(
+                                        self.annotate_color.0,
+                                        self.annotate_stroke_size,
+                                    ))));
+                            }
+                            AnnotateTool::Pen => {
+                                self.viewport.set_preview(Some(Box::new(PenPreview::new(
+                                    self.annotate_color.0,
+                                    self.annotate_stroke_size,
+                                ))));
+                            }
+                            AnnotateTool::Pencil => {
+                                self.viewport.set_preview(Some(Box::new(PencilPreview::new(
+                                    self.annotate_color.0,
+                                    self.annotate_stroke_size,
+                                ))));
+                            }
+                            _ => {}
+                        }
                     }
                     EditMessage::AnnotateColor(color) => {
                         self.annotate_color = color;
 
                         // Update the active preview's color if one exists
-                        if let Some(preview) = self.viewport.preview_mut()
-                            && let Some(pen) = preview.as_any_mut().downcast_mut::<PenPreview>()
-                        {
-                            pen.color = color.0;
+                        if let Some(preview) = self.viewport.preview_mut() {
+                            if let Some(pen) = preview.as_any_mut().downcast_mut::<PenPreview>() {
+                                pen.color = color.0;
+                            } else if let Some(pencil) =
+                                preview.as_any_mut().downcast_mut::<PencilPreview>()
+                            {
+                                pencil.color = color.0;
+                            } else if let Some(highlighter) =
+                                preview.as_any_mut().downcast_mut::<HighlighterPreview>()
+                            {
+                                highlighter.color = color.0;
+                            }
                         }
                     }
                     EditMessage::Crop => {

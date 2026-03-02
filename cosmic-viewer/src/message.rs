@@ -74,6 +74,7 @@ pub enum EditMessage {
     AnnotateApply,
     AnnotateTool(AnnotateTool),
     AnnotateColor(AnnotateColor),
+    AnnotateStroke(usize),
     Crop,
     CropApply,
     CropCancel,

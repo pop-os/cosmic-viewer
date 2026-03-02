@@ -2,10 +2,7 @@ use super::PenOperation;
 use crate::ToolOperation;
 use cosmic::{
     Renderer,
-    iced::{
-        Color, Point, Size,
-        mouse::{self, Event as MouseEvent},
-    },
+    iced::{Color, Point, Size, mouse},
     iced_widget::canvas::{Frame, Path, Stroke, path::Builder},
 };
 use image::DynamicImage;
