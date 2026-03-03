@@ -1,3 +1,4 @@
+use cosmic::iced::Size;
 use std::path::PathBuf;
 use viewer_canvas::CanvasMessage;
 use viewer_tools::{
@@ -33,6 +34,8 @@ pub enum ViewerMessage {
     Cancelled,
     Quit,
     Nav(NavMessage),
+    ToolbarOverflowToggle,
+    WindowResized(Size),
     Image(ImageMessage),
     // Context page message passing
     Context(ContextMessage),

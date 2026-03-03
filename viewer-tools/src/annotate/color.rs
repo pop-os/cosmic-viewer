@@ -10,7 +10,7 @@ impl AnnotateColor {
             AnnotateColor(Color::WHITE),
             AnnotateColor(Color::from_rgb(1.0, 0.0, 0.0)), // Red
             AnnotateColor(Color::from_rgb(1.0, 0.65, 0.0)), // Orange
-            AnnotateColor(Color::from_rgb(0.0, 0.1, 0.0)), // Green
+            AnnotateColor(Color::from_rgb(0.0, 1.0, 0.0)), // Green
             AnnotateColor(Color::from_rgb(0.0, 0.0, 1.0)), // Blue
             AnnotateColor(Color::BLACK),
         ]
