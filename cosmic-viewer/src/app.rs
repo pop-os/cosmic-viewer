@@ -33,7 +33,10 @@ use viewer_core::{
 use viewer_toolbar::{ItemPriority, ToolbarItem, ToolbarMode, responsive_toolbar};
 use viewer_tools::{
     ToolOperation,
-    annotate::{AnnotateColor, AnnotateTool, HighlighterPreview, PenPreview, PencilPreview},
+    annotate::{
+        AnnotateColor, AnnotateTool, HighlighterPreview, PenPreview, PencilPreview, ShapeKind,
+        ShapePreview,
+    },
     crop::{CropRatio, CropSelection},
     rotate::{RotateDirection, RotateOperation},
 };
@@ -633,10 +636,10 @@ impl CosmicViewer {
                     vec![
                         fl!("shapes-rectangle"),
                         fl!("shapes-ellipse"),
-                        fl!("shapes-line"),
                         fl!("shapes-arrow"),
-                        fl!("shapes-polygon"),
+                        fl!("shapes-line"),
                         fl!("shapes-star"),
+                        fl!("shapes-polygon"),
                     ],
                     AnnotateTool::shape_tools()
                         .iter()
@@ -1248,6 +1251,27 @@ impl Application for CosmicViewer {
                                 self.annotate_color.0,
                                 self.annotate_stroke_size,
                             )),
+                            AnnotateTool::Rectangle
+                            | AnnotateTool::Ellipse
+                            | AnnotateTool::Line
+                            | AnnotateTool::Arrow
+                            | AnnotateTool::Star
+                            | AnnotateTool::Polygon => {
+                                let kind = match self.annotate_tool {
+                                    AnnotateTool::Rectangle => ShapeKind::Rectangle,
+                                    AnnotateTool::Ellipse => ShapeKind::Ellipse,
+                                    AnnotateTool::Line => ShapeKind::Line,
+                                    AnnotateTool::Arrow => ShapeKind::Arrow,
+                                    AnnotateTool::Star => ShapeKind::Star,
+                                    AnnotateTool::Polygon => ShapeKind::Polygon,
+                                    _ => unreachable!(),
+                                };
+                                Box::new(ShapePreview::new(
+                                    kind,
+                                    self.annotate_color.0,
+                                    self.annotate_stroke_size,
+                                ))
+                            }
                             _ => Box::new(PenPreview::new(
                                 self.annotate_color.0,
                                 self.annotate_stroke_size,
@@ -1293,6 +1317,10 @@ impl Application for CosmicViewer {
                                     preview.as_any_mut().downcast_mut::<HighlighterPreview>()
                                 {
                                     highlighter.width = size;
+                                } else if let Some(shape) =
+                                    preview.as_any_mut().downcast_mut::<ShapePreview>()
+                                {
+                                    shape.width = size;
                                 }
                             }
                         }
@@ -1319,6 +1347,27 @@ impl Application for CosmicViewer {
                                     self.annotate_stroke_size,
                                 ))));
                             }
+                            AnnotateTool::Rectangle
+                            | AnnotateTool::Ellipse
+                            | AnnotateTool::Line
+                            | AnnotateTool::Arrow
+                            | AnnotateTool::Star
+                            | AnnotateTool::Polygon => {
+                                let kind = match tool {
+                                    AnnotateTool::Rectangle => ShapeKind::Rectangle,
+                                    AnnotateTool::Ellipse => ShapeKind::Ellipse,
+                                    AnnotateTool::Line => ShapeKind::Line,
+                                    AnnotateTool::Arrow => ShapeKind::Arrow,
+                                    AnnotateTool::Star => ShapeKind::Star,
+                                    AnnotateTool::Polygon => ShapeKind::Polygon,
+                                    _ => unreachable!(),
+                                };
+                                self.viewport.set_preview(Some(Box::new(ShapePreview::new(
+                                    kind,
+                                    self.annotate_color.0,
+                                    self.annotate_stroke_size,
+                                ))));
+                            }
                             _ => {}
                         }
                     }
@@ -1337,6 +1386,10 @@ impl Application for CosmicViewer {
                                 preview.as_any_mut().downcast_mut::<HighlighterPreview>()
                             {
                                 highlighter.color = color.0;
+                            } else if let Some(shape) =
+                                preview.as_any_mut().downcast_mut::<ShapePreview>()
+                            {
+                                shape.color = color.0;
                             }
                         }
                     }

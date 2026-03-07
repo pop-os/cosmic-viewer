@@ -7,4 +7,5 @@ pub use tool::{
     highlighter::{HighlighterOperation, HighlighterPreview},
     pen::{PenOperation, PenPreview},
     pencil::{PencilOperation, PencilPreview},
+    shapes::{ShapeKind, ShapeOperation, ShapePreview},
 };
