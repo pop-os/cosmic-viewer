@@ -169,6 +169,110 @@ pub fn init_keybinds() -> HashMap<KeyBind, MenuAction> {
         MenuAction::Quit,
     );
 
+    binds.insert(
+        KeyBind {
+            modifiers: vec![Modifier::Ctrl],
+            key: Key::Character("0".into()),
+        },
+        MenuAction::FitToView,
+    );
+
+    binds.insert(
+        KeyBind {
+            modifiers: vec![],
+            key: Key::Named(Named::F11),
+        },
+        MenuAction::Fullscreen,
+    );
+
+    binds.insert(
+        KeyBind {
+            modifiers: vec![],
+            key: Key::Character("+".into()),
+        },
+        MenuAction::ZoomIn,
+    );
+
+    binds.insert(
+        KeyBind {
+            modifiers: vec![],
+            key: Key::Character("-".into()),
+        },
+        MenuAction::ZoomOut,
+    );
+
+    binds.insert(
+        KeyBind {
+            modifiers: vec![Modifier::Ctrl],
+            key: Key::Character("z".into()),
+        },
+        MenuAction::Undo,
+    );
+
+    binds.insert(
+        KeyBind {
+            modifiers: vec![Modifier::Ctrl],
+            key: Key::Character("y".into()),
+        },
+        MenuAction::Redo,
+    );
+
+    binds.insert(
+        KeyBind {
+            modifiers: vec![Modifier::Ctrl, Modifier::Shift],
+            key: Key::Character("z".into()),
+        },
+        MenuAction::RevertAll,
+    );
+
+    binds.insert(
+        KeyBind {
+            modifiers: vec![Modifier::Ctrl],
+            key: Key::Character("x".into()),
+        },
+        MenuAction::Cut,
+    );
+
+    binds.insert(
+        KeyBind {
+            modifiers: vec![Modifier::Ctrl],
+            key: Key::Character("c".into()),
+        },
+        MenuAction::Copy,
+    );
+
+    binds.insert(
+        KeyBind {
+            modifiers: vec![Modifier::Ctrl, Modifier::Shift],
+            key: Key::Character("c".into()),
+        },
+        MenuAction::CopyToClipboard,
+    );
+
+    binds.insert(
+        KeyBind {
+            modifiers: vec![Modifier::Ctrl],
+            key: Key::Character("v".into()),
+        },
+        MenuAction::Paste,
+    );
+
+    binds.insert(
+        KeyBind {
+            modifiers: vec![Modifier::Ctrl],
+            key: Key::Character("r".into()),
+        },
+        MenuAction::RotateRight,
+    );
+
+    binds.insert(
+        KeyBind {
+            modifiers: vec![Modifier::Ctrl, Modifier::Shift],
+            key: Key::Character("r".into()),
+        },
+        MenuAction::RotateLeft,
+    );
+
     binds
 }
 

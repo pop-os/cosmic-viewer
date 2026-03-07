@@ -1,5 +1,6 @@
 pub mod annotate;
 pub mod crop;
+pub mod rotate;
 
 use cosmic::{
     Renderer,

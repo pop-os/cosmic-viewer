@@ -10,7 +10,7 @@ use cosmic::{
     cosmic_config::CosmicConfigEntry,
     dialog::file_chooser::{self, FileFilter},
     iced::{
-        self, Background, Color, Length, Point, Size, Subscription, alignment::Horizontal,
+        self, Background, Color, Length, Point, Size, Subscription, Vector, alignment::Horizontal,
         clipboard, event, keyboard::on_key_press,
     },
     iced_core::Border,
@@ -35,6 +35,7 @@ use viewer_tools::{
     ToolOperation,
     annotate::{AnnotateColor, AnnotateTool, HighlighterPreview, PenPreview, PencilPreview},
     crop::{CropRatio, CropSelection},
+    rotate::{RotateDirection, RotateOperation},
 };
 use viewer_widgets::{GridItem, ImageGrid, image_grid::image_grid};
 
@@ -56,6 +57,7 @@ pub struct CosmicViewer {
     crop_ratio: CropRatio,
     toolbar_overflow_open: bool,
     window_width: Option<f32>,
+    is_fullscreen: bool,
 }
 
 impl CosmicViewer {
@@ -93,6 +95,22 @@ impl CosmicViewer {
         self.grid.set_focused(self.nav.index());
         self.grid
             .set_selected(self.nav.index().into_iter().collect());
+    }
+
+    /// Rebuild the viewport image from the correct base (working_image
+    /// or cache original).
+    /// Used after dimension-changing operations like crop and rotate.
+    fn rebuild_viewport(&mut self) {
+        let base = self.viewport.working_image().cloned().or_else(|| {
+            self.nav
+                .current()
+                .and_then(|path| self.cache.get_full(path))
+                .map(|cached| cached.image.clone())
+        });
+
+        if let Some(base) = base {
+            self.viewport.rebuild_image(&base);
+        }
     }
 
     fn load_nearby_thumbnails(&self, center: usize, radius: usize) -> Task<Action<ViewerMessage>> {
@@ -763,6 +781,7 @@ impl Application for CosmicViewer {
             crop_ratio: CropRatio::Custom,
             toolbar_overflow_open: false,
             window_width: Some(0.0),
+            is_fullscreen: false,
         };
 
         tasks
@@ -1162,7 +1181,7 @@ impl Application for CosmicViewer {
                 }
                 CanvasMessage::ZoomOut => {
                     let old_zoom = self.viewport.zoom();
-                    let new_zoom = (old_zoom * 1.25).min(1.0);
+                    let new_zoom = (old_zoom / 1.25).max(0.1);
                     if let Some(size) = self.viewport.image_size()
                         && let Some(preview) = self.viewport.preview_mut()
                     {
@@ -1171,8 +1190,28 @@ impl Application for CosmicViewer {
                     self.viewport.set_zoom(new_zoom);
                 }
                 CanvasMessage::Pan(pan) => self.viewport.set_pan(pan),
-                CanvasMessage::FitToView => {}
-                CanvasMessage::Fullscreen => {}
+                CanvasMessage::FitToView => {
+                    self.viewport.set_zoom(1.0);
+                    self.viewport.set_pan(Vector::ZERO);
+                }
+                CanvasMessage::Fullscreen => {
+                    self.is_fullscreen = !self.is_fullscreen;
+                    if let Some(window_id) = self.core.main_window_id() {
+                        return if self.is_fullscreen {
+                            self.core.set_header_title(String::new());
+                            cosmic::iced::window::change_mode(
+                                window_id,
+                                cosmic::iced::window::Mode::Fullscreen,
+                            )
+                        } else {
+                            self.core.set_header_title(fl!("app-title"));
+                            cosmic::iced::window::change_mode(
+                                window_id,
+                                cosmic::iced::window::Mode::Windowed,
+                            )
+                        };
+                    }
+                }
                 CanvasMessage::ToolStart(point) => {
                     if let Some(size) = self.viewport.image_size()
                         && let Some(preview) = self.viewport.preview_mut()
@@ -1313,11 +1352,8 @@ impl Application for CosmicViewer {
                         }
                     }
                     EditMessage::CropApply => {
-                        if self.viewport.apply_tool()
-                            && let Some(current) = self.nav.current()
-                            && let Some(cached) = self.cache.get_full(&current)
-                        {
-                            self.viewport.rebuild_image(&cached.image);
+                        if self.viewport.apply_tool() {
+                            self.rebuild_viewport();
                         }
                     }
                     EditMessage::CropCancel => {
@@ -1338,8 +1374,18 @@ impl Application for CosmicViewer {
                             self.crop_ratio = ratio;
                         }
                     }
-                    EditMessage::RotateLeft => {}
-                    EditMessage::RotateRight => {}
+                    EditMessage::RotateLeft => {
+                        self.viewport.cancel_tool();
+                        self.viewport
+                            .commit(Box::new(RotateOperation::new(RotateDirection::Left)));
+                        self.rebuild_viewport();
+                    }
+                    EditMessage::RotateRight => {
+                        self.viewport.cancel_tool();
+                        self.viewport
+                            .commit(Box::new(RotateOperation::new(RotateDirection::Right)));
+                        self.rebuild_viewport();
+                    }
                     EditMessage::Undo => self.viewport.undo(),
                     EditMessage::Redo => self.viewport.redo(),
                     EditMessage::RevertAll => self.viewport.revert_all(),
