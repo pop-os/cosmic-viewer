@@ -1,6 +1,9 @@
-use cosmic::iced::{
-    Size,
-    keyboard::{Key, Modifiers},
+use cosmic::{
+    iced::{
+        Size,
+        keyboard::{Key, Modifiers},
+    },
+    iced_core::SmolStr,
 };
 use std::path::PathBuf;
 use viewer_canvas::CanvasMessage;
@@ -39,7 +42,7 @@ pub enum ViewerMessage {
     Nav(NavMessage),
     ToolbarOverflowToggle,
     WindowResized(Size),
-    KeyPressed(Key, Modifiers),
+    KeyPressed(Key, Modifiers, Option<SmolStr>),
     Image(ImageMessage),
     // Context page message passing
     Context(ContextMessage),

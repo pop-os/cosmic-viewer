@@ -3,7 +3,10 @@ use crate::ToolOperation;
 use cosmic::{
     Renderer,
     iced::{Color, Point, Size, mouse},
-    iced_widget::canvas::{self, Frame},
+    iced_widget::{
+        canvas::{self, Frame},
+        graphics::text::{cosmic_text, font_system},
+    },
 };
 use image::DynamicImage;
 use std::any::Any;
@@ -53,8 +56,32 @@ impl TextPreview {
     }
 
     /// Rough text widgh approximation for cursor placement.
-    fn approx_text_width(&self, scale: f32) -> f32 {
-        self.content.len() as f32 * self.font_size * 0.6 / scale
+    fn measure_text_width(&self) -> f32 {
+        if self.content.is_empty() {
+            return 0.0;
+        }
+
+        let mut font_sys = font_system().write().expect("Write font system");
+
+        let mut buffer_line = cosmic_text::BufferLine::new(
+            &self.content,
+            cosmic_text::LineEnding::default(),
+            cosmic_text::AttrsList::new(&cosmic_text::Attrs::new()),
+            cosmic_text::Shaping::Advanced,
+        );
+
+        let layout = buffer_line.layout(
+            font_sys.raw(),
+            self.font_size,
+            None,
+            cosmic_text::Wrap::None,
+            cosmic_text::Ellipsize::None,
+            None,
+            8,
+            cosmic_text::Hinting::Disabled,
+        );
+
+        layout.first().map_or(0.0, |line| line.w)
     }
 }
 
@@ -88,9 +115,10 @@ impl ToolOperation for TextPreview {
 
         // Draw cursor when editing
         if self.state == TextEditState::Editing {
+            let text_width = self.measure_text_width() / scale;
             let cursor_text = canvas::Text {
                 content: "|".to_string(),
-                position: Point::new(pos.x + self.approx_text_width(scale), pos.y),
+                position: Point::new(pos.x + text_width, pos.y),
                 color: self.color,
                 size: (self.font_size / scale).into(),
                 ..canvas::Text::default()

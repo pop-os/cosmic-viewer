@@ -994,7 +994,7 @@ impl Application for CosmicViewer {
                 if let Some(dir) = self.nav.dir()
                     && let Err(e) = open::that(dir)
                 {
-                    eprintln!("Failed to open containing folder: {e}");
+                    tracing::error!("Failed to open containing folder: {e}");
                 }
             }
             ViewerMessage::Paste => {}
@@ -1065,22 +1065,34 @@ impl Application for CosmicViewer {
             ViewerMessage::ToolbarOverflowToggle => {
                 self.toolbar_overflow_open = !self.toolbar_overflow_open;
             }
-            ViewerMessage::KeyPressed(key, modifiers) => {
-                if self.text_editing
-                    && let Some(preview) = self.viewport.preview_mut()
-                    && let Some(text_preview) = preview.as_any_mut().downcast_mut::<TextPreview>()
-                {
+            ViewerMessage::KeyPressed(key, modifiers, text) => {
+                let is_text_editing = self.text_editing
+                    && self
+                        .viewport
+                        .preview_mut()
+                        .and_then(|preview| preview.as_any_mut().downcast_mut::<TextPreview>())
+                        .is_some();
+
+                let preview = self
+                    .viewport
+                    .preview_mut()
+                    .and_then(|preview| preview.as_any_mut().downcast_mut::<TextPreview>());
+
+                if is_text_editing {
                     match &key {
-                        Key::Character(c) if !modifiers.control() && !modifiers.alt() => {
-                            for ch in c.chars() {
-                                text_preview.push_char(ch);
+                        Key::Named(Named::Backspace) => {
+                            if let Some(preview) = preview {
+                                preview.pop_char();
                             }
                         }
-                        Key::Named(Named::Backspace) => text_preview.pop_char(),
-                        Key::Named(Named::Space) => text_preview.push_char(' '),
+                        Key::Named(Named::Space) => {
+                            if let Some(preview) = preview {
+                                preview.push_char(' ');
+                            }
+                        }
                         Key::Named(Named::Enter) => {
+                            let committed = self.viewport.apply_tool();
                             self.text_editing = false;
-                            self.viewport.apply_tool();
                             self.viewport.set_active_tool(Some(ToolKind::Annotate));
                             self.viewport.set_preview(Some(Box::new(TextPreview::new(
                                 self.annotate_color.0,
@@ -1095,9 +1107,19 @@ impl Application for CosmicViewer {
                                 self.annotate_stroke_size * 8.0,
                             ))));
                         }
-                        _ => {}
+                        _ => {
+                            if let Some(txt) = &text
+                                && preview.is_some()
+                            {
+                                if let Some(preview) = preview {
+                                    for ch in txt.chars() {
+                                        preview.push_char(ch);
+                                    }
+                                }
+                            }
+                        }
                     }
-                } else if let Some(msg) = keyboard_shortcut_handler(key, modifiers) {
+                } else if let Some(msg) = keyboard_shortcut_handler(key, modifiers, text) {
                     return self.update(msg);
                 }
             }
@@ -1133,7 +1155,9 @@ impl Application for CosmicViewer {
                     }
                 }
                 NavMessage::GridActivate(idx) => {
-                    if let Some(path) = self.nav.select(idx) {
+                    if !self.text_editing
+                        && let Some(path) = self.nav.select(idx)
+                    {
                         let path = path.clone();
                         self.grid.set_focused(Some(idx));
                         self.grid.set_selected(vec![idx]);
@@ -1524,15 +1548,18 @@ impl Application for CosmicViewer {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        Subscription::batch([
-            on_key_press(|key, modifiers| Some(ViewerMessage::KeyPressed(key, modifiers))),
-            event::listen_with(|event, _status, _id| match event {
-                iced::Event::Window(iced::window::Event::Resized(size)) => {
-                    Some(ViewerMessage::WindowResized(size))
-                }
-                _ => None,
-            }),
-        ])
+        Subscription::batch([event::listen_with(|event, _status, _id| match event {
+            iced::Event::Window(iced::window::Event::Resized(size)) => {
+                Some(ViewerMessage::WindowResized(size))
+            }
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key,
+                modifiers,
+                text,
+                ..
+            }) => Some(ViewerMessage::KeyPressed(key, modifiers, text)),
+            _ => None,
+        })])
     }
 }
 

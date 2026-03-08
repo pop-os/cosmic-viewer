@@ -1,6 +1,7 @@
 use crate::message::{ContextMessage, EditMessage, ViewerMessage};
 use cosmic::{
     iced::keyboard::{Key, Modifiers, key::Named},
+    iced_core::SmolStr,
     widget::menu::{
         Action,
         key_bind::{KeyBind, Modifier},
@@ -273,7 +274,11 @@ pub fn init_keybinds() -> HashMap<KeyBind, MenuAction> {
     binds
 }
 
-pub fn keyboard_shortcut_handler(key: Key, modifiers: Modifiers) -> Option<ViewerMessage> {
+pub fn keyboard_shortcut_handler(
+    key: Key,
+    modifiers: Modifiers,
+    _text: Option<SmolStr>,
+) -> Option<ViewerMessage> {
     let mut mods = vec![];
 
     if modifiers.control() {
