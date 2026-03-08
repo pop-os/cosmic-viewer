@@ -10,14 +10,19 @@ use cosmic::{
     cosmic_config::CosmicConfigEntry,
     dialog::file_chooser::{self, FileFilter},
     iced::{
-        self, Background, Color, Length, Point, Size, Subscription, Vector, alignment::Horizontal,
-        clipboard, event, keyboard::on_key_press,
+        self, Background, Color, Length, Point, Subscription, Vector,
+        alignment::Horizontal,
+        clipboard, event,
+        keyboard::{
+            key::{Key, Named},
+            on_key_press,
+        },
     },
     iced_core::Border,
     iced_widget::scrollable::{AbsoluteOffset, scroll_to},
     task::future,
     widget::{
-        self, Id, Space, button, column, container, divider, dropdown, icon,
+        self, Id, Space, button, column, container, dropdown, icon,
         menu::{KeyBind, menu_button},
         nav_bar, text, vertical_space,
     },
@@ -35,7 +40,7 @@ use viewer_tools::{
     ToolOperation,
     annotate::{
         AnnotateColor, AnnotateTool, HighlighterPreview, PenPreview, PencilPreview, ShapeKind,
-        ShapePreview,
+        ShapePreview, TextOperation, TextPreview,
     },
     crop::{CropRatio, CropSelection},
     rotate::{RotateDirection, RotateOperation},
@@ -58,6 +63,7 @@ pub struct CosmicViewer {
     annotate_color: AnnotateColor,
     annotate_stroke_size: f32,
     crop_ratio: CropRatio,
+    text_editing: bool,
     toolbar_overflow_open: bool,
     window_width: Option<f32>,
     is_fullscreen: bool,
@@ -680,7 +686,7 @@ impl CosmicViewer {
             );
         }
 
-        let sizes = vec![2., 4., 6., 8., 10.];
+        let sizes = [2., 4., 6., 8., 10.];
         toolbar = toolbar.center(
             ToolbarItem::new(dropdown(
                 vec!["2px", "4px", "6px", "8px", "10px"],
@@ -718,7 +724,7 @@ impl CosmicViewer {
             working.clone()
         } else {
             let current = self.nav.current()?;
-            let cached = self.cache.get_full(&current)?;
+            let cached = self.cache.get_full(current)?;
             cached.image.clone()
         };
 
@@ -782,6 +788,7 @@ impl Application for CosmicViewer {
             annotate_color: AnnotateColor::default(),
             annotate_stroke_size: 2.,
             crop_ratio: CropRatio::Custom,
+            text_editing: false,
             toolbar_overflow_open: false,
             window_width: Some(0.0),
             is_fullscreen: false,
@@ -798,7 +805,7 @@ impl Application for CosmicViewer {
     }
 
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
-        vec![menu_bar(&self.core, &self.key_binds, &vec![])]
+        vec![menu_bar(&self.core, &self.key_binds, &[])]
     }
 
     fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Self::Message>> {
@@ -809,8 +816,7 @@ impl Application for CosmicViewer {
         };
 
         let drawer = context_drawer::context_drawer(content, ViewerMessage::Context(page))
-            .title(fl!("menu-image-details"))
-            .into();
+            .title(fl!("menu-image-details"));
         Some(drawer)
     }
 
@@ -899,13 +905,12 @@ impl Application for CosmicViewer {
                         .extension()
                         .and_then(|ext| ext.to_str())
                         .and_then(image_mime_type)
+                    && let Ok(data) = std::fs::read(&path)
                 {
-                    if let Ok(data) = std::fs::read(&path) {
-                        return clipboard::write_data(ClipboardImage {
-                            data,
-                            mime: mime.to_string(),
-                        });
-                    }
+                    return clipboard::write_data(ClipboardImage {
+                        data,
+                        mime: mime.to_string(),
+                    });
                 }
             }
             ViewerMessage::CopyFilePath => {
@@ -986,21 +991,21 @@ impl Application for CosmicViewer {
             ViewerMessage::Open(path) => tasks.push(self.open_path(path)),
             ViewerMessage::OpenRecent(_idx) => {}
             ViewerMessage::OpenContaining => {
-                if let Some(dir) = self.nav.dir() {
-                    if let Err(e) = open::that(dir) {
-                        eprintln!("Failed to open containing folder: {e}");
-                    }
+                if let Some(dir) = self.nav.dir()
+                    && let Err(e) = open::that(dir)
+                {
+                    eprintln!("Failed to open containing folder: {e}");
                 }
             }
             ViewerMessage::Paste => {}
             ViewerMessage::CloseFile => {}
             ViewerMessage::Save => {
                 if let (Some(image), Some(path)) = (self.flatten_image(), self.nav.current()) {
-                    if let Err(e) = image.save(&path) {
+                    if let Err(e) = image.save(path) {
                         tracing::error!("Failed to save image: {e}");
                     } else {
                         self.viewport.revert_all();
-                        self.cache.remove_full(&path);
+                        self.cache.remove_full(path);
                         self.viewport.cancel_tool();
                         tasks.push(self.load_full_image(path.clone()));
                     }
@@ -1059,6 +1064,42 @@ impl Application for CosmicViewer {
             ViewerMessage::Quit => {}
             ViewerMessage::ToolbarOverflowToggle => {
                 self.toolbar_overflow_open = !self.toolbar_overflow_open;
+            }
+            ViewerMessage::KeyPressed(key, modifiers) => {
+                if self.text_editing
+                    && let Some(preview) = self.viewport.preview_mut()
+                    && let Some(text_preview) = preview.as_any_mut().downcast_mut::<TextPreview>()
+                {
+                    match &key {
+                        Key::Character(c) if !modifiers.control() && !modifiers.alt() => {
+                            for ch in c.chars() {
+                                text_preview.push_char(ch);
+                            }
+                        }
+                        Key::Named(Named::Backspace) => text_preview.pop_char(),
+                        Key::Named(Named::Space) => text_preview.push_char(' '),
+                        Key::Named(Named::Enter) => {
+                            self.text_editing = false;
+                            self.viewport.apply_tool();
+                            self.viewport.set_active_tool(Some(ToolKind::Annotate));
+                            self.viewport.set_preview(Some(Box::new(TextPreview::new(
+                                self.annotate_color.0,
+                                self.annotate_stroke_size * 8.0,
+                            ))));
+                        }
+                        Key::Named(Named::Escape) => {
+                            self.text_editing = false;
+                            self.viewport.set_active_tool(Some(ToolKind::Annotate));
+                            self.viewport.set_preview(Some(Box::new(TextPreview::new(
+                                self.annotate_color.0,
+                                self.annotate_stroke_size * 8.0,
+                            ))));
+                        }
+                        _ => {}
+                    }
+                } else if let Some(msg) = keyboard_shortcut_handler(key, modifiers) {
+                    return self.update(msg);
+                }
             }
             ViewerMessage::WindowResized(size) => self.window_width = Some(size.width),
             ViewerMessage::Nav(msg) => match msg {
@@ -1238,8 +1279,20 @@ impl Application for CosmicViewer {
                         preview.on_release(Point::ORIGIN, size);
                     }
 
+                    // Set text_editing flag when text preview enters editing mode
+                    if matches!(self.annotate_tool, AnnotateTool::Text) {
+                        if let Some(preview) = self.viewport.preview_mut()
+                            && let Some(text_preview) =
+                                preview.as_any_mut().downcast_mut::<TextPreview>()
+                        {
+                            self.text_editing = text_preview.is_editing();
+                        }
+                    }
+
                     // Auto-commit for annotation, each stroke goes on the undo stack
-                    if self.viewport.active_tool() == Some(ToolKind::Annotate) {
+                    if self.viewport.active_tool() == Some(ToolKind::Annotate)
+                        && !matches!(self.annotate_tool, AnnotateTool::Text)
+                    {
                         self.viewport.apply_tool();
                         self.viewport.set_active_tool(Some(ToolKind::Annotate));
                         let preview: Box<dyn ToolOperation> = match self.annotate_tool {
@@ -1321,6 +1374,10 @@ impl Application for CosmicViewer {
                                     preview.as_any_mut().downcast_mut::<ShapePreview>()
                                 {
                                     shape.width = size;
+                                } else if let Some(text) =
+                                    preview.as_any_mut().downcast_mut::<TextPreview>()
+                                {
+                                    text.font_size = size * 8.0;
                                 }
                             }
                         }
@@ -1368,7 +1425,13 @@ impl Application for CosmicViewer {
                                     self.annotate_stroke_size,
                                 ))));
                             }
-                            _ => {}
+                            AnnotateTool::Text => {
+                                self.viewport.set_preview(Some(Box::new(TextPreview::new(
+                                    self.annotate_color.0,
+                                    self.annotate_stroke_size * 8.0,
+                                ))));
+                                self.viewport.set_active_tool(Some(ToolKind::Annotate));
+                            }
                         }
                     }
                     EditMessage::AnnotateColor(color) => {
@@ -1390,6 +1453,10 @@ impl Application for CosmicViewer {
                                 preview.as_any_mut().downcast_mut::<ShapePreview>()
                             {
                                 shape.color = color.0;
+                            } else if let Some(text) =
+                                preview.as_any_mut().downcast_mut::<TextPreview>()
+                            {
+                                text.color = color.0;
                             }
                         }
                     }
@@ -1413,7 +1480,7 @@ impl Application for CosmicViewer {
                         self.viewport.cancel_tool();
                         if let Some(current) = self.nav.current() {
                             self.viewport.revert_all();
-                            self.cache.remove_full(&current);
+                            self.cache.remove_full(current);
                             tasks.push(self.load_full_image(current.to_path_buf()));
                         }
                     }
@@ -1458,7 +1525,7 @@ impl Application for CosmicViewer {
 
     fn subscription(&self) -> Subscription<Self::Message> {
         Subscription::batch([
-            on_key_press(keyboard_shortcut_handler),
+            on_key_press(|key, modifiers| Some(ViewerMessage::KeyPressed(key, modifiers))),
             event::listen_with(|event, _status, _id| match event {
                 iced::Event::Window(iced::window::Event::Resized(size)) => {
                     Some(ViewerMessage::WindowResized(size))
@@ -1524,7 +1591,7 @@ fn format_number(num: u64) -> String {
     let s = num.to_string();
     let mut result = String::with_capacity(s.len() + s.len() / 3);
     for (idx, ch) in s.chars().enumerate() {
-        if idx > 0 && (s.len() - idx) % 3 == 0 {
+        if idx > 0 && (s.len() - idx).is_multiple_of(3) {
             result.push(',');
         }
 

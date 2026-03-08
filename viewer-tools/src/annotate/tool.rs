@@ -4,8 +4,6 @@ pub mod pencil;
 pub mod shapes;
 pub mod text;
 
-pub use pen::{PenOperation, PenPreview};
-pub use shapes::{ShapeKind, ShapeOperation, ShapePreview};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AnnotateTool {

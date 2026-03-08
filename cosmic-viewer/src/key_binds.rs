@@ -1,7 +1,4 @@
-use crate::{
-    key_binds,
-    message::{ContextMessage, EditMessage, ViewerMessage},
-};
+use crate::message::{ContextMessage, EditMessage, ViewerMessage};
 use cosmic::{
     iced::keyboard::{Key, Modifiers, key::Named},
     widget::menu::{
