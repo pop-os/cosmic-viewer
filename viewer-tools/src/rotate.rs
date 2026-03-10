@@ -9,6 +9,15 @@ pub enum RotateDirection {
     Right,
 }
 
+impl RotateDirection {
+    pub fn inverse(&self) -> Self {
+        match self {
+            RotateDirection::Left => RotateDirection::Right,
+            RotateDirection::Right => RotateDirection::Left,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RotateOperation {
     pub direction: RotateDirection,
@@ -34,6 +43,10 @@ impl ToolOperation for RotateOperation {
 
     fn commit(&self) -> Option<Box<dyn ToolOperation>> {
         None
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {

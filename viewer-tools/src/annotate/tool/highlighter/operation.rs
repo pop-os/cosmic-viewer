@@ -1,12 +1,18 @@
-use crate::ToolOperation;
+use std::any::Any;
+
+use crate::{
+    ToolOperation,
+    renderer::{build_path, stroke_on_image},
+    rotate::RotateDirection,
+};
 use cosmic::{
     Renderer,
-    iced::{Color, Point, Size},
+    iced::{Color, Point, Rectangle, Size},
     iced_widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
     widget::canvas::LineJoin,
 };
-use image::{DynamicImage, Rgba};
-use imageproc::{drawing::draw_antialiased_line_segment_mut, pixelops::interpolate};
+use image::DynamicImage;
+use tiny_skia::LineCap as SkiaLineCap;
 
 /// Highlighter transparency factor
 const HIGHLIGHT_ALPHA: f32 = 0.35;
@@ -75,29 +81,52 @@ impl ToolOperation for HighlighterOperation {
             return;
         }
 
-        let rgba_img = image.as_mut_rgba8().expect("image should be RGBA");
-        let alpha = self.color.a * HIGHLIGHT_ALPHA;
-        let color = Rgba([
-            (self.color.r * 255.0) as u8,
-            (self.color.g * 255.0) as u8,
-            (self.color.b * 255.0) as u8,
-            (alpha * 255.0) as u8,
-        ]);
+        let Some(path) = build_path(|path_builder| {
+            path_builder.move_to(self.points[0].x, self.points[0].y);
+            for point in &self.points[1..] {
+                path_builder.line_to(point.x, point.y);
+            }
+        }) else {
+            return;
+        };
 
-        for pair in self.points.windows(2) {
-            let start = (pair[0].x as i32, pair[0].y as i32);
-            let end = (pair[1].x as i32, pair[1].y as i32);
-            draw_antialiased_line_segment_mut(rgba_img, start, end, color, interpolate);
-        }
-
-        *image = DynamicImage::ImageRgba8(rgba_img.clone());
+        stroke_on_image(
+            image,
+            &path,
+            self.highlight_color(),
+            self.width,
+            SkiaLineCap::Square,
+        );
     }
 
     fn commit(&self) -> Option<Box<dyn ToolOperation>> {
         None
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+    fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn transform_rotate(&mut self, direction: RotateDirection, image_size: Size) {
+        let (width, height) = (image_size.width, image_size.height);
+        for point in &mut self.points {
+            let (x, y) = (point.x, point.y);
+
+            *point = match direction {
+                RotateDirection::Left => Point::new(y, width - x),
+                RotateDirection::Right => Point::new(height - y, x),
+            }
+        }
+    }
+
+    fn transform_crop(&mut self, region: Rectangle) {
+        for point in &mut self.points {
+            point.x -= region.x;
+            point.y -= region.y;
+        }
     }
 }

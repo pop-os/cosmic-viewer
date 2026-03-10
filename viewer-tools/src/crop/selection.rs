@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use super::{handle::DragHandle, ratio::CropRatio};
 use crate::{ToolOperation, crop::CropOperation};
 use cosmic::{
@@ -26,6 +28,12 @@ pub struct CropSelection {
     drag_start_region: Rectangle,
     /// Whether the selection is visible
     pub visible: bool,
+}
+
+impl Default for CropSelection {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CropSelection {
@@ -155,8 +163,8 @@ impl CropSelection {
         height = height.max(MIN_SIZE);
 
         // Enforce aspect ratio constraint
-        if let Some(aspect) = self.ratio.resolve(image_size) {
-            if !matches!(self.active_handle, DragHandle::Move) {
+        if let Some(aspect) = self.ratio.resolve(image_size)
+            && !matches!(self.active_handle, DragHandle::Move) {
                 // Width-dominant: adjust height to match ratio
                 height = width / aspect;
                 if height > image_size.height {
@@ -164,7 +172,6 @@ impl CropSelection {
                     width = height * aspect;
                 }
             }
-        }
 
         // Clamp to image bounds
         x = x.clamp(0.0, (image_size.width - width).max(0.0));
@@ -442,11 +449,15 @@ impl ToolOperation for CropSelection {
         }
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+    fn as_any(&self) -> &dyn Any {
         self
     }
 
-    fn on_press(&mut self, point: Point, image_size: Size) -> mouse::Interaction {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn on_press(&mut self, point: Point, _image_size: Size) -> mouse::Interaction {
         let handle = self.hit_test(point);
         if handle != DragHandle::None {
             self.start_handle_drag(handle, point);

@@ -8,4 +8,4 @@ authors.workspace = true
 [dependencies]
 libcosmic.workspace = true
 image.workspace = true
-imageproc = "0.26.0"
+tiny-skia = "0.12.0"

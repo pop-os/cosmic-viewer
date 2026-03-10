@@ -10,13 +10,10 @@ use cosmic::{
     cosmic_config::CosmicConfigEntry,
     dialog::file_chooser::{self, FileFilter},
     iced::{
-        self, Background, Color, Length, Point, Subscription, Vector,
+        self, Background, Color, Length, Point, Rectangle, Size, Subscription, Vector,
         alignment::Horizontal,
         clipboard, event,
-        keyboard::{
-            key::{Key, Named},
-            on_key_press,
-        },
+        keyboard::key::{Key, Named},
     },
     iced_core::Border,
     iced_widget::scrollable::{AbsoluteOffset, scroll_to},
@@ -40,9 +37,9 @@ use viewer_tools::{
     ToolOperation,
     annotate::{
         AnnotateColor, AnnotateTool, HighlighterPreview, PenPreview, PencilPreview, ShapeKind,
-        ShapePreview, TextOperation, TextPreview,
+        ShapePreview, TextPreview,
     },
-    crop::{CropRatio, CropSelection},
+    crop::{CropOperation, CropRatio, CropSelection},
     rotate::{RotateDirection, RotateOperation},
 };
 use viewer_widgets::{GridItem, ImageGrid, image_grid::image_grid};
@@ -106,19 +103,37 @@ impl CosmicViewer {
             .set_selected(self.nav.index().into_iter().collect());
     }
 
-    /// Rebuild the viewport image from the correct base (working_image
-    /// or cache original).
+    /// Rebuild the working image.
     /// Used after dimension-changing operations like crop and rotate.
-    fn rebuild_viewport(&mut self) {
-        let base = self.viewport.working_image().cloned().or_else(|| {
-            self.nav
-                .current()
-                .and_then(|path| self.cache.get_full(path))
-                .map(|cached| cached.image.clone())
-        });
+    fn rebuild_working_image(&mut self) {
+        let original = self
+            .nav
+            .current()
+            .and_then(|path| self.cache.get_full(path))
+            .map(|cached| cached.image.clone());
 
-        if let Some(base) = base {
-            self.viewport.rebuild_image(&base);
+        if let Some(mut base) = original {
+            for op in self.viewport.operations() {
+                if let Some(rotate) = op.as_any().downcast_ref::<RotateOperation>() {
+                    base = match rotate.direction {
+                        RotateDirection::Left => base.rotate270(),
+                        RotateDirection::Right => base.rotate90(),
+                    };
+                } else if let Some(crop) = op.as_any().downcast_ref::<CropOperation>() {
+                    base = base.crop_imm(
+                        crop.region.x as u32,
+                        crop.region.y as u32,
+                        crop.region.width as u32,
+                        crop.region.height as u32,
+                    );
+                }
+            }
+
+            if let Some(img) = self.viewport.working_image_mut() {
+                *img = base;
+            }
+
+            self.viewport.rebuild_display();
         }
     }
 
@@ -1091,7 +1106,7 @@ impl Application for CosmicViewer {
                             }
                         }
                         Key::Named(Named::Enter) => {
-                            let committed = self.viewport.apply_tool();
+                            self.viewport.apply_tool();
                             self.text_editing = false;
                             self.viewport.set_active_tool(Some(ToolKind::Annotate));
                             self.viewport.set_preview(Some(Box::new(TextPreview::new(
@@ -1110,11 +1125,10 @@ impl Application for CosmicViewer {
                         _ => {
                             if let Some(txt) = &text
                                 && preview.is_some()
+                                && let Some(preview) = preview
                             {
-                                if let Some(preview) = preview {
-                                    for ch in txt.chars() {
-                                        preview.push_char(ch);
-                                    }
+                                for ch in txt.chars() {
+                                    preview.push_char(ch);
                                 }
                             }
                         }
@@ -1127,7 +1141,7 @@ impl Application for CosmicViewer {
             ViewerMessage::Nav(msg) => match msg {
                 NavMessage::ScanComplete(dir, images, select) => {
                     self.viewport.cancel_tool();
-                    self.viewport.set_image(None);
+                    self.viewport.set_image(None, None);
 
                     self.nav.set_images(dir, images, select.as_deref());
                     self.rebuild_grid_items();
@@ -1167,13 +1181,16 @@ impl Application for CosmicViewer {
                         self.viewport.revert_all();
 
                         if let Some(cached) = self.cache.get_full(&path) {
-                            self.viewport.set_image(Some(CanvasImage {
-                                handle: cached.handle,
-                                width: cached.width,
-                                height: cached.height,
-                            }));
+                            self.viewport.set_image(
+                                Some(CanvasImage {
+                                    handle: cached.handle,
+                                    width: cached.width,
+                                    height: cached.height,
+                                }),
+                                Some(cached.image.clone()),
+                            );
                         } else {
-                            self.viewport.set_image(None);
+                            self.viewport.set_image(None, None);
                         }
 
                         tasks.push(self.load_full_image(path));
@@ -1213,11 +1230,14 @@ impl Application for CosmicViewer {
 
                             // Set the selected image to canvas image.
                             if let Some(cached) = self.cache.get_full(&path) {
-                                self.viewport.set_image(Some(CanvasImage {
-                                    handle: cached.handle,
-                                    width: cached.width,
-                                    height: cached.height,
-                                }));
+                                self.viewport.set_image(
+                                    Some(CanvasImage {
+                                        handle: cached.handle,
+                                        width: cached.width,
+                                        height: cached.height,
+                                    }),
+                                    Some(cached.image.clone()),
+                                );
                             }
                         }
                         tasks.push(self.load_nearby_thumbnails(idx, 20));
@@ -1304,13 +1324,12 @@ impl Application for CosmicViewer {
                     }
 
                     // Set text_editing flag when text preview enters editing mode
-                    if matches!(self.annotate_tool, AnnotateTool::Text) {
-                        if let Some(preview) = self.viewport.preview_mut()
-                            && let Some(text_preview) =
-                                preview.as_any_mut().downcast_mut::<TextPreview>()
-                        {
-                            self.text_editing = text_preview.is_editing();
-                        }
+                    if matches!(self.annotate_tool, AnnotateTool::Text)
+                        && let Some(preview) = self.viewport.preview_mut()
+                        && let Some(text_preview) =
+                            preview.as_any_mut().downcast_mut::<TextPreview>()
+                    {
+                        self.text_editing = text_preview.is_editing();
                     }
 
                     // Auto-commit for annotation, each stroke goes on the undo stack
@@ -1496,8 +1515,34 @@ impl Application for CosmicViewer {
                         }
                     }
                     EditMessage::CropApply => {
-                        if self.viewport.apply_tool() {
-                            self.rebuild_viewport();
+                        // Grab the crop region from the live preview
+                        let region = self
+                            .viewport
+                            .preview_mut()
+                            .and_then(|preview| {
+                                preview.as_any_mut().downcast_mut::<CropSelection>()
+                            })
+                            .map(|sel| sel.region);
+
+                        if let Some(region) = region {
+                            // Transform all existing operations
+                            for op in self.viewport.operations_mut() {
+                                op.transform_crop(region);
+                            }
+
+                            // Commit the crop operation to the undo stack
+                            self.viewport.apply_tool();
+
+                            // Crop the base image
+                            if let Some(img) = self.viewport.working_image_mut() {
+                                *img = img.crop_imm(
+                                    region.x as u32,
+                                    region.y as u32,
+                                    region.width as u32,
+                                    region.height as u32,
+                                );
+                            }
+                            self.viewport.rebuild_display();
                         }
                     }
                     EditMessage::CropCancel => {
@@ -1520,18 +1565,91 @@ impl Application for CosmicViewer {
                     }
                     EditMessage::RotateLeft => {
                         self.viewport.cancel_tool();
+                        let direction = RotateDirection::Left;
+                        let image_size = self.viewport.image_size().unwrap_or(Size::ZERO);
+
+                        for op in self.viewport.operations_mut() {
+                            op.transform_rotate(direction, image_size);
+                        }
+
                         self.viewport
-                            .commit(Box::new(RotateOperation::new(RotateDirection::Left)));
-                        self.rebuild_viewport();
+                            .commit(Box::new(RotateOperation::new(direction)));
+
+                        if let Some(img) = self.viewport.working_image_mut() {
+                            *img = img.rotate270();
+                        }
+                        self.viewport.rebuild_display();
                     }
                     EditMessage::RotateRight => {
                         self.viewport.cancel_tool();
+                        let direction = RotateDirection::Right;
+                        let image_size = self.viewport.image_size().unwrap_or(Size::ZERO);
+
+                        for op in self.viewport.operations_mut() {
+                            op.transform_rotate(direction, image_size);
+                        }
+
                         self.viewport
-                            .commit(Box::new(RotateOperation::new(RotateDirection::Right)));
-                        self.rebuild_viewport();
+                            .commit(Box::new(RotateOperation::new(direction)));
+
+                        if let Some(img) = self.viewport.working_image_mut() {
+                            *img = img.rotate90();
+                        }
+                        self.viewport.rebuild_display();
                     }
-                    EditMessage::Undo => self.viewport.undo(),
-                    EditMessage::Redo => self.viewport.redo(),
+                    EditMessage::Undo => {
+                        if let Some(op) = self.viewport.undo() {
+                            if let Some(rotate) = op.as_any().downcast_ref::<RotateOperation>() {
+                                let inverse = rotate.direction.inverse();
+                                let image_size = self.viewport.image_size().unwrap_or(Size::ZERO);
+
+                                for op in self.viewport.operations_mut() {
+                                    op.transform_rotate(inverse, image_size);
+                                }
+
+                                if let Some(img) = self.viewport.working_image_mut() {
+                                    *img = match inverse {
+                                        RotateDirection::Left => img.rotate270(),
+                                        RotateDirection::Right => img.rotate90(),
+                                    };
+                                }
+                                self.rebuild_working_image();
+                            } else if let Some(crop) = op.as_any().downcast_ref::<CropOperation>() {
+                                let region = crop.region;
+
+                                for op in self.viewport.operations_mut() {
+                                    op.transform_crop(Rectangle::new(
+                                        Point::new(-region.x, -region.y),
+                                        Size::ZERO,
+                                    ));
+                                }
+
+                                self.rebuild_working_image();
+                            }
+                        }
+                    }
+                    EditMessage::Redo => {
+                        if let Some(op) = self.viewport.redo() {
+                            if let Some(rotate) = op.as_any().downcast_ref::<RotateOperation>() {
+                                let direction = rotate.direction;
+                                let image_size = self.viewport.image_size().unwrap_or(Size::ZERO);
+
+                                for op in self.viewport.operations_mut() {
+                                    op.transform_rotate(direction, image_size);
+                                }
+
+                                self.rebuild_working_image();
+                            } else if let Some(crop) = op.as_any().downcast_ref::<CropOperation>() {
+                                let region = crop.region;
+
+                                for op in self.viewport.operations_mut() {
+                                    op.transform_crop(region);
+                                }
+
+                                self.rebuild_working_image();
+                            }
+                        }
+                    }
                     EditMessage::RevertAll => self.viewport.revert_all(),
                 }
             }

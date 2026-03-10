@@ -1,11 +1,10 @@
+use std::any::Any;
+
 use super::PencilOperation;
 use crate::ToolOperation;
 use cosmic::{
     Renderer,
-    iced::{
-        Color, Point, Size,
-        mouse::{self, Event as MouseEvent},
-    },
+    iced::{Color, Point, Size, mouse},
     iced_widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
 };
 use image::DynamicImage;
@@ -66,7 +65,11 @@ impl ToolOperation for PencilPreview {
         }
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 

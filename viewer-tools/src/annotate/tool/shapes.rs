@@ -174,25 +174,6 @@ pub(crate) fn polygon_vertices(start: Point, end: Point, sides: usize) -> Vec<Po
         .collect()
 }
 
-/// Build line segments for a closed polygon from vertices.
-/// Used by apply() to draw pixel lines.
-pub(crate) fn closed_segments(vertices: &[Point]) -> Vec<(Point, Point)> {
-    if vertices.len() < 2 {
-        return Vec::new();
-    }
-
-    let mut segs: Vec<_> = vertices
-        .windows(2)
-        .map(|window| (window[0], window[1]))
-        .collect();
-
-    // Close the shape
-    if let (Some(&first), Some(&last)) = (vertices.first(), vertices.last()) {
-        segs.push((last, first));
-    }
-    segs
-}
-
 /// Build a closed Path from vertices.
 fn closed_path(vertices: &[Point]) -> Path {
     Path::new(|builder: &mut Builder| {
@@ -240,23 +221,4 @@ pub(crate) fn arrow_segments(start: Point, end: Point) -> Vec<(Point, Point)> {
         // right part of head
         (right, end),
     ]
-}
-
-/// Build line segments for an ellipse. Used by apply();
-pub(crate) fn ellipse_segments(center: Point, bounds_x: f32, bounds_y: f32) -> Vec<(Point, Point)> {
-    const SEGMENTS: usize = 64;
-    let points: Vec<Point> = (0..=SEGMENTS)
-        .map(|vert| {
-            let angle = 2.0 * std::f32::consts::PI * vert as f32 / SEGMENTS as f32;
-            Point::new(
-                center.x + bounds_x * angle.cos(),
-                center.y + bounds_y * angle.sin(),
-            )
-        })
-        .collect();
-
-    points
-        .windows(2)
-        .map(|window| (window[0], window[1]))
-        .collect()
 }

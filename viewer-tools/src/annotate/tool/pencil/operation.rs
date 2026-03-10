@@ -1,11 +1,17 @@
-use crate::ToolOperation;
+use std::any::Any;
+
+use crate::{
+    ToolOperation,
+    renderer::{build_path, stroke_on_image},
+    rotate::RotateDirection,
+};
 use cosmic::{
     Renderer,
-    iced::{Color, Point, Size},
+    iced::{Color, Point, Rectangle, Size},
     iced_widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
 };
-use image::{DynamicImage, Rgba};
-use imageproc::{drawing::draw_antialiased_line_segment_mut, pixelops::interpolate};
+use image::DynamicImage;
+use tiny_skia::LineCap as SkiaLineCap;
 
 #[derive(Debug, Clone)]
 pub struct PencilOperation {
@@ -44,28 +50,49 @@ impl ToolOperation for PencilOperation {
             return;
         }
 
-        let rgba = image.as_mut_rgba8().expect("image should be RGBA");
-        let color = Rgba([
-            (self.color.r * 255.0) as u8,
-            (self.color.g * 255.0) as u8,
-            (self.color.b * 255.0) as u8,
-            (self.color.a * 0.85 * 255.0) as u8,
-        ]);
+        let Some(path) = build_path(|path_builder| {
+            path_builder.move_to(self.points[0].x, self.points[0].y);
+            for point in &self.points[1..] {
+                path_builder.line_to(point.x, point.y);
+            }
+        }) else {
+            return;
+        };
 
-        for pair in self.points.windows(2) {
-            let start = (pair[0].x as i32, pair[1].x as i32);
-            let end = (pair[0].y as i32, pair[1].y as i32);
-            draw_antialiased_line_segment_mut(rgba, start, end, color, interpolate);
-        }
+        let mut color = self.color;
+        color.a *= 0.85;
 
-        *image = DynamicImage::ImageRgba8(rgba.clone());
+        stroke_on_image(image, &path, color, self.width, SkiaLineCap::Butt);
     }
 
     fn commit(&self) -> Option<Box<dyn ToolOperation>> {
         None
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+    fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn transform_rotate(&mut self, direction: RotateDirection, image_size: Size) {
+        let (width, height) = (image_size.width, image_size.height);
+        for point in &mut self.points {
+            let (x, y) = (point.x, point.y);
+
+            *point = match direction {
+                RotateDirection::Left => Point::new(y, width - x),
+                RotateDirection::Right => Point::new(height - y, x),
+            }
+        }
+    }
+
+    fn transform_crop(&mut self, region: Rectangle) {
+        for point in &mut self.points {
+            point.x -= region.x;
+            point.y -= region.y;
+        }
     }
 }

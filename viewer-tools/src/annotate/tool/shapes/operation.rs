@@ -1,15 +1,20 @@
+use std::any::Any;
+
 use super::{
-    ShapeKind, arrow_segments, closed_segments, draw_shape, ellipse_segments, normalize_rect,
-    polygon_vertices, star_vertices,
+    ShapeKind, arrow_segments, draw_shape, normalize_rect, polygon_vertices, star_vertices,
 };
-use crate::ToolOperation;
+use crate::{
+    ToolOperation,
+    renderer::{build_path, stroke_on_image},
+    rotate::RotateDirection,
+};
 use cosmic::{
     Renderer,
-    iced::{Color, Point, Size},
+    iced::{Color, Point, Rectangle, Size},
     iced_widget::canvas::Frame,
 };
-use image::{DynamicImage, Rgba};
-use imageproc::{drawing::draw_antialiased_line_segment_mut, pixelops::interpolate};
+use image::DynamicImage;
+use tiny_skia::{LineCap as SkiaLineCap, Rect};
 
 #[derive(Debug, Clone)]
 pub struct ShapeOperation {
@@ -40,53 +45,85 @@ impl ToolOperation for ShapeOperation {
     }
 
     fn apply(&self, image: &mut DynamicImage) {
-        let rgba = image.as_mut_rgba8().expect("image should be RGBA");
-        let color = Rgba([
-            (self.color.r * 255.0) as u8,
-            (self.color.g * 255.0) as u8,
-            (self.color.b * 255.0) as u8,
-            (self.color.a * 255.0) as u8,
-        ]);
-
-        let segments = match self.kind {
+        let Some(path) = build_path(|path_builder| match self.kind {
             ShapeKind::Rectangle => {
-                let r = normalize_rect(self.start, self.end);
-                let tl = Point::new(r.x, r.y);
-                let tr = Point::new(r.x + r.width, r.y);
-                let br = Point::new(r.x + r.width, r.y + r.height);
-                let bl = Point::new(r.x, r.y + r.height);
-                vec![(tl, tr), (tr, br), (br, bl), (bl, tl)]
+                let rect = normalize_rect(self.start, self.end);
+                if let Some(rect) = Rect::from_xywh(rect.x, rect.y, rect.width, rect.height) {
+                    path_builder.push_rect(rect);
+                }
             }
             ShapeKind::Ellipse => {
-                let r = normalize_rect(self.start, self.end);
-                let cx = r.x + r.width / 2.0;
-                let cy = r.y + r.height / 2.0;
-                ellipse_segments(Point::new(cx, cy), r.width / 2.0, r.height / 2.0)
+                let rect = normalize_rect(self.start, self.end);
+                path_builder.push_oval(
+                    Rect::from_xywh(rect.x, rect.y, rect.width, rect.height)
+                        .unwrap_or(Rect::from_xywh(0.0, 0.0, 1.0, 1.0).unwrap()),
+                );
             }
-            ShapeKind::Line => vec![(self.start, self.end)],
-            ShapeKind::Arrow => arrow_segments(self.start, self.end),
-            ShapeKind::Star => closed_segments(&star_vertices(self.start, self.end)),
-            ShapeKind::Polygon => closed_segments(&polygon_vertices(self.start, self.end, 6)),
+            ShapeKind::Line => {
+                path_builder.move_to(self.start.x, self.start.y);
+                path_builder.line_to(self.end.x, self.end.y);
+            }
+            ShapeKind::Arrow => {
+                for (a, b) in arrow_segments(self.start, self.end) {
+                    path_builder.move_to(a.x, a.y);
+                    path_builder.line_to(b.x, b.y);
+                }
+            }
+            ShapeKind::Star => {
+                let verts = star_vertices(self.start, self.end);
+                if let Some(first) = verts.first() {
+                    path_builder.move_to(first.x, first.y);
+                    for vert in &verts[1..] {
+                        path_builder.line_to(vert.x, vert.y);
+                    }
+                    path_builder.close();
+                }
+            }
+            ShapeKind::Polygon => {
+                let verts = polygon_vertices(self.start, self.end, 6);
+                if let Some(first) = verts.first() {
+                    path_builder.move_to(first.x, first.y);
+                    for vert in &verts[1..] {
+                        path_builder.line_to(vert.x, vert.y);
+                    }
+                    path_builder.close();
+                }
+            }
+        }) else {
+            return;
         };
 
-        for (a, b) in segments {
-            draw_antialiased_line_segment_mut(
-                rgba,
-                (a.x as i32, a.y as i32),
-                (b.x as i32, b.y as i32),
-                color,
-                interpolate,
-            );
-        }
-
-        *image = DynamicImage::ImageRgba8(rgba.clone());
+        stroke_on_image(image, &path, self.color, self.width, SkiaLineCap::Round);
     }
 
     fn commit(&self) -> Option<Box<dyn ToolOperation>> {
         None // Already committed
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+    fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn transform_rotate(&mut self, direction: RotateDirection, image_size: Size) {
+        let (width, height) = (image_size.width, image_size.height);
+        for point in [&mut self.start, &mut self.end] {
+            let (x, y) = (point.x, point.y);
+
+            *point = match direction {
+                RotateDirection::Left => Point::new(y, width - x),
+                RotateDirection::Right => Point::new(height - y, x),
+            }
+        }
+    }
+
+    fn transform_crop(&mut self, region: Rectangle) {
+        for point in [&mut self.start, &mut self.end] {
+            point.x -= region.x;
+            point.y -= region.y;
+        }
     }
 }

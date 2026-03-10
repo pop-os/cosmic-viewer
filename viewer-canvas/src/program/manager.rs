@@ -26,7 +26,6 @@ pub struct ViewportManager {
     zoom: f32,
     pan: Vector,
     active_tool: Option<ToolKind>,
-    stroke: usize,
     pub tool_dragging: bool,
     /// Committed operations (undo stack)
     operations: Vec<Box<dyn ToolOperation>>,
@@ -49,7 +48,6 @@ impl ViewportManager {
             zoom: 1.0,
             pan: Vector::ZERO,
             active_tool: None,
-            stroke: 2,
             tool_dragging: false,
             operations: Vec::new(),
             redo_stack: Vec::new(),
@@ -61,13 +59,17 @@ impl ViewportManager {
         &self.operations
     }
 
-    pub fn set_image(&mut self, image: Option<CanvasImage>) {
+    pub fn operations_mut(&mut self) -> &mut Vec<Box<dyn ToolOperation>> {
+        &mut self.operations
+    }
+
+    pub fn set_image(&mut self, image: Option<CanvasImage>, base: Option<DynamicImage>) {
         self.image = image;
+        self.working_image = base;
         self.zoom = 1.0;
         self.pan = Vector::ZERO;
         self.active_preview = None;
         self.active_tool = None;
-        self.working_image = None;
     }
 
     pub fn image(&self) -> Option<&CanvasImage> {
@@ -96,8 +98,27 @@ impl ViewportManager {
         self.working_image = Some(working);
     }
 
+    pub fn rebuild_display(&mut self) {
+        if let Some(ref working) = self.working_image {
+            let rgba = working.to_rgba8();
+            let (width, height) = rgba.dimensions();
+            let handle = Handle::from_rgba(width, height, rgba.into_raw());
+            self.image = Some(CanvasImage {
+                handle,
+                width,
+                height,
+            });
+            self.zoom = 1.0;
+            self.pan = Vector::ZERO;
+        }
+    }
+
     pub fn working_image(&self) -> Option<&DynamicImage> {
         self.working_image.as_ref()
+    }
+
+    pub fn working_image_mut(&mut self) -> Option<&mut DynamicImage> {
+        self.working_image.as_mut()
     }
 
     pub fn zoom(&self) -> f32 {
@@ -161,16 +182,22 @@ impl ViewportManager {
     }
 
     /// Undo the last committed operation.
-    pub fn undo(&mut self) {
+    pub fn undo(&mut self) -> Option<&dyn ToolOperation> {
         if let Some(op) = self.operations.pop() {
             self.redo_stack.push(op);
+            self.redo_stack.last().map(|op| op.as_ref())
+        } else {
+            None
         }
     }
 
     /// Redo the last undone operation.
-    pub fn redo(&mut self) {
+    pub fn redo(&mut self) -> Option<&dyn ToolOperation> {
         if let Some(op) = self.redo_stack.pop() {
             self.operations.push(op);
+            self.operations.last().map(|op| op.as_ref())
+        } else {
+            None
         }
     }
 

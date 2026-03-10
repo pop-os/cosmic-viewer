@@ -1,7 +1,7 @@
-use crate::ToolOperation;
+use crate::{ToolOperation, rotate::RotateDirection};
 use cosmic::{
     Renderer,
-    iced::{Color, Point, Size},
+    iced::{Color, Point, Rectangle, Size},
     iced_widget::{
         canvas::{self, Frame},
         graphics::text::{cosmic_text, font_system},
@@ -122,8 +122,27 @@ impl ToolOperation for TextOperation {
         None
     }
 
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+
+    fn transform_rotate(&mut self, direction: RotateDirection, image_size: Size) {
+        let (width, height) = (image_size.width, image_size.height);
+        let (x, y) = (self.position.x, self.position.y);
+
+        self.position = match direction {
+            RotateDirection::Left => Point::new(y, width - x),
+            RotateDirection::Right => Point::new(height - y, x),
+        }
+    }
+
+    fn transform_crop(&mut self, region: Rectangle) {
+        self.position.x -= region.x;
+        self.position.y -= region.y;
     }
 }
 

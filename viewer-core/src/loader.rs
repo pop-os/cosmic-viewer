@@ -59,12 +59,11 @@ fn load_image_sync(path: &Path) -> Result<LoadedImage, LoadError> {
         .unwrap_or_default();
 
     // Use turbojpeg for JPEGs (faster than zune/image crate)
-    if matches!(extension.as_str(), "jpg" | "jpeg") {
-        if let Ok(img) = load_jpeg_full(path) {
+    if matches!(extension.as_str(), "jpg" | "jpeg")
+        && let Ok(img) = load_jpeg_full(path) {
             return Ok(img);
         }
         // Fall through to other decoders if turbojpeg fails
-    }
 
     if is_zune_supported(&extension) {
         match load_with_zune(path) {
@@ -231,7 +230,7 @@ fn load_thumbnail_sync(path: &Path, max_size: u32) -> Result<LoadedImage, LoadEr
         if let Ok((width, height, pixels)) = extract_exif_thumbnail(path, max_size) {
             let handle = Handle::from_rgba(width, height, pixels.clone());
 
-            let rgba_image = RgbaImage::from_raw(width as u32, height as u32, pixels)
+            let rgba_image = RgbaImage::from_raw(width, height, pixels)
                 .expect("pixel buffer matches dimensions");
             let dynamic_image = DynamicImage::ImageRgba8(rgba_image);
 
@@ -248,7 +247,7 @@ fn load_thumbnail_sync(path: &Path, max_size: u32) -> Result<LoadedImage, LoadEr
         if let Ok((width, height, pixels)) = decode_jpeg_scaled(path, max_size) {
             let handle = Handle::from_rgba(width, height, pixels.clone());
 
-            let rgba_image = RgbaImage::from_raw(width as u32, height as u32, pixels)
+            let rgba_image = RgbaImage::from_raw(width, height, pixels)
                 .expect("pixel buffer matches dimensions");
             let dynamic_image = DynamicImage::ImageRgba8(rgba_image);
 
@@ -274,7 +273,7 @@ fn load_thumbnail_sync(path: &Path, max_size: u32) -> Result<LoadedImage, LoadEr
 
     let handle = Handle::from_rgba(width, height, pixels.clone());
 
-    let rgba_image = RgbaImage::from_raw(width as u32, height as u32, pixels)
+    let rgba_image = RgbaImage::from_raw(width, height, pixels)
         .expect("pixel buffer matches dimensions");
     let dynamic_image = DynamicImage::ImageRgba8(rgba_image);
 

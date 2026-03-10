@@ -1,10 +1,12 @@
 pub mod annotate;
 pub mod crop;
+pub mod renderer;
 pub mod rotate;
 
+use crate::rotate::RotateDirection;
 use cosmic::{
     Renderer,
-    iced::{Point, Size, mouse},
+    iced::{Point, Rectangle, Size, mouse},
     iced_widget::canvas::Frame,
 };
 use image::DynamicImage;
@@ -30,6 +32,9 @@ pub trait ToolOperation: Debug {
     fn commit(&self) -> Option<Box<dyn ToolOperation>>;
 
     /// Downcast support for tool-specific config.
+    fn as_any(&self) -> &dyn Any;
+
+    /// Mutable downcast support for tool-specific config.
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
     /// Called on left mouse press.
@@ -58,5 +63,16 @@ pub trait ToolOperation: Debug {
     /// Tools can adjust their coordinates to maintain visual stability.
     fn on_zoom_changed(&mut self, old_zoom: f32, new_zoom: f32, image_size: Size) {
         let _ = (old_zoom, new_zoom, image_size);
+    }
+
+    /// Transform this operation's coordinates for a rotation.
+    fn transform_rotate(&mut self, _direction: RotateDirection, _image_size: Size) {}
+
+    /// Transform this operation's coordinates for a crop.
+    fn transform_crop(&mut self, _region: Rectangle) {}
+
+    /// Returns the bounding box of the operation
+    fn bounds(&self) -> Option<Rectangle> {
+        None
     }
 }
