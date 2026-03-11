@@ -1,8 +1,16 @@
 use super::TextOperation;
-use crate::ToolOperation;
+use crate::{
+    ToolOperation,
+    annotate::tool::text::{TextSpan, measure_span_width},
+};
 use cosmic::{
     Renderer,
-    iced::{Color, Point, Size, mouse},
+    iced::{
+        Color, Font, Point, Size,
+        alignment::{Horizontal, Vertical},
+        font, mouse,
+    },
+    iced_core::text::{LineHeight, Shaping},
     iced_widget::{
         canvas::{self, Frame},
         graphics::text::{cosmic_text, font_system},
@@ -22,66 +30,82 @@ pub enum TextEditState {
 #[derive(Debug, Clone)]
 pub struct TextPreview {
     pub position: Option<Point>,
-    pub content: String,
+    pub spans: Vec<TextSpan>,
     pub color: Color,
     pub font_size: f32,
+    pub font_family: &'static str,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub alignment: Horizontal,
     pub state: TextEditState,
 }
 
 impl TextPreview {
-    pub fn new(color: Color, font_size: f32) -> Self {
+    pub fn new(
+        color: Color,
+        font_size: f32,
+        font_family: &'static str,
+        bold: bool,
+        italic: bool,
+        underline: bool,
+        alignment: Horizontal,
+    ) -> Self {
         Self {
             position: None,
-            content: String::new(),
+            spans: Vec::new(),
             color,
             font_size,
+            font_family,
+            bold,
+            italic,
+            underline,
+            alignment,
             state: TextEditState::Placing,
         }
     }
 
     pub fn push_char(&mut self, c: char) {
-        if self.state == TextEditState::Editing {
-            self.content.push(c);
+        if self.state != TextEditState::Editing {
+            return;
+        }
+
+        let matches = self.spans.last().is_some_and(|span| {
+            span.bold == self.bold && span.italic == self.italic && span.underline == self.underline
+        });
+
+        if matches {
+            self.spans.last_mut().unwrap().text.push(c);
+        } else {
+            let mut span = TextSpan::new(self.bold, self.italic, self.underline);
+            span.text.push(c);
+            self.spans.push(span);
         }
     }
 
     pub fn pop_char(&mut self) {
-        if self.state == TextEditState::Editing {
-            self.content.pop();
+        if self.state != TextEditState::Editing {
+            return;
         }
+
+        if let Some(last) = self.spans.last_mut() {
+            last.text.pop();
+            if last.text.is_empty() {
+                self.spans.pop();
+            }
+        }
+    }
+
+    pub fn full_text(&self) -> String {
+        self.spans.iter().map(|span| span.text.as_str()).collect()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.spans.is_empty() || self.spans.iter().all(|span| span.text.is_empty())
     }
 
     pub fn is_editing(&self) -> bool {
         self.state == TextEditState::Editing
-    }
-
-    /// Rough text widgh approximation for cursor placement.
-    fn measure_text_width(&self) -> f32 {
-        if self.content.is_empty() {
-            return 0.0;
-        }
-
-        let mut font_sys = font_system().write().expect("Write font system");
-
-        let mut buffer_line = cosmic_text::BufferLine::new(
-            &self.content,
-            cosmic_text::LineEnding::default(),
-            cosmic_text::AttrsList::new(&cosmic_text::Attrs::new()),
-            cosmic_text::Shaping::Advanced,
-        );
-
-        let layout = buffer_line.layout(
-            font_sys.raw(),
-            self.font_size,
-            None,
-            cosmic_text::Wrap::None,
-            cosmic_text::Ellipsize::None,
-            None,
-            8,
-            cosmic_text::Hinting::Disabled,
-        );
-
-        layout.first().map_or(0.0, |line| line.w)
     }
 }
 
@@ -89,40 +113,71 @@ impl ToolOperation for TextPreview {
     fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
         let Some(pos) = self.position else { return };
 
-        let display = if self.content.is_empty() && self.state == TextEditState::Editing {
-            "Type here..."
-        } else {
-            &self.content
-        };
-
-        if display.is_empty() {
+        if self.is_empty() && self.state == TextEditState::Editing {
+            // Draw placeholder
+            let text = canvas::Text {
+                content: "Type here...".to_string(),
+                position: pos,
+                color: Color::from_rgba(self.color.r, self.color.g, self.color.b, 0.4),
+                size: (self.font_size / scale).into(),
+                ..canvas::Text::default()
+            };
+            frame.fill_text(text);
             return;
         }
 
-        let text = canvas::Text {
-            content: display.to_string(),
-            position: pos,
-            color: if self.content.is_empty() {
-                Color::from_rgba(self.color.r, self.color.g, self.color.b, 0.4)
-            } else {
-                self.color
-            },
-            size: (self.font_size / scale).into(),
-            ..canvas::Text::default()
-        };
+        let mut x_offset = 0.0;
+        for span in &self.spans {
+            if span.text.is_empty() {
+                continue;
+            }
 
-        frame.fill_text(text);
+            let text = canvas::Text {
+                content: span.text.clone(),
+                position: Point::new(pos.x + x_offset, pos.y),
+                color: self.color,
+                size: (self.font_size / scale).into(),
+                font: Font {
+                    family: font::Family::Name(self.font_family),
+                    weight: if span.bold {
+                        font::Weight::Bold
+                    } else {
+                        font::Weight::Normal
+                    },
+                    style: if span.italic {
+                        font::Style::Italic
+                    } else {
+                        font::Style::Normal
+                    },
+                    stretch: font::Stretch::Normal,
+                },
+                line_height: LineHeight::default(),
+                horizontal_alignment: self.alignment,
+                vertical_alignment: Vertical::Top,
+                shaping: Shaping::Advanced,
+            };
 
-        // Draw cursor when editing
+            frame.fill_text(text);
+
+            x_offset += measure_span_width(
+                &span.text,
+                self.font_size,
+                self.font_family,
+                span.bold,
+                span.italic,
+            ) / scale;
+        }
+
+        // Cursor
         if self.state == TextEditState::Editing {
-            let text_width = self.measure_text_width() / scale;
             let cursor_text = canvas::Text {
                 content: "|".to_string(),
-                position: Point::new(pos.x + text_width, pos.y),
+                position: Point::new(pos.x + x_offset, pos.y),
                 color: self.color,
                 size: (self.font_size / scale).into(),
                 ..canvas::Text::default()
             };
+
             frame.fill_text(cursor_text);
         }
     }
@@ -131,13 +186,15 @@ impl ToolOperation for TextPreview {
 
     fn commit(&self) -> Option<Box<dyn ToolOperation>> {
         if let Some(pos) = self.position
-            && !self.content.trim().is_empty()
+            && !self.is_empty()
         {
             Some(Box::new(TextOperation::new(
                 pos,
-                self.content.clone(),
+                self.spans.clone(),
                 self.color,
                 self.font_size,
+                self.font_family,
+                self.alignment,
             )))
         } else {
             None
@@ -156,7 +213,7 @@ impl ToolOperation for TextPreview {
         match self.state {
             TextEditState::Placing => {
                 self.position = Some(point);
-                self.content.clear();
+                self.spans.clear();
                 self.state = TextEditState::Editing;
                 mouse::Interaction::Text
             }

@@ -1,7 +1,16 @@
-use crate::{ToolOperation, rotate::RotateDirection};
+use crate::{
+    ToolOperation,
+    annotate::tool::text::{TextSpan, measure_span_width},
+    rotate::RotateDirection,
+};
 use cosmic::{
     Renderer,
-    iced::{Color, Point, Rectangle, Size},
+    iced::{
+        Color, Font, Point, Rectangle, Size,
+        alignment::{Horizontal, Vertical},
+        font,
+    },
+    iced_core::text::{LineHeight, Shaping},
     iced_widget::{
         canvas::{self, Frame},
         graphics::text::{cosmic_text, font_system},
@@ -13,40 +22,89 @@ use std::any::Any;
 #[derive(Debug, Clone)]
 pub struct TextOperation {
     pub position: Point,
-    pub content: String,
+    pub spans: Vec<TextSpan>,
     pub color: Color,
     pub font_size: f32,
+    pub font_family: &'static str,
+    pub alignment: Horizontal,
 }
 
 impl TextOperation {
-    pub fn new(position: Point, content: String, color: Color, font_size: f32) -> Self {
+    pub fn new(
+        position: Point,
+        spans: Vec<TextSpan>,
+        color: Color,
+        font_size: f32,
+        font_family: &'static str,
+        alignment: Horizontal,
+    ) -> Self {
         Self {
             position,
-            content,
+            spans,
             color,
             font_size,
+            font_family,
+            alignment,
         }
     }
 }
 
 impl ToolOperation for TextOperation {
     fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
-        if self.content.is_empty() {
+        if self.spans.is_empty() {
             return;
         }
 
-        let text = canvas::Text {
-            content: self.content.clone(),
-            position: self.position,
-            color: self.color,
-            size: (self.font_size / scale).into(),
-            ..canvas::Text::default()
-        };
-        frame.fill_text(text);
+        let mut x_offset = 0.0;
+        for span in &self.spans {
+            if span.text.is_empty() {
+                continue;
+            }
+
+            let text = canvas::Text {
+                content: span.text.clone(),
+                position: Point::new(self.position.x + x_offset, self.position.y),
+                color: self.color,
+                size: (self.font_size / scale).into(),
+                font: Font {
+                    family: font::Family::Name(self.font_family),
+                    weight: if span.bold {
+                        font::Weight::Bold
+                    } else {
+                        font::Weight::Normal
+                    },
+                    style: if span.italic {
+                        font::Style::Italic
+                    } else {
+                        font::Style::Normal
+                    },
+                    stretch: font::Stretch::Normal,
+                },
+                line_height: LineHeight::default(),
+                horizontal_alignment: self.alignment,
+                vertical_alignment: Vertical::Top,
+                shaping: Shaping::Advanced,
+            };
+            frame.fill_text(text);
+
+            x_offset += measure_span_width(
+                &span.text,
+                self.font_size,
+                self.font_family,
+                span.bold,
+                span.italic,
+            ) / scale;
+        }
     }
 
     fn apply(&self, image: &mut DynamicImage) {
-        if self.content.is_empty() {
+        if self.spans.is_empty() {
+            return;
+        }
+
+        let full_text: String = self.spans.iter().map(|span| span.text.as_str()).collect();
+
+        if full_text.trim().is_empty() {
             return;
         }
 
@@ -60,11 +118,33 @@ impl ToolOperation for TextOperation {
         );
 
         let mut font_sys = font_system().write().expect("Write font system");
+        let default_attrs =
+            cosmic_text::Attrs::new().family(cosmic_text::Family::Name(self.font_family));
+        let mut attrs_list = cosmic_text::AttrsList::new(&default_attrs);
+        let mut byte_offset = 0;
+
+        for span in &self.spans {
+            let end = byte_offset + span.text.len();
+            let span_attrs = default_attrs
+                .clone()
+                .weight(if span.bold {
+                    cosmic_text::Weight::BOLD
+                } else {
+                    cosmic_text::Weight::NORMAL
+                })
+                .style(if span.italic {
+                    cosmic_text::Style::Italic
+                } else {
+                    cosmic_text::Style::Normal
+                });
+            attrs_list.add_span(byte_offset..end, &span_attrs);
+            byte_offset = end;
+        }
 
         let mut buffer_line = cosmic_text::BufferLine::new(
-            &self.content,
+            &full_text,
             cosmic_text::LineEnding::default(),
-            cosmic_text::AttrsList::new(&cosmic_text::Attrs::new()),
+            attrs_list,
             cosmic_text::Shaping::Advanced,
         );
 

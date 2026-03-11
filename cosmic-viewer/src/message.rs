@@ -1,6 +1,7 @@
 use cosmic::{
     iced::{
         Size,
+        alignment::Horizontal,
         keyboard::{Key, Modifiers},
     },
     iced_core::SmolStr,
@@ -91,6 +92,13 @@ pub enum EditMessage {
     CropRatio(CropRatio),
     RotateLeft,
     RotateRight,
+    TextBold,
+    TextItalic,
+    TextUnderline,
+    TextFontFamily(usize),
+    TextAlignment(Horizontal),
+    TextApply,
+    TextCancel,
     Undo,
     Redo,
     RevertAll,

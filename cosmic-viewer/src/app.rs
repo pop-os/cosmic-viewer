@@ -12,20 +12,24 @@ use cosmic::{
     iced::{
         self, Background, Color, Length, Point, Rectangle, Size, Subscription, Vector,
         alignment::Horizontal,
-        clipboard, event,
+        clipboard, event, font,
         keyboard::key::{Key, Named},
     },
     iced_core::Border,
+    iced_wgpu::graphics::text::font_system,
     iced_widget::scrollable::{AbsoluteOffset, scroll_to},
     task::future,
     widget::{
         self, Id, Space, button, column, container, dropdown, icon,
         menu::{KeyBind, menu_button},
-        nav_bar, text, vertical_space,
+        nav_bar, popover, row, text, vertical_space,
     },
 };
 use image::DynamicImage;
-use std::{collections::HashMap, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
 use viewer_canvas::{CanvasImage, CanvasMessage, ToolKind, ViewportManager};
 use viewer_config::ViewerConfig;
 use viewer_core::{
@@ -61,6 +65,13 @@ pub struct CosmicViewer {
     annotate_stroke_size: f32,
     crop_ratio: CropRatio,
     text_editing: bool,
+    font_families: Vec<&'static str>,
+    text_font_family: &'static str,
+    text_font_index: Option<usize>,
+    text_bold: bool,
+    text_italic: bool,
+    text_underline: bool,
+    text_alignment: Horizontal,
     toolbar_overflow_open: bool,
     window_width: Option<f32>,
     is_fullscreen: bool,
@@ -734,6 +745,112 @@ impl CosmicViewer {
         toolbar.view(|| ViewerMessage::ToolbarOverflowToggle)
     }
 
+    fn build_text_format_popup(&self) -> Element<'_, ViewerMessage> {
+        let font_dropdown = dropdown(&self.font_families, self.text_font_index, |idx| {
+            ViewerMessage::Edit(EditMessage::TextFontFamily(idx))
+        });
+
+        // Bold, italic, underline as icon buttons
+        let bold_btn = button::icon(icon::from_name("format-text-bold-symbolic"))
+            .class(if self.text_bold {
+                cosmic::theme::Button::Suggested
+            } else {
+                cosmic::theme::Button::Icon
+            })
+            .on_press(ViewerMessage::Edit(EditMessage::TextBold));
+
+        let italic_btn = button::icon(icon::from_name("format-text-italic-symbolic"))
+            .class(if self.text_italic {
+                cosmic::theme::Button::Suggested
+            } else {
+                cosmic::theme::Button::Icon
+            })
+            .on_press(ViewerMessage::Edit(EditMessage::TextItalic));
+
+        let underline_btn = button::icon(icon::from_name("format-text-underline-symbolic"))
+            .class(if self.text_underline {
+                cosmic::theme::Button::Suggested
+            } else {
+                cosmic::theme::Button::Icon
+            })
+            .on_press(ViewerMessage::Edit(EditMessage::TextUnderline));
+
+        // Align buttons
+        let align_left = button::icon(icon::from_name("format-justify-left-symbolic"))
+            .class(if self.text_alignment == Horizontal::Left {
+                cosmic::theme::Button::Suggested
+            } else {
+                cosmic::theme::Button::Icon
+            })
+            .on_press(ViewerMessage::Edit(EditMessage::TextAlignment(
+                Horizontal::Left,
+            )));
+        let align_center = button::icon(icon::from_name("format-justify-center-symbolic"))
+            .class(if self.text_alignment == Horizontal::Center {
+                cosmic::theme::Button::Suggested
+            } else {
+                cosmic::theme::Button::Icon
+            })
+            .on_press(ViewerMessage::Edit(EditMessage::TextAlignment(
+                Horizontal::Center,
+            )));
+        let align_right = button::icon(icon::from_name("format-justify-right-symbolic"))
+            .class(if self.text_alignment == Horizontal::Right {
+                cosmic::theme::Button::Suggested
+            } else {
+                cosmic::theme::Button::Icon
+            })
+            .on_press(ViewerMessage::Edit(EditMessage::TextAlignment(
+                Horizontal::Right,
+            )));
+
+        let cancel_btn = button::icon(icon::from_name("window-close-symbolic"))
+            .on_press(ViewerMessage::Edit(EditMessage::TextCancel));
+        let apply_btn = button::icon(icon::from_name("object-select-symbolic"))
+            .on_press(ViewerMessage::Edit(EditMessage::TextApply));
+
+        container(
+            column()
+                .push(font_dropdown)
+                .push(
+                    row()
+                        .push(align_left)
+                        .push(align_center)
+                        .push(align_right)
+                        .spacing(4),
+                )
+                .push(
+                    row()
+                        .push(bold_btn)
+                        .push(italic_btn)
+                        .push(underline_btn)
+                        //.push(horizontal_space())
+                        .push(cancel_btn)
+                        .push(apply_btn)
+                        .spacing(4),
+                )
+                .spacing(8)
+                .padding(12),
+        )
+        .style(|theme| {
+            let cosmic = theme.cosmic();
+            let component = &cosmic.background.component;
+            container::Style {
+                icon_color: None,
+                text_color: None,
+                background: Some(Background::Color(component.base.into())),
+                border: Border {
+                    radius: cosmic.radius_s().map(|x| x + 1.0).into(),
+                    width: 1.0,
+                    color: component.divider.into(),
+                },
+                ..Default::default()
+            }
+        })
+        .width(Length::Shrink)
+        .into()
+    }
+
     fn flatten_image(&self) -> Option<DynamicImage> {
         let base = if let Some(working) = self.viewport.working_image() {
             working.clone()
@@ -787,6 +904,13 @@ impl Application for CosmicViewer {
             })
             .scrollable(scroll_id.clone());
 
+        let families = load_font_families();
+        let default_family = match cosmic::font::default().family {
+            font::Family::Name(name) => name,
+            _ => "Sans",
+        };
+        let font_index = families.iter().position(|&fam| fam == default_family);
+
         let mut viewer = Self {
             core,
             key_binds: key_binds::init_keybinds(),
@@ -804,6 +928,13 @@ impl Application for CosmicViewer {
             annotate_stroke_size: 2.,
             crop_ratio: CropRatio::Custom,
             text_editing: false,
+            font_families: load_font_families(),
+            text_font_family: default_family,
+            text_font_index: font_index,
+            text_bold: false,
+            text_italic: false,
+            text_underline: false,
+            text_alignment: Horizontal::Left,
             toolbar_overflow_open: false,
             window_width: Some(0.0),
             is_fullscreen: false,
@@ -901,6 +1032,17 @@ impl Application for CosmicViewer {
                 .popup(self.build_context_menu_element())
                 .position(widget::popover::Position::Point(point))
                 .on_close(ViewerMessage::Canvas(CanvasMessage::ContextMenu(None)));
+        } else if self.text_editing {
+            let bounds = self.viewport.last_bounds();
+            if let Some(preview) = self.viewport.preview_ref()
+                && let Some(text) = preview.as_any().downcast_ref::<TextPreview>()
+                && let Some(pos) = text.position
+                && let Some(screen_pos) = self.viewport.image_to_screen(pos, bounds.get())
+            {
+                pop = pop
+                    .popup(self.build_text_format_popup())
+                    .position(popover::Position::Point(screen_pos));
+            }
         }
 
         pop.into()
@@ -1112,6 +1254,11 @@ impl Application for CosmicViewer {
                             self.viewport.set_preview(Some(Box::new(TextPreview::new(
                                 self.annotate_color.0,
                                 self.annotate_stroke_size * 8.0,
+                                self.text_font_family,
+                                self.text_bold,
+                                self.text_italic,
+                                self.text_underline,
+                                self.text_alignment,
                             ))));
                         }
                         Key::Named(Named::Escape) => {
@@ -1120,6 +1267,11 @@ impl Application for CosmicViewer {
                             self.viewport.set_preview(Some(Box::new(TextPreview::new(
                                 self.annotate_color.0,
                                 self.annotate_stroke_size * 8.0,
+                                self.text_font_family,
+                                self.text_bold,
+                                self.text_italic,
+                                self.text_underline,
+                                self.text_alignment,
                             ))));
                         }
                         _ => {
@@ -1472,6 +1624,11 @@ impl Application for CosmicViewer {
                                 self.viewport.set_preview(Some(Box::new(TextPreview::new(
                                     self.annotate_color.0,
                                     self.annotate_stroke_size * 8.0,
+                                    self.text_font_family,
+                                    self.text_bold,
+                                    self.text_italic,
+                                    self.text_underline,
+                                    self.text_alignment,
                                 ))));
                                 self.viewport.set_active_tool(Some(ToolKind::Annotate));
                             }
@@ -1596,6 +1753,54 @@ impl Application for CosmicViewer {
                             *img = img.rotate90();
                         }
                         self.viewport.rebuild_display();
+                    }
+                    EditMessage::TextBold => {
+                        self.text_bold = !self.text_bold;
+                        if let Some(preview) = self.viewport.preview_mut()
+                            && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
+                        {
+                            text.bold = self.text_bold;
+                        }
+                    }
+                    EditMessage::TextItalic => {
+                        self.text_italic = !self.text_italic;
+                        if let Some(preview) = self.viewport.preview_mut()
+                            && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
+                        {
+                            text.italic = self.text_italic;
+                        }
+                    }
+                    EditMessage::TextUnderline => {
+                        self.text_underline = !self.text_underline;
+                        if let Some(preview) = self.viewport.preview_mut()
+                            && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
+                        {
+                            text.underline = self.text_underline;
+                        }
+                    }
+                    EditMessage::TextAlignment(alignment) => {
+                        self.text_alignment = alignment;
+                        if let Some(preview) = self.viewport.preview_mut()
+                            && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
+                        {
+                            text.alignment = self.text_alignment;
+                        }
+                    }
+                    EditMessage::TextFontFamily(idx) => {
+                        self.text_font_index = Some(idx);
+                        if let Some(preview) = self.viewport.preview_mut()
+                            && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
+                        {
+                            text.font_family = self.font_families[idx];
+                        }
+                    }
+                    EditMessage::TextCancel => {
+                        self.viewport.cancel_tool();
+                        self.text_editing = false;
+                    }
+                    EditMessage::TextApply => {
+                        self.viewport.apply_tool();
+                        self.text_editing = false;
                     }
                     EditMessage::Undo => {
                         if let Some(op) = self.viewport.undo() {
@@ -1748,4 +1953,23 @@ fn format_number(num: u64) -> String {
 fn format_system_time(time: std::time::SystemTime) -> String {
     let date_time: chrono::DateTime<chrono::Local> = time.into();
     date_time.format("%a %d %b %Y %I:%M:%S %p %Z").to_string()
+}
+
+fn load_font_families() -> Vec<&'static str> {
+    let mut font_sys = font_system().write().expect("Read font system");
+    let db = font_sys.raw().db();
+
+    let mut families: Vec<String> = db
+        .faces()
+        .flat_map(|face| face.families.iter().map(|(name, _)| name.clone()))
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    families.sort();
+
+    families
+        .into_iter()
+        .map(|name| &*Box::leak(name.into_boxed_str()))
+        .collect()
 }

@@ -17,6 +17,7 @@ use cosmic::{
     widget::{self, Operation, Widget, image::Handle},
 };
 use image::DynamicImage;
+use std::cell::Cell;
 use viewer_tools::ToolOperation;
 
 /// Orchestrator that owns the canvas state, edit operations, and undo/redo history.
@@ -32,6 +33,7 @@ pub struct ViewportManager {
     redo_stack: Vec<Box<dyn ToolOperation>>,
     // Live preview for the active tool
     active_preview: Option<Box<dyn ToolOperation>>,
+    last_bounds: Cell<Rectangle>,
 }
 
 impl Default for ViewportManager {
@@ -52,7 +54,12 @@ impl ViewportManager {
             operations: Vec::new(),
             redo_stack: Vec::new(),
             active_preview: None,
+            last_bounds: Cell::new(Rectangle::new(Point::new(0.0, 0.0), Size::ZERO)),
         }
+    }
+
+    pub fn last_bounds(&self) -> &Cell<Rectangle> {
+        &self.last_bounds
     }
 
     pub fn operations(&self) -> &Vec<Box<dyn ToolOperation>> {
@@ -214,6 +221,10 @@ impl ViewportManager {
         self.active_preview = preview;
     }
 
+    pub fn preview_ref(&self) -> Option<&(dyn ToolOperation + 'static)> {
+        self.active_preview.as_deref()
+    }
+
     /// Convert a screen space point to image coordinates.
     pub fn screen_to_image(&self, point: Point, bounds: Rectangle) -> Option<Point> {
         let image = self.image.as_ref()?;
@@ -226,6 +237,22 @@ impl ViewportManager {
         let img_y = (point.y - center_y - self.pan.y) / effective_scale + image.height as f32 / 2.0;
 
         Some(Point::new(img_x, img_y))
+    }
+
+    /// Convert a image coordinate to a screen space point.
+    pub fn image_to_screen(&self, point: Point, bounds: Rectangle) -> Option<Point> {
+        let image = self.image.as_ref()?;
+        let fit_scale =
+            (bounds.width / image.width as f32).min(bounds.height / image.height as f32);
+        let effective_scale = self.zoom * fit_scale;
+        let center_x = bounds.width / 2.0;
+        let center_y = bounds.width / 2.0;
+        let screen_x =
+            (point.x - image.width as f32 / 2.0) * effective_scale + center_x + self.pan.x;
+        let screen_y =
+            (point.y - image.height as f32 / 2.0) * effective_scale + center_y + self.pan.y;
+
+        Some(Point::new(screen_x, screen_y))
     }
 
     /// Get the image dimensions as a Size.
@@ -341,6 +368,7 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
         viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
+        self.manager.last_bounds.set(bounds);
 
         // Layer 1: Image
         renderer.with_layer(bounds, |renderer| {
