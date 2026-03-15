@@ -72,6 +72,8 @@ pub struct CosmicViewer {
     text_italic: bool,
     text_underline: bool,
     text_alignment: Horizontal,
+    shape_popup: bool,
+    selected_shape: AnnotateTool,
     toolbar_overflow_open: bool,
     window_width: Option<f32>,
     is_fullscreen: bool,
@@ -394,27 +396,27 @@ impl CosmicViewer {
             .overflow_open(self.toolbar_overflow_open)
             .start(
                 ToolbarItem::new(icon_btn(
-                    "edit-symbolic",
+                    "markup-symbolic",
                     fl!("toolbar-annotate"),
                     ViewerMessage::Edit(EditMessage::Annotate),
                 ))
                 .priority(ItemPriority::Standard)
                 .overflow(
                     fl!("toolbar-annotate"),
-                    Some("edit-symbolic"),
+                    Some("markup-symbolic"),
                     ViewerMessage::Edit(EditMessage::Annotate),
                 ),
             )
             .start(
                 ToolbarItem::new(icon_btn(
-                    "edit-cut-symbolic",
+                    "image-crop-rotate-symbolic",
                     fl!("toolbar-crop"),
                     ViewerMessage::Edit(EditMessage::Crop),
                 ))
                 .priority(ItemPriority::Standard)
                 .overflow(
                     fl!("toolbar-crop"),
-                    Some("edit-cut-symbolic"),
+                    Some("image-crop-rotate-symbolic"),
                     ViewerMessage::Edit(EditMessage::Crop),
                 ),
             )
@@ -446,7 +448,7 @@ impl CosmicViewer {
             )
             .center(
                 ToolbarItem::new(icon_btn(
-                    "list-remove-symbolic",
+                    "zoom-out-symbolic",
                     fl!("toolbar-zoom-out"),
                     ViewerMessage::Canvas(CanvasMessage::ZoomOut),
                 ))
@@ -455,37 +457,11 @@ impl CosmicViewer {
             .center(ToolbarItem::new(text::body(zoom_pct)).priority(ItemPriority::Essential))
             .center(
                 ToolbarItem::new(icon_btn(
-                    "list-add-symbolic",
+                    "zoom-in-symbolic",
                     fl!("toolbar-zoom-in"),
                     ViewerMessage::Canvas(CanvasMessage::ZoomIn),
                 ))
                 .priority(ItemPriority::Essential),
-            )
-            .end(
-                ToolbarItem::new(icon_btn(
-                    "document-save-symbolic",
-                    fl!("toolbar-save"),
-                    ViewerMessage::Save,
-                ))
-                .priority(ItemPriority::Optional)
-                .overflow(
-                    fl!("toolbar-save"),
-                    Some("document-save-symbolic"),
-                    ViewerMessage::Save,
-                ),
-            )
-            .end(
-                ToolbarItem::new(icon_btn(
-                    "document-save-as-symbolic",
-                    fl!("toolbar-save-as"),
-                    ViewerMessage::SaveAs,
-                ))
-                .priority(ItemPriority::Optional)
-                .overflow(
-                    fl!("toolbar-save-as"),
-                    Some("document-save-as-symbolic"),
-                    ViewerMessage::SaveAs,
-                ),
             )
             .end(
                 ToolbarItem::new(icon_btn(
@@ -635,54 +611,30 @@ impl CosmicViewer {
             )
             .center(
                 ToolbarItem::new(icon_btn(
-                    AnnotateTool::Text.icon_name(),
+                    "insert-text-symbolic",
                     fl!("text-tool"),
                     ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Text)),
                 ))
                 .priority(ItemPriority::Essential),
             )
             .center(
-                ToolbarItem::new(dropdown(
-                    vec![fl!("drawing-pen"), fl!("drawing-pencil")],
-                    AnnotateTool::draw_tools()
-                        .iter()
-                        .position(|tool| *tool == self.annotate_tool),
-                    |idx| {
-                        ViewerMessage::Edit(EditMessage::AnnotateTool(
-                            AnnotateTool::draw_tools()[idx],
-                        ))
-                    },
+                ToolbarItem::new(icon_btn(
+                    "pen-symbolic",
+                    fl!("drawing-pen"),
+                    ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::draw_tools()[0])),
                 ))
                 .priority(ItemPriority::Essential),
             )
             .center(
                 ToolbarItem::new(icon_btn(
-                    AnnotateTool::Highlighter.icon_name(),
+                    "insert-drawing-symbolic",
                     fl!("drawing-highlighter"),
                     ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Highlighter)),
                 ))
                 .priority(ItemPriority::Essential),
             )
             .center(
-                ToolbarItem::new(dropdown(
-                    vec![
-                        fl!("shapes-rectangle"),
-                        fl!("shapes-ellipse"),
-                        fl!("shapes-arrow"),
-                        fl!("shapes-line"),
-                        fl!("shapes-star"),
-                        fl!("shapes-polygon"),
-                    ],
-                    AnnotateTool::shape_tools()
-                        .iter()
-                        .position(|tool| *tool == self.annotate_tool),
-                    |idx| {
-                        ViewerMessage::Edit(EditMessage::AnnotateTool(
-                            AnnotateTool::shape_tools()[idx],
-                        ))
-                    },
-                ))
-                .priority(ItemPriority::Essential),
+                ToolbarItem::new(self.build_shape_selector()).priority(ItemPriority::Essential),
             );
 
         let colors = AnnotateColor::presets();
@@ -867,6 +819,59 @@ impl CosmicViewer {
 
         Some(image)
     }
+
+    fn build_shape_selector(&self) -> Element<'_, ViewerMessage> {
+        let current_icon = self.selected_shape.icon_name();
+        let trigger = button::icon(icon::from_name(current_icon))
+            .on_press(ViewerMessage::Edit(EditMessage::ShapePopupToggle));
+
+        let mut pop = popover(trigger);
+
+        if self.shape_popup {
+            let make_btn = |tool: AnnotateTool| -> Element<'_, ViewerMessage> {
+                button::icon(icon::from_name(tool.icon_name()))
+                    .class(if tool == self.annotate_tool {
+                        cosmic::theme::Button::Suggested
+                    } else {
+                        cosmic::theme::Button::Icon
+                    })
+                    .on_press(ViewerMessage::Edit(EditMessage::AnnotateTool(tool)))
+                    .into()
+            };
+
+            let list = column()
+                .push(make_btn(AnnotateTool::Rectangle))
+                .push(make_btn(AnnotateTool::Ellipse))
+                .push(make_btn(AnnotateTool::Arrow))
+                .push(make_btn(AnnotateTool::Line))
+                .push(make_btn(AnnotateTool::Star))
+                .push(make_btn(AnnotateTool::Polygon))
+                .spacing(4);
+
+            let popup = container(list).padding(8).style(|theme| {
+                let cosmic = theme.cosmic();
+                let component = &cosmic.background.component;
+                container::Style {
+                    icon_color: None,
+                    text_color: None,
+                    background: Some(Background::Color(component.base.into())),
+                    border: Border {
+                        radius: cosmic.radius_s().map(|x| x + 1.0).into(),
+                        width: 1.0,
+                        color: component.divider.into(),
+                    },
+                    ..Default::default()
+                }
+            });
+
+            pop = pop
+                .popup(popup)
+                .position(popover::Position::Center)
+                .on_close(ViewerMessage::Edit(EditMessage::ShapePopupToggle));
+        }
+
+        pop.into()
+    }
 }
 
 impl Application for CosmicViewer {
@@ -929,6 +934,8 @@ impl Application for CosmicViewer {
             crop_ratio: CropRatio::Custom,
             text_editing: false,
             font_families: load_font_families(),
+            shape_popup: false,
+            selected_shape: AnnotateTool::Rectangle,
             text_font_family: default_family,
             text_font_index: font_index,
             text_bold: false,
@@ -1579,6 +1586,7 @@ impl Application for CosmicViewer {
                     }
                     EditMessage::AnnotateTool(tool) => {
                         self.annotate_tool = tool;
+                        self.shape_popup = !self.shape_popup;
                         match tool {
                             AnnotateTool::Highlighter => {
                                 self.viewport
@@ -1614,6 +1622,7 @@ impl Application for CosmicViewer {
                                     AnnotateTool::Polygon => ShapeKind::Polygon,
                                     _ => unreachable!(),
                                 };
+                                self.selected_shape = tool;
                                 self.viewport.set_preview(Some(Box::new(ShapePreview::new(
                                     kind,
                                     self.annotate_color.0,
@@ -1754,6 +1763,7 @@ impl Application for CosmicViewer {
                         }
                         self.viewport.rebuild_display();
                     }
+                    EditMessage::ShapePopupToggle => self.shape_popup = !self.shape_popup,
                     EditMessage::TextBold => {
                         self.text_bold = !self.text_bold;
                         if let Some(preview) = self.viewport.preview_mut()

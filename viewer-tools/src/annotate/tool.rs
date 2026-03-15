@@ -4,7 +4,6 @@ pub mod pencil;
 pub mod shapes;
 pub mod text;
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AnnotateTool {
     #[default]
@@ -21,6 +20,8 @@ pub enum AnnotateTool {
 }
 
 impl AnnotateTool {
+    /// Return the Icon name for each tool
+
     /// Presets shown in each dropdown group.
     pub fn draw_tools() -> &'static [AnnotateTool] {
         &[AnnotateTool::Pen, AnnotateTool::Pencil]
@@ -39,16 +40,16 @@ impl AnnotateTool {
 
     pub fn icon_name(&self) -> &'static str {
         match self {
-            Self::Pen => "edit-symbolic",
-            Self::Pencil => "edit-symbolic",
-            Self::Highlighter => "format-text-underline-symbolic",
-            Self::Text => "format-text-bold-symbolic",
-            Self::Rectangle => "insert-object-symbolic",
-            Self::Ellipse => "insert-object-symbolic",
-            Self::Arrow => "insert-object-symbolic",
-            Self::Line => "insert-object-symbolic",
-            Self::Star => "insert-object-symbolic",
-            Self::Polygon => "insert-object-symbolic",
+            Self::Pen => "pen-symbolic",
+            Self::Pencil => "pencil-symbolic",
+            Self::Highlighter => "text-highlight-symbolic",
+            Self::Text => "insert-text-symbolic",
+            Self::Rectangle => "insert-rectangle-symbolic",
+            Self::Ellipse => "insert-ellipse-symbolic",
+            Self::Arrow => "insert-arrow-symbolic",
+            Self::Line => "insert-line-symbolic",
+            Self::Star => "insert-star-symbolic",
+            Self::Polygon => "insert-ploygon-symbolic",
         }
     }
 }

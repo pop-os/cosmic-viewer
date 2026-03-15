@@ -92,6 +92,7 @@ pub enum EditMessage {
     CropRatio(CropRatio),
     RotateLeft,
     RotateRight,
+    ShapePopupToggle,
     TextBold,
     TextItalic,
     TextUnderline,
