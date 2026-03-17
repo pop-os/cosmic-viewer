@@ -42,7 +42,9 @@ impl<'a> Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'a> {
                     Status::Captured,
                     Some(CanvasMessage::ContextMenu(Some(position))),
                 ),
-                MouseEvent::ButtonPressed(Button::Left) => (Status::Captured, None),
+                MouseEvent::ButtonPressed(Button::Left) => {
+                    (Status::Captured, Some(CanvasMessage::ContextMenu(None)))
+                }
                 MouseEvent::CursorMoved { .. } => {
                     *state = Interaction::None;
                     (Status::Ignored, None)

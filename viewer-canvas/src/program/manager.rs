@@ -236,7 +236,32 @@ impl ViewportManager {
         let img_x = (point.x - center_x - self.pan.x) / effective_scale + image.width as f32 / 2.0;
         let img_y = (point.y - center_y - self.pan.y) / effective_scale + image.height as f32 / 2.0;
 
-        Some(Point::new(img_x, img_y))
+        if img_x >= 0.0
+            && img_y >= 0.0
+            && img_x <= image.width as f32
+            && img_y <= image.height as f32
+        {
+            Some(Point::new(img_x, img_y))
+        } else {
+            None
+        }
+    }
+
+    // For ToolDrag - clamp to image bounds so strokes end at the edge
+    pub fn screen_to_image_clamped(&self, point: Point, bounds: Rectangle) -> Option<Point> {
+        let image = self.image.as_ref()?;
+        let fit_scale =
+            (bounds.width / image.width as f32).min(bounds.height / image.height as f32);
+        let effective_scale = self.zoom * fit_scale;
+        let center_x = bounds.width / 2.0;
+        let center_y = bounds.height / 2.0;
+        let img_x = (point.x - center_x - self.pan.x) / effective_scale + image.width as f32 / 2.0;
+        let img_y = (point.y - center_y - self.pan.y) / effective_scale + image.height as f32 / 2.0;
+
+        Some(Point::new(
+            img_x.clamp(0.0, image.width as f32),
+            img_y.clamp(0.0, image.height as f32),
+        ))
     }
 
     /// Convert a image coordinate to a screen space point.
@@ -419,18 +444,16 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
             && let Event::Mouse(mouse_event) = &event
             && let Some(position) = cursor.position_in(bounds)
         {
-            let img_point = self.manager.screen_to_image(position, bounds);
-
             match mouse_event {
                 MouseEvent::ButtonPressed(Button::Left) => {
-                    if let Some(pt) = img_point {
+                    if let Some(pt) = self.manager.screen_to_image(position, bounds) {
                         shell.publish(CanvasMessage::ToolStart(pt));
                         return event::Status::Captured;
                     }
                 }
                 MouseEvent::CursorMoved { .. } => {
                     if self.manager.tool_dragging
-                        && let Some(pt) = img_point
+                        && let Some(pt) = self.manager.screen_to_image_clamped(position, bounds)
                     {
                         shell.publish(CanvasMessage::ToolDrag(pt));
                         return event::Status::Captured;

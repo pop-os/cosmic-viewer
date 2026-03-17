@@ -49,7 +49,7 @@ impl AnnotateTool {
             Self::Arrow => "insert-arrow-symbolic",
             Self::Line => "insert-line-symbolic",
             Self::Star => "insert-star-symbolic",
-            Self::Polygon => "insert-ploygon-symbolic",
+            Self::Polygon => "insert-polygon-symbolic",
         }
     }
 }

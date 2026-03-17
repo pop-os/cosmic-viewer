@@ -10,7 +10,7 @@ use cosmic::{
     cosmic_config::CosmicConfigEntry,
     dialog::file_chooser::{self, FileFilter},
     iced::{
-        self, Background, Color, Length, Point, Rectangle, Size, Subscription, Vector,
+        self, Alignment, Background, Color, Length, Point, Rectangle, Size, Subscription, Vector,
         alignment::Horizontal,
         clipboard, event, font,
         keyboard::key::{Key, Named},
@@ -20,7 +20,7 @@ use cosmic::{
     iced_widget::scrollable::{AbsoluteOffset, scroll_to},
     task::future,
     widget::{
-        self, Id, Space, button, column, container, dropdown, icon,
+        self, Id, Space, button, column, container, dropdown, horizontal_space, icon,
         menu::{KeyBind, menu_button},
         nav_bar, popover, row, text, vertical_space,
     },
@@ -63,7 +63,9 @@ pub struct CosmicViewer {
     annotate_tool: AnnotateTool,
     annotate_color: AnnotateColor,
     annotate_stroke_size: f32,
+    highlighter_stroke_size: f32,
     crop_ratio: CropRatio,
+    crop_ratio_popup: bool,
     text_editing: bool,
     font_families: Vec<&'static str>,
     text_font_family: &'static str,
@@ -474,6 +476,82 @@ impl CosmicViewer {
             .view(|| ViewerMessage::ToolbarOverflowToggle)
     }
 
+    fn build_crop_ratio_selector(&self) -> Element<'_, ViewerMessage> {
+        let trigger = button::custom(
+            row()
+                .push(icon::from_name("ratios-symbolic").size(16).icon())
+                .push(icon::from_name("pan-down-symbolic").size(12).icon())
+                .align_y(Alignment::Center)
+                .spacing(2),
+        )
+        .class(cosmic::theme::Button::Icon)
+        .on_press(ViewerMessage::Edit(EditMessage::CropRatioPopupToggle));
+
+        let mut pop = popover(trigger);
+
+        if self.crop_ratio_popup {
+            let is_portrait = self
+                .viewport
+                .image_size()
+                .map(|size| size.height > size.width)
+                .unwrap_or(false);
+
+            let presets = CropRatio::presets();
+            let mut list = column().spacing(4);
+
+            for ratio in presets {
+                let label = ratio.label(is_portrait).to_string();
+                let is_selected = *ratio == self.crop_ratio;
+
+                let item = row()
+                    .push(text::body(label))
+                    .push(if is_selected {
+                        Element::from(icon::from_name("object-select-symbolic").size(16).icon())
+                    } else {
+                        Element::from(horizontal_space().width(16))
+                    })
+                    .align_y(Alignment::Center)
+                    .width(Length::Shrink)
+                    .spacing(8);
+
+                list = list
+                    .push(
+                        button::custom(item)
+                            .class(cosmic::theme::Button::Icon)
+                            .on_press(ViewerMessage::Edit(EditMessage::CropRatio(*ratio))),
+                    )
+                    .align_x(Horizontal::Center)
+                    .width(Length::Shrink);
+            }
+
+            let popup = container(list).padding(8).style(|theme| {
+                let cosmic = theme.cosmic();
+                let component = &cosmic.background.component;
+                container::Style {
+                    icon_color: None,
+                    text_color: None,
+                    background: Some(Background::Color(component.base.into())),
+                    border: Border {
+                        radius: cosmic.radius_s().map(|x| x + 1.0).into(),
+                        width: 1.0,
+                        color: component.divider.into(),
+                    },
+                    ..Default::default()
+                }
+            });
+
+            pop = pop
+                .popup(popup)
+                // TODO: Create libcosmic PR for Position::Top and replace when accepted.
+                // The Point currently sets the popup to be on top of the toolbar centered
+                // on the button.
+                .position(popover::Position::Point(Point::new(-35.0, -10.0)))
+                .on_close(ViewerMessage::Edit(EditMessage::CropRatioPopupToggle));
+        }
+
+        pop.into()
+    }
+
     fn build_crop_toolbar(&self) -> Element<'_, ViewerMessage> {
         let mode = ToolbarMode::from_width(self.window_width.expect("Window has width"));
 
@@ -486,18 +564,6 @@ impl CosmicViewer {
                 .on_press(msg)
                 .into()
         };
-
-        let is_portrait = self
-            .viewport
-            .image_size()
-            .map(|size| size.height > size.width)
-            .unwrap_or(false);
-        let presets = CropRatio::presets();
-        let labels: Vec<String> = presets
-            .iter()
-            .map(|ratio| ratio.label(is_portrait).to_string())
-            .collect();
-        let selected = presets.iter().position(|ratio| *ratio == self.crop_ratio);
 
         responsive_toolbar(mode)
             .overflow_open(self.toolbar_overflow_open)
@@ -544,10 +610,8 @@ impl CosmicViewer {
                 ),
             )
             .center(
-                ToolbarItem::new(dropdown(labels, selected, |idx| {
-                    ViewerMessage::Edit(EditMessage::CropRatio(CropRatio::presets()[idx]))
-                }))
-                .priority(ItemPriority::Essential),
+                ToolbarItem::new(self.build_crop_ratio_selector())
+                    .priority(ItemPriority::Essential),
             )
             .end(
                 ToolbarItem::new(icon_btn(
@@ -664,15 +728,40 @@ impl CosmicViewer {
             );
         }
 
-        let sizes = [2., 4., 6., 8., 10.];
+        let (size_labels, sizes, current_size) = if self.annotate_tool == AnnotateTool::Highlighter
+        {
+            (
+                vec!["8px", "10px", "12px", "14px", "16px", "18px", "20px"],
+                vec![8f32, 10., 12., 14., 16., 18., 20.],
+                self.highlighter_stroke_size,
+            )
+        } else {
+            (
+                vec!["2px", "4px", "6px", "8px", "10px", "12px"],
+                vec![2f32, 4., 6., 8., 10., 12.],
+                self.annotate_stroke_size,
+            )
+        };
+
+        let selected = sizes.iter().position(|size| *size == current_size);
+
         toolbar = toolbar.center(
-            ToolbarItem::new(dropdown(
-                vec!["2px", "4px", "6px", "8px", "10px"],
-                sizes
-                    .iter()
-                    .position(|size| *size == self.annotate_stroke_size),
-                |idx| ViewerMessage::Edit(EditMessage::AnnotateStroke(idx)),
-            ))
+            ToolbarItem::new(
+                row()
+                    .push(icon::from_name("stroke-width-symbolic").size(6).icon())
+                    .push(
+                        dropdown(size_labels, selected, |idx| {
+                            ViewerMessage::Edit(EditMessage::AnnotateStroke(idx))
+                        })
+                        .id(
+                            if self.annotate_tool == AnnotateTool::Highlighter {
+                                widget::Id::new("stroke-highlighter")
+                            } else {
+                                widget::Id::new("stroke-default")
+                            },
+                        ),
+                    ),
+            )
             .priority(ItemPriority::Standard),
         );
 
@@ -931,7 +1020,9 @@ impl Application for CosmicViewer {
             annotate_tool: AnnotateTool::default(),
             annotate_color: AnnotateColor::default(),
             annotate_stroke_size: 2.,
+            highlighter_stroke_size: 8.,
             crop_ratio: CropRatio::Custom,
+            crop_ratio_popup: false,
             text_editing: false,
             font_families: load_font_families(),
             shape_popup: false,
@@ -1242,6 +1333,12 @@ impl Application for CosmicViewer {
                     .preview_mut()
                     .and_then(|preview| preview.as_any_mut().downcast_mut::<TextPreview>());
 
+                if self.context_menu_position.is_some() && matches!(key, Key::Named(Named::Escape))
+                {
+                    self.context_menu_position = None;
+                    return Task::none();
+                }
+
                 if is_text_editing {
                     match &key {
                         Key::Named(Named::Backspace) => {
@@ -1460,6 +1557,11 @@ impl Application for CosmicViewer {
                     }
                 }
                 CanvasMessage::ToolStart(point) => {
+                    if self.context_menu_position.is_some() {
+                        self.context_menu_position = None;
+                        return Task::none();
+                    }
+
                     if let Some(size) = self.viewport.image_size()
                         && let Some(preview) = self.viewport.preview_mut()
                     {
@@ -1500,7 +1602,7 @@ impl Application for CosmicViewer {
                         let preview: Box<dyn ToolOperation> = match self.annotate_tool {
                             AnnotateTool::Highlighter => Box::new(HighlighterPreview::new(
                                 self.annotate_color.0,
-                                self.annotate_stroke_size,
+                                self.highlighter_stroke_size,
                             )),
                             AnnotateTool::Pencil => Box::new(PencilPreview::new(
                                 self.annotate_color.0,
@@ -1557,42 +1659,52 @@ impl Application for CosmicViewer {
                         self.viewport.revert_all();
                     }
                     EditMessage::AnnotateStroke(size) => {
-                        let sizes: [f32; 5] = [2., 4., 6., 8., 10.];
-                        if let Some(&size) = sizes.get(size) {
-                            self.annotate_stroke_size = size;
-                            if let Some(preview) = self.viewport.preview_mut() {
-                                if let Some(pen) = preview.as_any_mut().downcast_mut::<PenPreview>()
-                                {
-                                    pen.width = size;
-                                } else if let Some(pencil) =
-                                    preview.as_any_mut().downcast_mut::<PencilPreview>()
-                                {
-                                    pencil.width = size;
-                                } else if let Some(highlighter) =
-                                    preview.as_any_mut().downcast_mut::<HighlighterPreview>()
+                        if self.annotate_tool == AnnotateTool::Highlighter {
+                            let sizes: [f32; 7] = [8., 10., 12., 14., 16., 18., 20.];
+                            if let Some(&size) = sizes.get(size) {
+                                self.highlighter_stroke_size = size;
+                                if let Some(highlighter) =
+                                    self.viewport.preview_mut().and_then(|preview| {
+                                        preview.as_any_mut().downcast_mut::<HighlighterPreview>()
+                                    })
                                 {
                                     highlighter.width = size;
-                                } else if let Some(shape) =
-                                    preview.as_any_mut().downcast_mut::<ShapePreview>()
-                                {
-                                    shape.width = size;
-                                } else if let Some(text) =
-                                    preview.as_any_mut().downcast_mut::<TextPreview>()
-                                {
-                                    text.font_size = size * 8.0;
+                                }
+                            }
+                        } else {
+                            let sizes: [f32; 6] = [2., 4., 6., 8., 10., 12.];
+                            if let Some(&size) = sizes.get(size) {
+                                self.annotate_stroke_size = size;
+                                if let Some(preview) = self.viewport.preview_mut() {
+                                    if let Some(pen) =
+                                        preview.as_any_mut().downcast_mut::<PenPreview>()
+                                    {
+                                        pen.width = size;
+                                    } else if let Some(pencil) =
+                                        preview.as_any_mut().downcast_mut::<PencilPreview>()
+                                    {
+                                        pencil.width = size;
+                                    } else if let Some(shape) =
+                                        preview.as_any_mut().downcast_mut::<ShapePreview>()
+                                    {
+                                        shape.width = size;
+                                    } else if let Some(text) =
+                                        preview.as_any_mut().downcast_mut::<TextPreview>()
+                                    {
+                                        text.font_size = size * 8.0;
+                                    }
                                 }
                             }
                         }
                     }
                     EditMessage::AnnotateTool(tool) => {
                         self.annotate_tool = tool;
-                        self.shape_popup = !self.shape_popup;
                         match tool {
                             AnnotateTool::Highlighter => {
                                 self.viewport
                                     .set_preview(Some(Box::new(HighlighterPreview::new(
                                         self.annotate_color.0,
-                                        self.annotate_stroke_size,
+                                        self.highlighter_stroke_size,
                                     ))));
                             }
                             AnnotateTool::Pen => {
@@ -1613,6 +1725,9 @@ impl Application for CosmicViewer {
                             | AnnotateTool::Arrow
                             | AnnotateTool::Star
                             | AnnotateTool::Polygon => {
+                                if self.shape_popup {
+                                    self.shape_popup = false;
+                                }
                                 let kind = match tool {
                                     AnnotateTool::Rectangle => ShapeKind::Rectangle,
                                     AnnotateTool::Ellipse => ShapeKind::Ellipse,
@@ -1718,6 +1833,9 @@ impl Application for CosmicViewer {
                             self.cache.remove_full(current);
                             tasks.push(self.load_full_image(current.to_path_buf()));
                         }
+                    }
+                    EditMessage::CropRatioPopupToggle => {
+                        self.crop_ratio_popup = !self.crop_ratio_popup
                     }
                     EditMessage::CropRatio(ratio) => {
                         let size = self.viewport.image_size();
