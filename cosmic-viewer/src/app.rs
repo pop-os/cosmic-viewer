@@ -20,7 +20,7 @@ use cosmic::{
     iced_widget::scrollable::{AbsoluteOffset, scroll_to},
     task::future,
     widget::{
-        self, Id, Space, button, column, container, dropdown, horizontal_space, icon,
+        self, Id, Space, button, column, container, divider, dropdown, horizontal_space, icon,
         menu::{KeyBind, menu_button},
         nav_bar, popover, row, text, vertical_space,
     },
@@ -565,23 +565,24 @@ impl CosmicViewer {
                 .into()
         };
 
+        let can_undo = self.viewport.can_undo();
+        let can_redo = self.viewport.can_redo();
+
+        let undo_btn = button::icon(icon::from_name("edit-undo-symbolic"))
+            .tooltip(fl!("menu-undo"))
+            .on_press_maybe(can_undo.then(|| ViewerMessage::Edit(EditMessage::Undo)));
+
+        let redo_btn = button::icon(icon::from_name("edit-redo-symbolic"))
+            .tooltip(fl!("menu-redo"))
+            .on_press_maybe(can_redo.then(|| ViewerMessage::Edit(EditMessage::Redo)));
+
         responsive_toolbar(mode)
             .overflow_open(self.toolbar_overflow_open)
+            .start(ToolbarItem::new(undo_btn).priority(ItemPriority::Essential))
+            .start(ToolbarItem::new(redo_btn).priority(ItemPriority::Essential))
             .start(
-                ToolbarItem::new(icon_btn(
-                    "edit-undo-symbolic",
-                    fl!("menu-undo"),
-                    ViewerMessage::Edit(EditMessage::Undo),
-                ))
-                .priority(ItemPriority::Essential),
-            )
-            .start(
-                ToolbarItem::new(icon_btn(
-                    "edit-redo-symbolic",
-                    fl!("menu-redo"),
-                    ViewerMessage::Edit(EditMessage::Redo),
-                ))
-                .priority(ItemPriority::Essential),
+                ToolbarItem::new(divider::vertical::light().height(Length::Fixed(32.0)))
+                    .priority(ItemPriority::Optional),
             )
             .start(
                 ToolbarItem::new(icon_btn(
@@ -614,11 +615,10 @@ impl CosmicViewer {
                     .priority(ItemPriority::Essential),
             )
             .end(
-                ToolbarItem::new(icon_btn(
-                    "window-close-symbolic",
-                    fl!("toolbar-cancel"),
-                    ViewerMessage::Edit(EditMessage::CropCancel),
-                ))
+                ToolbarItem::new(
+                    button::standard(fl!("toolbar-cancel"))
+                        .on_press(ViewerMessage::Edit(EditMessage::CropCancel)),
+                )
                 .priority(ItemPriority::Essential),
             )
             .end(
@@ -646,32 +646,35 @@ impl CosmicViewer {
                 .into()
         };
 
+        let can_undo = self.viewport.can_undo();
+        let can_redo = self.viewport.can_redo();
+
+        let undo_btn = button::icon(icon::from_name("edit-undo-symbolic"))
+            .tooltip(fl!("menu-undo"))
+            .on_press_maybe(can_undo.then(|| ViewerMessage::Edit(EditMessage::Undo)));
+
+        let redo_btn = button::icon(icon::from_name("edit-redo-symbolic"))
+            .tooltip(fl!("menu-redo"))
+            .on_press_maybe(can_redo.then(|| ViewerMessage::Edit(EditMessage::Redo)));
+
         let mut toolbar = responsive_toolbar(mode)
             .start(
-                ToolbarItem::new(icon_btn(
-                    "edit-undo-symbolic",
-                    fl!("menu-undo"),
-                    ViewerMessage::Edit(EditMessage::Undo),
-                ))
-                .priority(ItemPriority::Optional)
-                .overflow(
-                    fl!("menu-undo"),
-                    Some("edit-undo-symbolic"),
-                    ViewerMessage::Edit(EditMessage::Undo),
-                ),
+                ToolbarItem::new(undo_btn)
+                    .priority(ItemPriority::Optional)
+                    .overflow(
+                        fl!("menu-undo"),
+                        Some("edit-undo-symbolic"),
+                        ViewerMessage::Edit(EditMessage::Undo),
+                    ),
             )
             .start(
-                ToolbarItem::new(icon_btn(
-                    "edit-redo-symbolic",
-                    fl!("menu-redo"),
-                    ViewerMessage::Edit(EditMessage::Redo),
-                ))
-                .priority(ItemPriority::Optional)
-                .overflow(
-                    fl!("menu-redo"),
-                    Some("edit-redo-symbolic"),
-                    ViewerMessage::Edit(EditMessage::Redo),
-                ),
+                ToolbarItem::new(redo_btn)
+                    .priority(ItemPriority::Optional)
+                    .overflow(
+                        fl!("menu-redo"),
+                        Some("edit-redo-symbolic"),
+                        ViewerMessage::Edit(EditMessage::Redo),
+                    ),
             )
             .center(
                 ToolbarItem::new(icon_btn(
@@ -699,6 +702,10 @@ impl CosmicViewer {
             )
             .center(
                 ToolbarItem::new(self.build_shape_selector()).priority(ItemPriority::Essential),
+            )
+            .center(
+                ToolbarItem::new(divider::vertical::light().height(Length::Fixed(32.0)))
+                    .priority(ItemPriority::Standard),
             );
 
         let colors = AnnotateColor::presets();
@@ -765,23 +772,13 @@ impl CosmicViewer {
             .priority(ItemPriority::Standard),
         );
 
-        toolbar = toolbar
-            .end(
-                ToolbarItem::new(icon_btn(
-                    "window-close-symbolic",
-                    fl!("toolbar-cancel"),
-                    ViewerMessage::Edit(EditMessage::AnnotateCancel),
-                ))
-                .priority(ItemPriority::Essential),
+        toolbar = toolbar.end(
+            ToolbarItem::new(
+                button::standard(fl!("toolbar-cancel"))
+                    .on_press(ViewerMessage::Edit(EditMessage::AnnotateCancel)),
             )
-            .end(
-                ToolbarItem::new(icon_btn(
-                    "object-select-symbolic",
-                    fl!("toolbar-apply"),
-                    ViewerMessage::Edit(EditMessage::AnnotateApply),
-                ))
-                .priority(ItemPriority::Essential),
-            );
+            .priority(ItemPriority::Essential),
+        );
 
         toolbar.view(|| ViewerMessage::ToolbarOverflowToggle)
     }
@@ -1657,6 +1654,21 @@ impl Application for CosmicViewer {
                     EditMessage::AnnotateCancel => {
                         self.viewport.cancel_tool();
                         self.viewport.revert_all();
+                        self.viewport.set_active_tool(None);
+                        self.viewport.set_preview(None);
+                        // Restore working image from cache so rotation etc. still works
+                        if let Some(path) = self.nav.current().cloned() {
+                            if let Some(cached) = self.cache.get_full(&path) {
+                                self.viewport.set_image(
+                                    Some(CanvasImage {
+                                        handle: cached.handle,
+                                        width: cached.width,
+                                        height: cached.height,
+                                    }),
+                                    Some(cached.image.clone()),
+                                );
+                            }
+                        }
                     }
                     EditMessage::AnnotateStroke(size) => {
                         if self.annotate_tool == AnnotateTool::Highlighter {

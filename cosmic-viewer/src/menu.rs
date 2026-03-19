@@ -104,7 +104,7 @@ fn build_edit_menu() -> Vec<menu::Item<MenuAction, String>> {
         ),
         menu::Item::Divider,
         menu::Item::Button(fl!("menu-rotate-left"), None, MenuAction::RotateLeft),
-        menu::Item::Button(fl!("menu-rotate-right"), None, MenuAction::RotateLeft),
+        menu::Item::Button(fl!("menu-rotate-right"), None, MenuAction::RotateRight),
     ]
 }
 
@@ -129,7 +129,7 @@ pub fn menu_bar<'a>(
 
     responsive_menu_bar()
         .item_height(ItemHeight::Dynamic(40))
-        .item_width(ItemWidth::Uniform(250))
+        .item_width(ItemWidth::Uniform(320))
         .spacing(4.)
         .into_element(
             core,

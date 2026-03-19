@@ -46,8 +46,6 @@ toolbar-rotate-left = Rotate Left
 toolbar-rotate-right = Rotate Right
 toolbar-zoom-in = Zoom in
 toolbar-zoom-out = Zoom out
-toolbar-save = Save
-toolbar-save-as  = Save As
 toolbar-fullscreen = Fullscreen
 
 # Shapes Tool
