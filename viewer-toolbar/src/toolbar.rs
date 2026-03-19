@@ -134,7 +134,7 @@ impl<'a, Message: Clone + 'static> ResponsiveToolbar<'a, Message> {
         }
 
         if has_start && (has_center || has_end) {
-            toolbar_row = toolbar_row.push(divider::vertical::light().height(Length::Fixed(24.0)));
+            toolbar_row = toolbar_row.push(divider::vertical::light().height(Length::Fixed(32.0)));
         }
 
         if has_center {
@@ -142,7 +142,7 @@ impl<'a, Message: Clone + 'static> ResponsiveToolbar<'a, Message> {
         }
 
         if has_center && has_end {
-            toolbar_row = toolbar_row.push(divider::vertical::light().height(Length::Fixed(24.0)));
+            toolbar_row = toolbar_row.push(divider::vertical::light().height(Length::Fixed(32.0)));
         }
 
         if has_end {
@@ -153,7 +153,7 @@ impl<'a, Message: Clone + 'static> ResponsiveToolbar<'a, Message> {
         if has_overflow {
             if has_start || has_center || has_end {
                 toolbar_row =
-                    toolbar_row.push(divider::vertical::light().height(Length::Fixed(24.0)));
+                    toolbar_row.push(divider::vertical::light().height(Length::Fixed(32.0)));
             }
 
             let overflow_btn =
