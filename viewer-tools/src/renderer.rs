@@ -43,6 +43,25 @@ pub fn stroke_on_image(
     blend_overlay(rgba, &overlay);
 }
 
+/// Fill a path onto a `DynamicImage` with the given color.
+pub fn fill_on_image(image: &mut DynamicImage, path: &Path, color: Color) {
+    let rgba = image.as_mut_rgba8().expect("image should be RGBA");
+    let (img_width, img_height) = (rgba.width(), rgba.height());
+
+    let mut overlay =
+        Pixmap::new(img_width, img_height).expect("image dimensions should produce a valid pixmap");
+    let mut paint = Paint::default();
+    paint.set_color_rgba8(
+        (color.r * 255.0) as u8,
+        (color.g * 255.0) as u8,
+        (color.b * 255.0) as u8,
+        (color.a * 255.0) as u8,
+    );
+
+    overlay.fill_path(path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+    blend_overlay(rgba, &overlay);
+}
+
 fn blend_overlay(dst: &mut RgbaImage, overlay: &Pixmap) {
     let overlay_data = overlay.data();
     let dst_data: &mut [u8] = dst.as_mut();

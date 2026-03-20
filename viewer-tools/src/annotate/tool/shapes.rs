@@ -7,7 +7,7 @@ pub use preview::ShapePreview;
 use cosmic::{
     Renderer,
     iced::{Color, Point, Rectangle, Size},
-    iced_widget::canvas::{Frame, Path, Stroke, path::Builder},
+    iced_widget::canvas::{Fill, Frame, Path, Stroke, path::Builder},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,12 +30,29 @@ pub(crate) fn draw_shape(
     frame: &mut Frame<Renderer>,
     scale: f32,
 ) {
-    let stroke = Stroke::default()
-        .with_color(color)
-        .with_width(width / scale);
-
     let path = build_path(kind, start, end);
-    frame.stroke(&path, stroke);
+
+    match kind {
+        ShapeKind::Star | ShapeKind::Polygon => {
+            frame.fill(&path, Fill::from(color));
+        }
+        ShapeKind::Arrow => {
+            // Stroke the shaft, fill the arrowhead
+            let shaft = Path::line(start, end);
+            let stroke = Stroke::default()
+                .with_color(color)
+                .with_width(width / scale);
+            frame.stroke(&shaft, stroke);
+            let head = arrow_head_path(start, end);
+            frame.fill(&head, Fill::from(color));
+        }
+        _ => {
+            let stroke = Stroke::default()
+                .with_color(color)
+                .with_width(width / scale);
+            frame.stroke(&path, stroke);
+        }
+    }
 }
 
 fn build_path(kind: ShapeKind, start: Point, end: Point) -> Path {
@@ -122,6 +139,40 @@ fn arrow_path(start: Point, end: Point) -> Path {
         builder.move_to(left);
         builder.line_to(end);
         builder.line_to(right);
+    })
+}
+
+/// Filled arrowhead triangle for the canvas preview.
+fn arrow_head_path(start: Point, end: Point) -> Path {
+    let delta_x = end.x - start.x;
+    let delta_y = end.y - start.y;
+    let len = (delta_x * delta_x + delta_y * delta_y).sqrt();
+    if len < 1.0 {
+        return Path::line(start, end);
+    }
+
+    let head_len = (len * 0.25).min(30.0);
+    let head_width = head_len * 0.5;
+    let unit_x = delta_x / len;
+    let unit_y = delta_y / len;
+    let perp_x = -unit_y;
+    let perp_y = unit_x;
+
+    let base = Point::new(end.x - unit_x * head_len, end.y - unit_y * head_len);
+    let left = Point::new(
+        base.x + perp_x * head_width / 2.0,
+        base.y + perp_y * head_width / 2.0,
+    );
+    let right = Point::new(
+        base.x - perp_x * head_width / 2.0,
+        base.y - perp_y * head_width / 2.0,
+    );
+
+    Path::new(|builder: &mut Builder| {
+        builder.move_to(end);
+        builder.line_to(left);
+        builder.line_to(right);
+        builder.close();
     })
 }
 

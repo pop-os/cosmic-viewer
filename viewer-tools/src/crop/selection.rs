@@ -11,6 +11,9 @@ use image::DynamicImage;
 
 const MIN_SIZE: f32 = 10.0;
 const HANDLE_SIZE: f32 = 16.0;
+const HANDLE_BAR_RATIO: f32 = 2.0;
+const HANDLE_THICKNESS_RATIO: f32 = 0.25;
+const BORDER_WIDTH: f32 = 1.5;
 
 /// Live crop selection state.
 /// Transparent, which means never committed to undo/redo.
@@ -283,13 +286,14 @@ impl CropSelection {
         h: f32,
         anchor_x: f32,
         anchor_y: f32,
+        color: Color,
     ) {
         let rect = Rectangle::new(
             Point::new(center.x - w * anchor_x, center.y - h * anchor_y),
             Size::new(w, h),
         );
 
-        frame.fill_rectangle(rect.position(), rect.size(), Fill::from(Color::WHITE));
+        frame.fill_rectangle(rect.position(), rect.size(), Fill::from(color));
     }
 }
 
@@ -302,8 +306,9 @@ impl ToolOperation for CropSelection {
         let region = self.region;
         let frame_size = image_size;
         let overlay_color = Color::from_rgba(0.0, 0.0, 0.0, 0.5);
-        let border_width = 0.75 / scale;
+        let border_width = BORDER_WIDTH / scale;
         let handle_size = HANDLE_SIZE / scale;
+        let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
 
         // Dark overlay outside selection
         frame.fill_rectangle(
@@ -341,36 +346,36 @@ impl ToolOperation for CropSelection {
                 Size::new(region.width - border_width, region.height - border_width),
             ),
             Stroke::default()
-                .with_color(Color::WHITE)
+                .with_color(accent)
                 .with_width(border_width),
         );
 
-        let bar_long = handle_size * 2.0;
-        let bar_short = handle_size * 0.25;
+        let bar_long = handle_size * HANDLE_BAR_RATIO;
+        let bar_short = handle_size * HANDLE_THICKNESS_RATIO;
 
         // Corner handles — two bars each forming an L
         // Top-left
-        Self::draw_handle(frame, Point::new(region.x, region.y), bar_long, bar_short, 0.0, 0.0);
-        Self::draw_handle(frame, Point::new(region.x, region.y), bar_short, bar_long, 0.0, 0.0);
+        Self::draw_handle(frame, Point::new(region.x, region.y), bar_long, bar_short, 0.0, 0.0, accent);
+        Self::draw_handle(frame, Point::new(region.x, region.y), bar_short, bar_long, 0.0, 0.0, accent);
         // Top-right
-        Self::draw_handle(frame, Point::new(region.x + region.width, region.y), bar_long, bar_short, 1.0, 0.0);
-        Self::draw_handle(frame, Point::new(region.x + region.width, region.y), bar_short, bar_long, 1.0, 0.0);
+        Self::draw_handle(frame, Point::new(region.x + region.width, region.y), bar_long, bar_short, 1.0, 0.0, accent);
+        Self::draw_handle(frame, Point::new(region.x + region.width, region.y), bar_short, bar_long, 1.0, 0.0, accent);
         // Bottom-left
-        Self::draw_handle(frame, Point::new(region.x, region.y + region.height), bar_long, bar_short, 0.0, 1.0);
-        Self::draw_handle(frame, Point::new(region.x, region.y + region.height), bar_short, bar_long, 0.0, 1.0);
+        Self::draw_handle(frame, Point::new(region.x, region.y + region.height), bar_long, bar_short, 0.0, 1.0, accent);
+        Self::draw_handle(frame, Point::new(region.x, region.y + region.height), bar_short, bar_long, 0.0, 1.0, accent);
         // Bottom-right
-        Self::draw_handle(frame, Point::new(region.x + region.width, region.y + region.height), bar_long, bar_short, 1.0, 1.0);
-        Self::draw_handle(frame, Point::new(region.x + region.width, region.y + region.height), bar_short, bar_long, 1.0, 1.0);
+        Self::draw_handle(frame, Point::new(region.x + region.width, region.y + region.height), bar_long, bar_short, 1.0, 1.0, accent);
+        Self::draw_handle(frame, Point::new(region.x + region.width, region.y + region.height), bar_short, bar_long, 1.0, 1.0, accent);
 
         // Edge handles — single bar each
         // Top center
-        Self::draw_handle(frame, Point::new(region.x + region.width / 2.0, region.y), bar_long, bar_short, 0.5, 0.0);
+        Self::draw_handle(frame, Point::new(region.x + region.width / 2.0, region.y), bar_long, bar_short, 0.5, 0.0, accent);
         // Bottom center
-        Self::draw_handle(frame, Point::new(region.x + region.width / 2.0, region.y + region.height), bar_long, bar_short, 0.5, 1.0);
+        Self::draw_handle(frame, Point::new(region.x + region.width / 2.0, region.y + region.height), bar_long, bar_short, 0.5, 1.0, accent);
         // Left center
-        Self::draw_handle(frame, Point::new(region.x, region.y + region.height / 2.0), bar_short, bar_long, 0.0, 0.5);
+        Self::draw_handle(frame, Point::new(region.x, region.y + region.height / 2.0), bar_short, bar_long, 0.0, 0.5, accent);
         // Right center
-        Self::draw_handle(frame, Point::new(region.x + region.width, region.y + region.height / 2.0), bar_short, bar_long, 1.0, 0.5);
+        Self::draw_handle(frame, Point::new(region.x + region.width, region.y + region.height / 2.0), bar_short, bar_long, 1.0, 0.5, accent);
     }
 
     fn apply(&self, _image: &mut DynamicImage) {

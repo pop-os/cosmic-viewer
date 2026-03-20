@@ -36,6 +36,9 @@ pub enum MenuAction {
     ZoomOut,
     FitToView,
     Fullscreen,
+    SetWallpaper,
+    MoveToTrash,
+    DeletePermanently,
     About,
 }
 
@@ -71,6 +74,9 @@ impl MenuAction {
             MenuAction::Undo => ViewerMessage::Edit(EditMessage::Undo),
             MenuAction::Redo => ViewerMessage::Edit(EditMessage::Redo),
             MenuAction::RevertAll => ViewerMessage::Edit(EditMessage::RevertAll),
+            MenuAction::SetWallpaper => ViewerMessage::SetWallpaper,
+            MenuAction::MoveToTrash => ViewerMessage::MoveToTrash,
+            MenuAction::DeletePermanently => ViewerMessage::DeletePermanently,
         }
     }
 }
