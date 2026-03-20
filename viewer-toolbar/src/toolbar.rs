@@ -1,21 +1,20 @@
-use crate::ItemPriority;
 use cosmic::{
     Element,
     iced::{Alignment, Length},
     theme,
-    widget::{button, column, container, divider, icon, popover, row, text},
+    widget::{column, container, divider, row},
 };
 
-use super::{ToolbarItem, ToolbarMode};
+use super::ToolbarMode;
+use crate::ToolbarItem;
 
-/// A three-section toolbar with vertical dividers between sections.
+/// A three-section toolbar that stacks into two rows when narrow.
 pub struct ResponsiveToolbar<'a, Message> {
     start: Vec<ToolbarItem<'a, Message>>,
     center: Vec<ToolbarItem<'a, Message>>,
     end: Vec<ToolbarItem<'a, Message>>,
     spacing: u16,
     mode: ToolbarMode,
-    overflow_open: bool,
 }
 
 impl<'a, Message: Clone + 'static> ResponsiveToolbar<'a, Message> {
@@ -27,7 +26,6 @@ impl<'a, Message: Clone + 'static> ResponsiveToolbar<'a, Message> {
             end: Vec::new(),
             spacing: spacing.space_xxs,
             mode,
-            overflow_open: false,
         }
     }
 
@@ -55,153 +53,115 @@ impl<'a, Message: Clone + 'static> ResponsiveToolbar<'a, Message> {
         self
     }
 
+    /// Kept for API compatibility, no longer used.
     #[must_use]
-    pub fn overflow_open(mut self, open: bool) -> Self {
-        self.overflow_open = open;
+    pub fn overflow_open(self, _open: bool) -> Self {
         self
     }
 
-    pub fn view<F>(self, toggle_overflow: F) -> Element<'a, Message>
+    pub fn view<F>(self, _toggle_overflow: F) -> Element<'a, Message>
     where
         F: Fn() -> Message + 'static,
     {
-        let Self {
-            start,
-            center,
-            end,
-            spacing: _,
-            mode,
-            overflow_open: _,
-        } = self;
-
         let spacing = cosmic::theme::active().cosmic().spacing;
 
-        // Collect visible and overflow items
-        let mut visible_start = Vec::new();
-        let mut visible_center = Vec::new();
-        let mut visible_end = Vec::new();
-        let mut overflow_items: Vec<(String, Option<&'static str>, Message)> = Vec::new();
+        let start: Vec<_> = self.start.into_iter().map(|i| i.element).collect();
+        let center: Vec<_> = self.center.into_iter().map(|i| i.element).collect();
+        let end: Vec<_> = self.end.into_iter().map(|i| i.element).collect();
 
-        let min_priority = match mode {
-            ToolbarMode::Full => ItemPriority::Optional,
-            ToolbarMode::Compact => ItemPriority::Standard,
-            ToolbarMode::Minimal => ItemPriority::Essential,
-        };
-        let should_show = |priority: ItemPriority| priority <= min_priority;
-
-        for item in start {
-            if should_show(item.priority) {
-                visible_start.push(item.element);
-            } else if let (Some(label), Some(msg)) = (item.overflow_label, item.overflow_message) {
-                overflow_items.push((label, item.overflow_icon, msg));
-            }
-        }
-
-        for item in center {
-            if should_show(item.priority) {
-                visible_center.push(item.element);
-            } else if let (Some(label), Some(msg)) = (item.overflow_label, item.overflow_message) {
-                overflow_items.push((label, item.overflow_icon, msg));
-            }
-        }
-
-        for item in end {
-            if should_show(item.priority) {
-                visible_end.push(item.element);
-            } else if let (Some(label), Some(msg)) = (item.overflow_label, item.overflow_message) {
-                overflow_items.push((label, item.overflow_icon, msg));
-            }
-        }
-
-        // Build toolbar
-        let section = |items: Vec<Element<'a, Message>>, spacing: u16| {
+        let section = |items: Vec<Element<'a, Message>>| {
             row::with_children(items)
-                .spacing(spacing)
+                .spacing(self.spacing)
                 .align_y(Alignment::Center)
         };
 
-        let mut toolbar_row = row::with_capacity(8)
-            .align_y(Alignment::Center)
-            .spacing(self.spacing);
+        let has_start = !start.is_empty();
+        let has_center = !center.is_empty();
+        let has_end = !end.is_empty();
 
-        let has_start = !visible_start.is_empty();
-        let has_center = !visible_center.is_empty();
-        let has_end = !visible_end.is_empty();
-        let has_overflow = !overflow_items.is_empty();
+        match self.mode {
+            ToolbarMode::Full => {
+                // Single row: start | center | end
+                let mut toolbar_row = row::with_capacity(8)
+                    .align_y(Alignment::Center)
+                    .spacing(self.spacing);
 
-        if has_start {
-            toolbar_row = toolbar_row.push(section(visible_start, self.spacing));
-        }
+                if has_start {
+                    toolbar_row = toolbar_row.push(section(start));
+                }
 
-        if has_start && (has_center || has_end) {
-            toolbar_row = toolbar_row.push(divider::vertical::light().height(Length::Fixed(32.0)));
-        }
+                if has_start && (has_center || has_end) {
+                    toolbar_row = toolbar_row
+                        .push(divider::vertical::light().height(Length::Fixed(32.0)));
+                }
 
-        if has_center {
-            toolbar_row = toolbar_row.push(section(visible_center, self.spacing));
-        }
+                if has_center {
+                    toolbar_row = toolbar_row.push(section(center));
+                }
 
-        if has_center && has_end {
-            toolbar_row = toolbar_row.push(divider::vertical::light().height(Length::Fixed(32.0)));
-        }
+                if has_center && has_end {
+                    toolbar_row = toolbar_row
+                        .push(divider::vertical::light().height(Length::Fixed(32.0)));
+                }
 
-        if has_end {
-            toolbar_row = toolbar_row.push(section(visible_end, self.spacing));
-        }
+                if has_end {
+                    toolbar_row = toolbar_row.push(section(end));
+                }
 
-        // Add overflow menu button if needed
-        if has_overflow {
-            if has_start || has_center || has_end {
-                toolbar_row =
-                    toolbar_row.push(divider::vertical::light().height(Length::Fixed(32.0)));
+                container(toolbar_row)
+                    .padding([
+                        spacing.space_xxs,
+                        spacing.space_s,
+                        spacing.space_xxs,
+                        spacing.space_s,
+                    ])
+                    .height(Length::Shrink)
+                    .class(theme::Container::Secondary)
+                    .into()
             }
+            ToolbarMode::Compact | ToolbarMode::Minimal => {
+                // Two rows: top = start + end, bottom = center
+                let mut top_row = row::with_capacity(8)
+                    .align_y(Alignment::Center)
+                    .spacing(self.spacing);
 
-            let overflow_btn =
-                button::icon(icon::from_name("view-more-symbolic")).on_press(toggle_overflow());
+                if has_start {
+                    top_row = top_row.push(section(start));
+                }
 
-            let overflow_menu: Element<'a, Message> = column::with_children(
-                overflow_items
-                    .into_iter()
-                    .map(|(label, icon_name, msg)| {
-                        let mut btn_row = row::with_capacity(2).spacing(spacing.space_xs);
-                        if let Some(icon_name) = icon_name {
-                            btn_row = btn_row.push(icon::from_name(icon_name).size(16));
-                        }
+                if has_start && has_end {
+                    top_row = top_row
+                        .push(divider::vertical::light().height(Length::Fixed(32.0)));
+                }
 
-                        btn_row = btn_row.push(text::body(label));
+                if has_end {
+                    top_row = top_row.push(section(end));
+                }
 
-                        button::custom(btn_row)
-                            .class(theme::Button::MenuItem)
-                            .on_press(msg)
-                            .width(Length::Fill)
-                            .into()
-                    })
-                    .collect::<Vec<_>>(),
-            )
-            .spacing(spacing.space_xxs)
-            .padding(spacing.space_xs)
-            .into();
+                let mut content = column()
+                    .spacing(spacing.space_xxs)
+                    .align_x(Alignment::Center)
+                    .width(Length::Shrink);
 
-            let mut overflow_popover = popover(overflow_btn);
-            if self.overflow_open {
-                overflow_popover = overflow_popover
-                    .popup(overflow_menu)
-                    .position(popover::Position::Bottom)
-                    .on_close(toggle_overflow());
+                content = content.push(top_row);
+
+                if has_center {
+                    content = content.push(section(center));
+                }
+
+                container(content)
+                    .padding([
+                        spacing.space_xxs,
+                        spacing.space_s,
+                        spacing.space_xxs,
+                        spacing.space_s,
+                    ])
+                    .width(Length::Shrink)
+                    .height(Length::Shrink)
+                    .class(theme::Container::Secondary)
+                    .into()
             }
-            toolbar_row = toolbar_row.push(overflow_popover);
         }
-
-        container(toolbar_row)
-            .padding([
-                spacing.space_xxs,
-                spacing.space_s,
-                spacing.space_xxs,
-                spacing.space_s,
-            ])
-            .height(Length::Shrink)
-            .class(theme::Container::Secondary)
-            .into()
     }
 }
 

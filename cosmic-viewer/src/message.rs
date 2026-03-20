@@ -94,6 +94,7 @@ pub enum EditMessage {
     RotateLeft,
     RotateRight,
     ShapePopupToggle,
+    StrokePopupToggle,
     TextBold,
     TextItalic,
     TextUnderline,
