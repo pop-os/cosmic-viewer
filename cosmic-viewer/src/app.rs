@@ -76,6 +76,7 @@ pub struct CosmicViewer {
     text_alignment: Horizontal,
     shape_popup: bool,
     stroke_popup: bool,
+    color_picker: cosmic::widget::ColorPickerModel,
     selected_shape: AnnotateTool,
     toolbar_overflow_open: bool,
     window_width: Option<f32>,
@@ -673,6 +674,50 @@ impl CosmicViewer {
             ));
         }
 
+        // Custom color picker button
+        let color_picker_btn = self
+            .color_picker
+            .picker_button(
+                |u| ViewerMessage::Edit(EditMessage::ColorPicker(u)),
+                Some(12),
+            )
+            .width(Length::Fixed(28.0))
+            .height(Length::Fixed(28.0));
+
+        let mut color_picker_popover = popover(color_picker_btn);
+        if self.color_picker.get_is_active() {
+            let picker = self
+                .color_picker
+                .builder(|u| ViewerMessage::Edit(EditMessage::ColorPicker(u)))
+                .reset_label("Reset to default")
+                .save_label("Apply")
+                .cancel_label("Cancel")
+                .build("Recent colors", "Copy", "Copied!");
+
+            let popup = container(picker)
+                .padding(4)
+                .max_width(260.0)
+                .style(|theme| {
+                    let cosmic = theme.cosmic();
+                    let component = &cosmic.background.component;
+                    container::Style {
+                        background: Some(Background::Color(component.base.into())),
+                        border: Border {
+                            radius: cosmic.radius_s().map(|x| x + 1.0).into(),
+                            width: 1.0,
+                            color: component.divider.into(),
+                        },
+                        ..Default::default()
+                    }
+                });
+
+            color_picker_popover = color_picker_popover
+                .popup(popup)
+                .position(popover::Position::Point(Point::new(-110.0, 0.0)));
+        }
+
+        toolbar = toolbar.center(ToolbarItem::new(color_picker_popover));
+
         toolbar.view(|| ViewerMessage::ToolbarOverflowToggle)
     }
 
@@ -870,20 +915,19 @@ impl CosmicViewer {
         let mut pop = popover(trigger);
 
         if self.stroke_popup {
-            let (labels, sizes, current) =
-                if self.annotate_tool == AnnotateTool::Highlighter {
-                    (
-                        &["8px", "10px", "12px", "14px", "16px", "18px", "20px"][..],
-                        &[8_f32, 10., 12., 14., 16., 18., 20.][..],
-                        self.highlighter_stroke_size,
-                    )
-                } else {
-                    (
-                        &["2px", "4px", "6px", "8px", "10px", "12px"][..],
-                        &[2_f32, 4., 6., 8., 10., 12.][..],
-                        self.annotate_stroke_size,
-                    )
-                };
+            let (labels, sizes, current) = if self.annotate_tool == AnnotateTool::Highlighter {
+                (
+                    &["8px", "10px", "12px", "14px", "16px", "18px", "20px"][..],
+                    &[8_f32, 10., 12., 14., 16., 18., 20.][..],
+                    self.highlighter_stroke_size,
+                )
+            } else {
+                (
+                    &["2px", "4px", "6px", "8px", "10px", "12px"][..],
+                    &[2_f32, 4., 6., 8., 10., 12.][..],
+                    self.annotate_stroke_size,
+                )
+            };
 
             let mut list = column().spacing(4);
             for (label, &size) in labels.iter().zip(sizes.iter()) {
@@ -1001,6 +1045,14 @@ impl Application for CosmicViewer {
             font_families: load_font_families(),
             shape_popup: false,
             stroke_popup: false,
+            color_picker: cosmic::widget::ColorPickerModel::new(
+                "Hex",
+                "RGB",
+                None,
+                Some(Color::BLACK),
+            )
+            .width(Length::Fixed(248.0))
+            .height(Length::Fixed(148.0)),
             selected_shape: AnnotateTool::Rectangle,
             text_font_family: default_family,
             text_font_index: font_index,
@@ -1097,16 +1149,16 @@ impl Application for CosmicViewer {
             let has_prev = cur_idx > 0;
             let has_next = cur_idx + 1 < self.nav.total();
 
-            let nav_btn = |icon_name: &'static str, msg: ViewerMessage, enabled: bool|
+            let nav_btn = |icon_name: &'static str,
+                           msg: ViewerMessage,
+                           enabled: bool|
              -> Element<'_, Self::Message> {
                 let mut btn = button::icon(icon::from_name(icon_name).size(24))
                     .class(cosmic::theme::Button::Icon);
                 if enabled {
                     btn = btn.on_press(msg);
                 }
-                container(btn)
-                    .center_y(Length::Fill)
-                    .into()
+                container(btn).center_y(Length::Fill).into()
             };
 
             row()
@@ -1115,11 +1167,7 @@ impl Application for CosmicViewer {
                     ViewerMessage::Nav(NavMessage::GridActivate(cur_idx.saturating_sub(1))),
                     has_prev,
                 ))
-                .push(
-                    container(content)
-                        .width(Length::Fill)
-                        .height(Length::Fill),
-                )
+                .push(container(content).width(Length::Fill).height(Length::Fill))
                 .push(nav_btn(
                     "go-next-symbolic",
                     ViewerMessage::Nav(NavMessage::GridActivate(
@@ -1563,7 +1611,17 @@ impl Application for CosmicViewer {
                 self.set_show_context(self.context_page.is_some());
             }
             ViewerMessage::Canvas(msg) => match msg {
-                CanvasMessage::ContextMenu(point) => self.context_menu_position = point,
+                CanvasMessage::ContextMenu(point) => {
+                    self.context_menu_position = point;
+                    if self.color_picker.get_is_active() {
+                        if let Some(color) = self.color_picker.get_applied_color() {
+                            self.annotate_color = AnnotateColor(color);
+                        }
+                        _ = self.color_picker.update::<ViewerMessage>(
+                            cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
+                        );
+                    }
+                }
                 CanvasMessage::ZoomIn => {
                     let old_zoom = self.viewport.zoom();
                     let new_zoom = (old_zoom * 1.25).min(10.0);
@@ -1691,6 +1749,15 @@ impl Application for CosmicViewer {
             },
             ViewerMessage::Edit(msg) => {
                 self.context_menu_position = None;
+                if !matches!(msg, EditMessage::ColorPicker(_)) && self.color_picker.get_is_active()
+                {
+                    if let Some(color) = self.color_picker.get_applied_color() {
+                        self.annotate_color = AnnotateColor(color);
+                    }
+                    _ = self.color_picker.update::<ViewerMessage>(
+                        cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
+                    );
+                }
                 match msg {
                     EditMessage::Annotate => {
                         if self.viewport.active_tool() != Some(ToolKind::Annotate) {
@@ -1949,6 +2016,65 @@ impl Application for CosmicViewer {
                     }
                     EditMessage::ShapePopupToggle => self.shape_popup = !self.shape_popup,
                     EditMessage::StrokePopupToggle => self.stroke_popup = !self.stroke_popup,
+                    EditMessage::ColorPicker(update) => {
+                        use cosmic::widget::color_picker::ColorPickerUpdate::*;
+                        let was_active = self.color_picker.get_is_active();
+
+                        match &update {
+                            AppliedColor => {
+                                tasks.push(
+                                    self.color_picker
+                                        .update::<ViewerMessage>(update)
+                                        .map(|_| Action::None),
+                                );
+                                if let Some(color) = self.color_picker.get_applied_color() {
+                                    self.annotate_color = AnnotateColor(color);
+                                }
+                                if self.color_picker.get_is_active() {
+                                    _ = self.color_picker
+                                        .update::<ViewerMessage>(ToggleColorPicker);
+                                }
+                            }
+                            Cancel => {
+                                tasks.push(
+                                    self.color_picker
+                                        .update::<ViewerMessage>(update)
+                                        .map(|_| Action::None),
+                                );
+                                if self.color_picker.get_is_active() {
+                                    _ = self.color_picker
+                                        .update::<ViewerMessage>(ToggleColorPicker);
+                                }
+                            }
+                            ToggleColorPicker => {
+                                // Closing via toggle — apply the color
+                                if was_active {
+                                    if let Some(color) = self.color_picker.get_applied_color() {
+                                        self.annotate_color = AnnotateColor(color);
+                                    }
+                                }
+                                tasks.push(
+                                    self.color_picker
+                                        .update::<ViewerMessage>(update)
+                                        .map(|_| Action::None),
+                                );
+                            }
+                            _ => {
+                                tasks.push(
+                                    self.color_picker
+                                        .update::<ViewerMessage>(update)
+                                        .map(|_| Action::None),
+                                );
+                                // ActionFinished auto-closes the picker in the model;
+                                // reopen it so the user can keep adjusting
+                                if !self.color_picker.get_is_active() {
+                                    _ = self.color_picker.update::<ViewerMessage>(
+                                        ToggleColorPicker,
+                                    );
+                                }
+                            }
+                        }
+                    }
                     EditMessage::TextBold => {
                         self.text_bold = !self.text_bold;
                         if let Some(preview) = self.viewport.preview_mut()
