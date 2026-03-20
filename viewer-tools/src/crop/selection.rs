@@ -279,23 +279,17 @@ impl CropSelection {
     fn draw_handle(
         frame: &mut Frame<Renderer>,
         center: Point,
-        handle_size: f32,
+        w: f32,
+        h: f32,
         anchor_x: f32,
         anchor_y: f32,
     ) {
         let rect = Rectangle::new(
-            Point::new(
-                center.x - handle_size * anchor_x,
-                center.y - handle_size * anchor_y,
-            ),
-            Size::new(handle_size, handle_size),
+            Point::new(center.x - w * anchor_x, center.y - h * anchor_y),
+            Size::new(w, h),
         );
 
         frame.fill_rectangle(rect.position(), rect.size(), Fill::from(Color::WHITE));
-        frame.stroke(
-            &Path::rectangle(rect.position(), rect.size()),
-            Stroke::default().with_color(Color::BLACK).with_width(1.0),
-        );
     }
 }
 
@@ -309,7 +303,6 @@ impl ToolOperation for CropSelection {
         let frame_size = image_size;
         let overlay_color = Color::from_rgba(0.0, 0.0, 0.0, 0.5);
         let border_width = 0.75 / scale;
-        let grid_width = 1.0 / scale;
         let handle_size = HANDLE_SIZE / scale;
 
         // Dark overlay outside selection
@@ -352,89 +345,32 @@ impl ToolOperation for CropSelection {
                 .with_width(border_width),
         );
 
-        // Rule of thirds grid lines
-        let third_w = region.width / 3.0;
-        let third_h = region.height / 3.0;
-        let grid_stroke = Stroke::default()
-            .with_color(Color::from_rgba(1.0, 1.0, 1.0, 0.4))
-            .with_width(grid_width);
+        let bar_long = handle_size * 2.0;
+        let bar_short = handle_size * 0.25;
 
-        for line in 1..3 {
-            let x = region.x + third_w * line as f32;
-            let y = region.y + third_h * line as f32;
+        // Corner handles — two bars each forming an L
+        // Top-left
+        Self::draw_handle(frame, Point::new(region.x, region.y), bar_long, bar_short, 0.0, 0.0);
+        Self::draw_handle(frame, Point::new(region.x, region.y), bar_short, bar_long, 0.0, 0.0);
+        // Top-right
+        Self::draw_handle(frame, Point::new(region.x + region.width, region.y), bar_long, bar_short, 1.0, 0.0);
+        Self::draw_handle(frame, Point::new(region.x + region.width, region.y), bar_short, bar_long, 1.0, 0.0);
+        // Bottom-left
+        Self::draw_handle(frame, Point::new(region.x, region.y + region.height), bar_long, bar_short, 0.0, 1.0);
+        Self::draw_handle(frame, Point::new(region.x, region.y + region.height), bar_short, bar_long, 0.0, 1.0);
+        // Bottom-right
+        Self::draw_handle(frame, Point::new(region.x + region.width, region.y + region.height), bar_long, bar_short, 1.0, 1.0);
+        Self::draw_handle(frame, Point::new(region.x + region.width, region.y + region.height), bar_short, bar_long, 1.0, 1.0);
 
-            // Vertical grid line
-            frame.stroke(
-                &Path::line(
-                    Point::new(x, region.y),
-                    Point::new(x, region.y + region.height),
-                ),
-                grid_stroke,
-            );
-
-            // Horizontal grid line
-            frame.stroke(
-                &Path::line(
-                    Point::new(region.x, y),
-                    Point::new(region.x + region.width, y),
-                ),
-                grid_stroke,
-            );
-        }
-
-        // Corner Handles
-        Self::draw_handle(frame, Point::new(region.x, region.y), handle_size, 0.0, 0.0);
-        Self::draw_handle(
-            frame,
-            Point::new(region.x + region.width, region.y),
-            handle_size,
-            1.0,
-            0.0,
-        );
-        Self::draw_handle(
-            frame,
-            Point::new(region.x, region.y + region.height),
-            handle_size,
-            0.0,
-            1.0,
-        );
-        Self::draw_handle(
-            frame,
-            Point::new(region.x + region.width, region.y + region.height),
-            handle_size,
-            1.0,
-            1.0,
-        );
-
-        // Edge Handles
-        Self::draw_handle(
-            frame,
-            Point::new(region.x + region.width / 2.0, region.y),
-            handle_size,
-            0.5,
-            0.0,
-        );
-        Self::draw_handle(
-            frame,
-            Point::new(region.x + region.width / 2.0, region.y + region.height),
-            handle_size,
-            0.5,
-            1.0,
-        );
-        Self::draw_handle(
-            frame,
-            Point::new(region.x, region.y + region.height / 2.0),
-            handle_size,
-            0.0,
-            0.5,
-        );
-        Self::draw_handle(
-            frame,
-            Point::new(region.x + region.width, region.y + region.height / 2.0),
-            handle_size,
-            1.0,
-            0.5,
-        );
+        // Edge handles — single bar each
+        // Top center
+        Self::draw_handle(frame, Point::new(region.x + region.width / 2.0, region.y), bar_long, bar_short, 0.5, 0.0);
+        // Bottom center
+        Self::draw_handle(frame, Point::new(region.x + region.width / 2.0, region.y + region.height), bar_long, bar_short, 0.5, 1.0);
+        // Left center
+        Self::draw_handle(frame, Point::new(region.x, region.y + region.height / 2.0), bar_short, bar_long, 0.0, 0.5);
+        // Right center
+        Self::draw_handle(frame, Point::new(region.x + region.width, region.y + region.height / 2.0), bar_short, bar_long, 1.0, 0.5);
     }
 
     fn apply(&self, _image: &mut DynamicImage) {

@@ -75,6 +75,7 @@ pub struct CosmicViewer {
     text_underline: bool,
     text_alignment: Horizontal,
     shape_popup: bool,
+    stroke_popup: bool,
     selected_shape: AnnotateTool,
     toolbar_overflow_open: bool,
     window_width: Option<f32>,
@@ -402,12 +403,7 @@ impl CosmicViewer {
                     fl!("toolbar-annotate"),
                     ViewerMessage::Edit(EditMessage::Annotate),
                 ))
-                .priority(ItemPriority::Standard)
-                .overflow(
-                    fl!("toolbar-annotate"),
-                    Some("markup-symbolic"),
-                    ViewerMessage::Edit(EditMessage::Annotate),
-                ),
+                .priority(ItemPriority::Essential),
             )
             .start(
                 ToolbarItem::new(icon_btn(
@@ -415,12 +411,7 @@ impl CosmicViewer {
                     fl!("toolbar-crop"),
                     ViewerMessage::Edit(EditMessage::Crop),
                 ))
-                .priority(ItemPriority::Standard)
-                .overflow(
-                    fl!("toolbar-crop"),
-                    Some("image-crop-rotate-symbolic"),
-                    ViewerMessage::Edit(EditMessage::Crop),
-                ),
+                .priority(ItemPriority::Essential),
             )
             .start(
                 ToolbarItem::new(icon_btn(
@@ -428,12 +419,7 @@ impl CosmicViewer {
                     fl!("toolbar-rotate-left"),
                     ViewerMessage::Edit(EditMessage::RotateLeft),
                 ))
-                .priority(ItemPriority::Optional)
-                .overflow(
-                    fl!("toolbar-rotate-left"),
-                    Some("object-rotate-left-symbolic"),
-                    ViewerMessage::Edit(EditMessage::RotateLeft),
-                ),
+                .priority(ItemPriority::Essential),
             )
             .start(
                 ToolbarItem::new(icon_btn(
@@ -441,12 +427,7 @@ impl CosmicViewer {
                     fl!("toolbar-rotate-right"),
                     ViewerMessage::Edit(EditMessage::RotateRight),
                 ))
-                .priority(ItemPriority::Optional)
-                .overflow(
-                    fl!("toolbar-rotate-right"),
-                    Some("object-rotate-right-symbolic"),
-                    ViewerMessage::Edit(EditMessage::RotateRight),
-                ),
+                .priority(ItemPriority::Essential),
             )
             .center(
                 ToolbarItem::new(icon_btn(
@@ -462,6 +443,14 @@ impl CosmicViewer {
                     "zoom-in-symbolic",
                     fl!("toolbar-zoom-in"),
                     ViewerMessage::Canvas(CanvasMessage::ZoomIn),
+                ))
+                .priority(ItemPriority::Essential),
+            )
+            .end(
+                ToolbarItem::new(icon_btn(
+                    "view-fit-symbolic",
+                    fl!("menu-fit-to-view"),
+                    ViewerMessage::Canvas(CanvasMessage::FitToView),
                 ))
                 .priority(ItemPriority::Essential),
             )
@@ -577,58 +566,35 @@ impl CosmicViewer {
             .on_press_maybe(can_redo.then(|| ViewerMessage::Edit(EditMessage::Redo)));
 
         responsive_toolbar(mode)
-            .overflow_open(self.toolbar_overflow_open)
-            .start(ToolbarItem::new(undo_btn).priority(ItemPriority::Essential))
-            .start(ToolbarItem::new(redo_btn).priority(ItemPriority::Essential))
-            .start(
-                ToolbarItem::new(divider::vertical::light().height(Length::Fixed(32.0)))
-                    .priority(ItemPriority::Optional),
-            )
-            .start(
-                ToolbarItem::new(icon_btn(
-                    "object-rotate-left-symbolic",
-                    fl!("menu-rotate-left"),
-                    ViewerMessage::Edit(EditMessage::RotateLeft),
-                ))
-                .priority(ItemPriority::Optional)
-                .overflow(
-                    fl!("menu-rotate-left"),
-                    Some("object-rotate-left-symbolic"),
-                    ViewerMessage::Edit(EditMessage::RotateLeft),
-                ),
-            )
-            .start(
-                ToolbarItem::new(icon_btn(
-                    "object-rotate-right-symbolic",
-                    fl!("menu-rotate-right"),
-                    ViewerMessage::Edit(EditMessage::RotateRight),
-                ))
-                .priority(ItemPriority::Optional)
-                .overflow(
-                    fl!("menu-rotate-right"),
-                    Some("object-rotate-right-symbolic"),
-                    ViewerMessage::Edit(EditMessage::RotateRight),
-                ),
-            )
-            .center(
-                ToolbarItem::new(self.build_crop_ratio_selector())
-                    .priority(ItemPriority::Essential),
-            )
-            .end(
-                ToolbarItem::new(
-                    button::standard(fl!("toolbar-cancel"))
-                        .on_press(ViewerMessage::Edit(EditMessage::CropCancel)),
-                )
-                .priority(ItemPriority::Essential),
-            )
-            .end(
-                ToolbarItem::new(icon_btn(
-                    "object-select-symbolic",
-                    fl!("toolbar-apply"),
-                    ViewerMessage::Edit(EditMessage::CropApply),
-                ))
-                .priority(ItemPriority::Essential),
-            )
+            .start(ToolbarItem::new(undo_btn))
+            .start(ToolbarItem::new(redo_btn))
+            .start(ToolbarItem::new(
+                divider::vertical::light().height(Length::Fixed(32.0)),
+            ))
+            .start(ToolbarItem::new(icon_btn(
+                "object-rotate-left-symbolic",
+                fl!("menu-rotate-left"),
+                ViewerMessage::Edit(EditMessage::RotateLeft),
+            )))
+            .start(ToolbarItem::new(icon_btn(
+                "object-rotate-right-symbolic",
+                fl!("menu-rotate-right"),
+                ViewerMessage::Edit(EditMessage::RotateRight),
+            )))
+            .start(ToolbarItem::new(
+                divider::vertical::light().height(Length::Fixed(32.0)),
+            ))
+            .start(ToolbarItem::new(self.build_crop_ratio_selector()))
+            .end(ToolbarItem::new(icon_btn(
+                "window-close-symbolic",
+                fl!("toolbar-cancel"),
+                ViewerMessage::Edit(EditMessage::CropCancel),
+            )))
+            .end(ToolbarItem::new(icon_btn(
+                "object-select-symbolic",
+                fl!("toolbar-apply"),
+                ViewerMessage::Edit(EditMessage::CropApply),
+            )))
             .view(|| ViewerMessage::ToolbarOverflowToggle)
     }
 
@@ -658,135 +624,66 @@ impl CosmicViewer {
             .on_press_maybe(can_redo.then(|| ViewerMessage::Edit(EditMessage::Redo)));
 
         let mut toolbar = responsive_toolbar(mode)
-            .start(
-                ToolbarItem::new(undo_btn)
-                    .priority(ItemPriority::Optional)
-                    .overflow(
-                        fl!("menu-undo"),
-                        Some("edit-undo-symbolic"),
-                        ViewerMessage::Edit(EditMessage::Undo),
-                    ),
-            )
-            .start(
-                ToolbarItem::new(redo_btn)
-                    .priority(ItemPriority::Optional)
-                    .overflow(
-                        fl!("menu-redo"),
-                        Some("edit-redo-symbolic"),
-                        ViewerMessage::Edit(EditMessage::Redo),
-                    ),
-            )
-            .center(
-                ToolbarItem::new(icon_btn(
-                    "insert-text-symbolic",
-                    fl!("text-tool"),
-                    ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Text)),
-                ))
-                .priority(ItemPriority::Essential),
-            )
-            .center(
-                ToolbarItem::new(icon_btn(
-                    "pen-symbolic",
-                    fl!("drawing-pen"),
-                    ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::draw_tools()[0])),
-                ))
-                .priority(ItemPriority::Essential),
-            )
-            .center(
-                ToolbarItem::new(icon_btn(
-                    "insert-drawing-symbolic",
-                    fl!("drawing-highlighter"),
-                    ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Highlighter)),
-                ))
-                .priority(ItemPriority::Essential),
-            )
-            .center(
-                ToolbarItem::new(self.build_shape_selector()).priority(ItemPriority::Essential),
-            )
-            .center(
-                ToolbarItem::new(divider::vertical::light().height(Length::Fixed(32.0)))
-                    .priority(ItemPriority::Standard),
-            );
+            .start(ToolbarItem::new(undo_btn))
+            .start(ToolbarItem::new(redo_btn))
+            .end(ToolbarItem::new(icon_btn(
+                "insert-text-symbolic",
+                fl!("text-tool"),
+                ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Text)),
+            )))
+            .end(ToolbarItem::new(icon_btn(
+                "pen-symbolic",
+                fl!("drawing-pen"),
+                ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::draw_tools()[0])),
+            )))
+            .end(ToolbarItem::new(icon_btn(
+                "insert-drawing-symbolic",
+                fl!("drawing-highlighter"),
+                ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Highlighter)),
+            )))
+            .end(ToolbarItem::new(self.build_shape_selector()))
+            .end(ToolbarItem::new(icon_btn(
+                "window-close-symbolic",
+                fl!("toolbar-cancel"),
+                ViewerMessage::Edit(EditMessage::AnnotateCancel),
+            )))
+            .center(ToolbarItem::new(self.build_stroke_selector()));
 
         let colors = AnnotateColor::presets();
         for color in &colors {
             let c = *color;
             let is_selected = c == self.annotate_color;
-            toolbar = toolbar.center(
-                ToolbarItem::new(
-                    button::custom(container(Space::new(12, 12)).class(
-                        cosmic::theme::Container::custom(move |_theme| container::Style {
-                            background: Some(Background::Color(c.0)),
-                            border: Border {
-                                radius: 6.0.into(),
-                                width: if is_selected { 2.0 } else { 1.0 },
-                                color: if is_selected {
-                                    Color::WHITE
-                                } else {
-                                    Color::from_rgba(1.0, 1.0, 1.0, 0.3)
-                                },
-                            },
-                            ..Default::default()
-                        }),
-                    ))
-                    .on_press(ViewerMessage::Edit(EditMessage::AnnotateColor(c))),
-                )
-                .priority(ItemPriority::Standard),
-            );
-        }
-
-        let (size_labels, sizes, current_size) = if self.annotate_tool == AnnotateTool::Highlighter
-        {
-            (
-                vec!["8px", "10px", "12px", "14px", "16px", "18px", "20px"],
-                vec![8f32, 10., 12., 14., 16., 18., 20.],
-                self.highlighter_stroke_size,
-            )
-        } else {
-            (
-                vec!["2px", "4px", "6px", "8px", "10px", "12px"],
-                vec![2f32, 4., 6., 8., 10., 12.],
-                self.annotate_stroke_size,
-            )
-        };
-
-        let selected = sizes.iter().position(|size| *size == current_size);
-
-        toolbar = toolbar.center(
-            ToolbarItem::new(
-                row()
-                    .push(icon::from_name("stroke-width-symbolic").size(6).icon())
-                    .push(
-                        dropdown(size_labels, selected, |idx| {
-                            ViewerMessage::Edit(EditMessage::AnnotateStroke(idx))
-                        })
-                        .id(
-                            if self.annotate_tool == AnnotateTool::Highlighter {
-                                widget::Id::new("stroke-highlighter")
+            toolbar = toolbar.center(ToolbarItem::new(
+                button::custom(container(Space::new(12, 12)).class(
+                    cosmic::theme::Container::custom(move |_theme| container::Style {
+                        background: Some(Background::Color(c.0)),
+                        border: Border {
+                            radius: 6.0.into(),
+                            width: if is_selected { 2.0 } else { 1.0 },
+                            color: if is_selected {
+                                Color::WHITE
                             } else {
-                                widget::Id::new("stroke-default")
+                                Color::from_rgba(1.0, 1.0, 1.0, 0.3)
                             },
-                        ),
-                    ),
-            )
-            .priority(ItemPriority::Standard),
-        );
-
-        toolbar = toolbar.end(
-            ToolbarItem::new(
-                button::standard(fl!("toolbar-cancel"))
-                    .on_press(ViewerMessage::Edit(EditMessage::AnnotateCancel)),
-            )
-            .priority(ItemPriority::Essential),
-        );
+                        },
+                        ..Default::default()
+                    }),
+                ))
+                .on_press(ViewerMessage::Edit(EditMessage::AnnotateColor(c))),
+            ));
+        }
 
         toolbar.view(|| ViewerMessage::ToolbarOverflowToggle)
     }
 
     fn build_text_format_popup(&self) -> Element<'_, ViewerMessage> {
-        let font_dropdown = dropdown(&self.font_families, self.text_font_index, |idx| {
-            ViewerMessage::Edit(EditMessage::TextFontFamily(idx))
-        });
+        let font_dropdown = row()
+            .push(icon::from_name("font-symbolic").size(16).icon())
+            .push(dropdown(&self.font_families, self.text_font_index, |idx| {
+                ViewerMessage::Edit(EditMessage::TextFontFamily(idx))
+            }))
+            .align_y(Alignment::Center)
+            .spacing(4);
 
         // Bold, italic, underline as icon buttons
         let bold_btn = button::icon(icon::from_name("format-text-bold-symbolic"))
@@ -958,6 +855,86 @@ impl CosmicViewer {
 
         pop.into()
     }
+
+    fn build_stroke_selector(&self) -> Element<'_, ViewerMessage> {
+        let trigger = button::custom(
+            row()
+                .push(icon::from_name("stroke-width-symbolic").size(16).icon())
+                .push(icon::from_name("pan-down-symbolic").size(12).icon())
+                .align_y(Alignment::Center)
+                .spacing(2),
+        )
+        .class(cosmic::theme::Button::Icon)
+        .on_press(ViewerMessage::Edit(EditMessage::StrokePopupToggle));
+
+        let mut pop = popover(trigger);
+
+        if self.stroke_popup {
+            let (labels, sizes, current) =
+                if self.annotate_tool == AnnotateTool::Highlighter {
+                    (
+                        &["8px", "10px", "12px", "14px", "16px", "18px", "20px"][..],
+                        &[8_f32, 10., 12., 14., 16., 18., 20.][..],
+                        self.highlighter_stroke_size,
+                    )
+                } else {
+                    (
+                        &["2px", "4px", "6px", "8px", "10px", "12px"][..],
+                        &[2_f32, 4., 6., 8., 10., 12.][..],
+                        self.annotate_stroke_size,
+                    )
+                };
+
+            let mut list = column().spacing(4);
+            for (label, &size) in labels.iter().zip(sizes.iter()) {
+                let is_selected = size == current;
+                let item: Element<'_, ViewerMessage> = row()
+                    .push(text::body(*label))
+                    .push(if is_selected {
+                        Element::from(icon::from_name("object-select-symbolic").size(16).icon())
+                    } else {
+                        Element::from(horizontal_space().width(16))
+                    })
+                    .align_y(Alignment::Center)
+                    .width(Length::Fill)
+                    .into();
+
+                let idx = sizes.iter().position(|s| *s == size).unwrap();
+                list = list.push(
+                    button::custom(item)
+                        .width(Length::Fill)
+                        .class(cosmic::theme::Button::Icon)
+                        .on_press(ViewerMessage::Edit(EditMessage::AnnotateStroke(idx))),
+                );
+            }
+
+            let popup = container(list)
+                .padding(8)
+                .width(Length::Fixed(100.0))
+                .style(|theme| {
+                    let cosmic = theme.cosmic();
+                    let component = &cosmic.background.component;
+                    container::Style {
+                        icon_color: None,
+                        text_color: None,
+                        background: Some(Background::Color(component.base.into())),
+                        border: Border {
+                            radius: cosmic.radius_s().map(|x| x + 1.0).into(),
+                            width: 1.0,
+                            color: component.divider.into(),
+                        },
+                        ..Default::default()
+                    }
+                });
+
+            pop = pop
+                .popup(popup)
+                .position(popover::Position::Point(Point::new(-35.0, 0.0)))
+                .on_close(ViewerMessage::Edit(EditMessage::StrokePopupToggle));
+        }
+
+        pop.into()
+    }
 }
 
 impl Application for CosmicViewer {
@@ -1023,6 +1000,7 @@ impl Application for CosmicViewer {
             text_editing: false,
             font_families: load_font_families(),
             shape_popup: false,
+            stroke_popup: false,
             selected_shape: AnnotateTool::Rectangle,
             text_font_family: default_family,
             text_font_index: font_index,
@@ -1318,6 +1296,25 @@ impl Application for CosmicViewer {
                 self.toolbar_overflow_open = !self.toolbar_overflow_open;
             }
             ViewerMessage::KeyPressed(key, modifiers, text) => {
+                if self.context_menu_position.is_some() && matches!(key, Key::Named(Named::Escape))
+                {
+                    self.context_menu_position = None;
+                    return Task::none();
+                }
+
+                // Enter applies crop, Escape cancels
+                if matches!(key, Key::Named(Named::Enter))
+                    && self.viewport.active_tool() == Some(ToolKind::Crop)
+                {
+                    return self.update(ViewerMessage::Edit(EditMessage::CropApply));
+                }
+
+                if matches!(key, Key::Named(Named::Escape))
+                    && self.viewport.active_tool() == Some(ToolKind::Crop)
+                {
+                    return self.update(ViewerMessage::Edit(EditMessage::CropCancel));
+                }
+
                 let is_text_editing = self.text_editing
                     && self
                         .viewport
@@ -1329,12 +1326,6 @@ impl Application for CosmicViewer {
                     .viewport
                     .preview_mut()
                     .and_then(|preview| preview.as_any_mut().downcast_mut::<TextPreview>());
-
-                if self.context_menu_position.is_some() && matches!(key, Key::Named(Named::Escape))
-                {
-                    self.context_menu_position = None;
-                    return Task::none();
-                }
 
                 if is_text_editing {
                     match &key {
@@ -1894,6 +1885,7 @@ impl Application for CosmicViewer {
                         self.viewport.rebuild_display();
                     }
                     EditMessage::ShapePopupToggle => self.shape_popup = !self.shape_popup,
+                    EditMessage::StrokePopupToggle => self.stroke_popup = !self.stroke_popup,
                     EditMessage::TextBold => {
                         self.text_bold = !self.text_bold;
                         if let Some(preview) = self.viewport.preview_mut()

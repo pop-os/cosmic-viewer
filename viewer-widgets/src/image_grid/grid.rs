@@ -18,6 +18,7 @@ use cosmic::{
             layout::{Limits, Node},
             overlay,
             renderer::{self as iced_renderer, Quad, Renderer as QuadRenderer},
+            svg::Renderer as SvgRenderer,
             widget::{Id, Operation, Tree},
         },
         event::{Event, Status},
@@ -370,6 +371,9 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
             }
         });
 
+        let radius: [f32; 4] = cosmic_theme.corner_radii.radius_s;
+        let accent: Color = cosmic_theme.accent_color().into();
+
         for (idx, item) in self.items.iter().enumerate() {
             let row = idx / cols;
             let col = idx % cols;
@@ -382,31 +386,24 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
 
             let cell_bounds = Rectangle::new(Point::new(x, y), Size::new(cell_size, cell_size));
 
-            let is_focused = self.focused_idx == Some(idx);
             let is_selected = self.is_selected(idx);
             let is_hovered = hovered_idx == Some(idx);
 
-            // Draw cell background (same style for focus and hover)
-            let bg_color = if is_selected {
-                cosmic_theme.accent_color().into()
-            } else if is_focused || is_hovered {
-                Color::from_rgba(1.0, 1.0, 1.0, 0.1)
-            } else {
-                Color::TRANSPARENT
-            };
-
-            renderer.fill_quad(
-                Quad {
-                    bounds: cell_bounds,
-                    border: cosmic::iced::Border {
-                        radius: 0.0.into(),
-                        width: 0.0,
-                        color: Color::TRANSPARENT,
+            // Draw cell background
+            if is_hovered && !is_selected {
+                renderer.fill_quad(
+                    Quad {
+                        bounds: cell_bounds,
+                        border: cosmic::iced::Border {
+                            radius: radius.into(),
+                            width: 0.0,
+                            color: Color::TRANSPARENT,
+                        },
+                        shadow: Default::default(),
                     },
-                    shadow: Default::default(),
-                },
-                bg_color,
-            );
+                    Color::from_rgba(1.0, 1.0, 1.0, 0.1),
+                );
+            }
 
             // Draw thumbnail or placeholder
             let item_bounds = Rectangle::new(
@@ -415,7 +412,6 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
             );
 
             if let Some(ref handle) = item.handle {
-                // Calculate centered bounds maintaining aspect ratio
                 let centered = core::calculate_centered_item_bounds(
                     item_bounds,
                     item.width as f32,
@@ -427,11 +423,10 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                     cosmic::iced::widget::image::FilterMethod::Linear,
                     centered,
                     cosmic::iced::Radians(0.0),
-                    1.0,      // opacity
-                    [0.0; 4], // snap
+                    1.0,
+                    radius,
                 );
             } else {
-                // Draw placeholder (simple gray box)
                 let placeholder_size = item_size / 2.0;
                 let placeholder_bounds = Rectangle::new(
                     Point::new(
@@ -444,11 +439,84 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                 renderer.fill_quad(
                     Quad {
                         bounds: placeholder_bounds,
-                        border: cosmic::iced::Border::default(),
+                        border: cosmic::iced::Border {
+                            radius: radius.into(),
+                            ..Default::default()
+                        },
                         shadow: Default::default(),
                     },
                     Color::from_rgba(0.5, 0.5, 0.5, 0.3),
                 );
+            }
+
+            if is_selected {
+                // Accent border - draw in a layer above the image
+                let badge_w = 32.0;
+                let badge_h = 20.0;
+                let bg: Color = cosmic_theme.background.component.base.into();
+                let corner_radii_m = cosmic_theme.corner_radii.radius_m;
+
+                renderer.with_layer(bounds, |renderer| {
+                    // Accent border
+                    renderer.fill_quad(
+                        Quad {
+                            bounds: cell_bounds,
+                            border: cosmic::iced::Border {
+                                radius: radius.into(),
+                                width: 2.0,
+                                color: accent,
+                            },
+                            shadow: Default::default(),
+                        },
+                        Color::TRANSPARENT,
+                    );
+
+                    // Checkmark badge in bottom-left
+                    let badge_bounds = Rectangle::new(
+                        Point::new(
+                            cell_bounds.x + 1.0,
+                            cell_bounds.y + cell_bounds.height - badge_h - 1.0,
+                        ),
+                        Size::new(badge_w, badge_h),
+                    );
+
+                    renderer.fill_quad(
+                        Quad {
+                            bounds: badge_bounds,
+                            border: cosmic::iced::Border {
+                                radius: corner_radii_m.into(),
+                                width: 1.0,
+                                color: accent,
+                            },
+                            shadow: Default::default(),
+                        },
+                        bg,
+                    );
+
+                    let icon_handle =
+                        cosmic::widget::icon::from_name("object-select-symbolic").handle();
+                    if let cosmic::widget::icon::Data::Svg(svg_handle) = icon_handle.data {
+                        let icon_size = 12.0;
+                        let icon_bounds = Rectangle::new(
+                            Point::new(
+                                badge_bounds.x + (badge_w - icon_size) / 2.0,
+                                badge_bounds.y + (badge_h - icon_size) / 2.0,
+                            ),
+                            Size::new(icon_size, icon_size),
+                        );
+
+                        renderer.draw_svg(
+                            cosmic::iced::advanced::svg::Svg {
+                                handle: svg_handle,
+                                color: Some(accent),
+                                rotation: cosmic::iced::Radians(0.0),
+                                opacity: 1.0,
+                                border_radius: [0.0; 4],
+                            },
+                            icon_bounds,
+                        );
+                    }
+                });
             }
         }
     }
@@ -511,12 +579,6 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                             None
                         }
                     }
-                    Key::Named(keyboard::key::Named::Enter) => {
-                        if let Some(ref on_activate) = self.on_activate {
-                            shell.publish(on_activate(current));
-                        }
-                        return Status::Captured;
-                    }
                     Key::Named(keyboard::key::Named::Home) => Some(0),
                     Key::Named(keyboard::key::Named::End) => Some(total.saturating_sub(1)),
                     _ => None,
@@ -524,6 +586,9 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
 
                 if let Some(new_idx) = new_idx {
                     self.focused_idx = Some(new_idx);
+                    if let Some(ref on_activate) = self.on_activate {
+                        shell.publish(on_activate(new_idx));
+                    }
                     if let Some(ref on_focus) = self.on_focus {
                         shell.publish(on_focus(new_idx));
                     }
