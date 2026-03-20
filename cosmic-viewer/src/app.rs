@@ -650,39 +650,52 @@ impl CosmicViewer {
             )))
             .center(ToolbarItem::new(self.build_stroke_selector()));
 
+        let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
+        let swatch_size = 20.0;
+
         let colors = AnnotateColor::presets();
         for color in &colors {
             let c = *color;
             let is_selected = c == self.annotate_color;
             toolbar = toolbar.center(ToolbarItem::new(
-                button::custom(container(Space::new(12, 12)).class(
+                button::custom(container(Space::new(swatch_size, swatch_size)).class(
                     cosmic::theme::Container::custom(move |_theme| container::Style {
                         background: Some(Background::Color(c.0)),
                         border: Border {
-                            radius: 6.0.into(),
-                            width: if is_selected { 2.0 } else { 1.0 },
-                            color: if is_selected {
-                                Color::WHITE
-                            } else {
-                                Color::from_rgba(1.0, 1.0, 1.0, 0.3)
-                            },
+                            radius: (swatch_size / 2.0).into(),
+                            width: if is_selected { 2.0 } else { 0.0 },
+                            color: accent,
                         },
                         ..Default::default()
                     }),
                 ))
+                .padding(2)
+                .class(cosmic::theme::Button::Icon)
                 .on_press(ViewerMessage::Edit(EditMessage::AnnotateColor(c))),
             ));
         }
 
         // Custom color picker button
-        let color_picker_btn = self
-            .color_picker
-            .picker_button(
-                |u| ViewerMessage::Edit(EditMessage::ColorPicker(u)),
-                Some(12),
-            )
-            .width(Length::Fixed(28.0))
-            .height(Length::Fixed(28.0));
+        let custom_color = self.color_picker.get_applied_color().unwrap_or(Color::BLACK);
+        let is_custom_selected = !colors.iter().any(|c| *c == self.annotate_color);
+        let color_picker_btn = button::custom(
+            container(Space::new(swatch_size, swatch_size)).class(
+                cosmic::theme::Container::custom(move |_theme| container::Style {
+                    background: Some(Background::Color(custom_color)),
+                    border: Border {
+                        radius: (swatch_size / 2.0).into(),
+                        width: if is_custom_selected { 2.0 } else { 0.0 },
+                        color: accent,
+                    },
+                    ..Default::default()
+                }),
+            ),
+        )
+        .padding(2)
+        .class(cosmic::theme::Button::Icon)
+        .on_press(ViewerMessage::Edit(EditMessage::ColorPicker(
+            cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
+        )));
 
         let mut color_picker_popover = popover(color_picker_btn);
         if self.color_picker.get_is_active() {
