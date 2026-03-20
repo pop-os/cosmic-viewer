@@ -5,6 +5,7 @@ use cosmic::{
         keyboard::{Key, Modifiers},
     },
     iced_core::SmolStr,
+    widget::color_picker::ColorPickerUpdate,
 };
 use std::path::PathBuf;
 use viewer_canvas::CanvasMessage;
@@ -95,6 +96,7 @@ pub enum EditMessage {
     RotateRight,
     ShapePopupToggle,
     StrokePopupToggle,
+    ColorPicker(ColorPickerUpdate),
     TextBold,
     TextItalic,
     TextUnderline,
