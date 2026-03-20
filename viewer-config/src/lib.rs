@@ -98,6 +98,8 @@ impl ThumbnailSize {
 
 /// Maximum number of recent folders to remember
 pub const MAX_RECENT_FOLDERS: usize = 10;
+/// Maximum number of recent colors to remember
+pub const MAX_RECENT_COLORS: usize = 20;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ViewerConfig {
@@ -113,6 +115,7 @@ pub struct ViewerConfig {
     pub sort_mode: SortMode,
     pub sort_order: SortOrder,
     pub recent_folders: Vec<String>,
+    pub last_color: Option<[f32; 4]>,
 }
 
 impl Default for ViewerConfig {
@@ -130,6 +133,7 @@ impl Default for ViewerConfig {
             sort_mode: SortMode::default(),
             sort_order: SortOrder::default(),
             recent_folders: Vec::new(),
+            last_color: None,
         }
     }
 }
@@ -164,6 +168,7 @@ impl CosmicConfigEntry for ViewerConfig {
         config.set("sort_mode", self.sort_mode)?;
         config.set("sort_order", self.sort_order)?;
         config.set("recent_folders", self.recent_folders.clone())?;
+        config.set("last_color", self.last_color)?;
         Ok(())
     }
 
@@ -194,6 +199,7 @@ impl CosmicConfigEntry for ViewerConfig {
         get_field!("sort_mode", sort_mode, SortMode);
         get_field!("sort_order", sort_order, SortOrder);
         get_field!("recent_folders", recent_folders, Vec<String>);
+        get_field!("last_color", last_color, Option<[f32; 4]>);
 
         if errors.is_empty() {
             Ok(cfg)

@@ -12,10 +12,23 @@ menu-open-containing = Open containing folder
 menu-close-file = Close file
 menu-save = Save
 menu-save-as = Save as
+menu-set-wallpaper = Set as wallpaper
+menu-move-to-trash = Move to trash
+menu-delete-permanently = Delete permanently
 menu-image-details = Image details
 menu-share = Share
 menu-print = Print
 menu-quit = Quit
+
+# Wallpaper dialog
+wallpaper-dialog-title = Set as wallpaper
+wallpaper-all-displays = All displays
+wallpaper-cancel = Cancel
+
+# Delete dialog
+delete-dialog-title = Delete permanently?
+delete-confirm = Delete
+delete-cancel = Cancel
 
 # Menu - Edit
 menu-edit = Edit

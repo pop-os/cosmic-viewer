@@ -81,9 +81,41 @@ pub struct CosmicViewer {
     toolbar_overflow_open: bool,
     window_width: Option<f32>,
     is_fullscreen: bool,
+    wallpaper_dialog: Option<PathBuf>,
+    delete_dialog: Option<PathBuf>,
+    available_outputs: Vec<String>,
 }
 
 impl CosmicViewer {
+    fn save_last_color(&mut self) {
+        let c = self.annotate_color.0;
+        self.config.last_color = Some([c.r, c.g, c.b, c.a]);
+        if let Ok(config_handle) = viewer_config::config() {
+            let _ = self.config.write_entry(&config_handle);
+        }
+    }
+
+    fn reload_image_list(&self) -> Task<Action<ViewerMessage>> {
+        let include_hidden = self.config.show_hidden_files;
+        let sort_mode = self.config.sort_mode;
+        let sort_order = self.config.sort_order;
+
+        let dir = if let Some(current) = self.nav.current() {
+            get_image_dir(current)
+        } else {
+            self.nav.dir().map(|d| d.to_path_buf())
+        };
+
+        if let Some(dir) = dir {
+            return future(async move {
+                let images = scan_dir(&dir, include_hidden, sort_mode, sort_order).await;
+                Action::App(ViewerMessage::Nav(NavMessage::DirectoryRefreshed(images)))
+            });
+        }
+
+        Task::none()
+    }
+
     fn open_path(&mut self, path: PathBuf) -> Task<Action<ViewerMessage>> {
         let Some(dir) = get_image_dir(&path) else {
             return Task::none();
@@ -351,6 +383,18 @@ impl CosmicViewer {
                 .push(menu_item(
                     fl!("menu-image-details"),
                     ViewerMessage::Context(ContextMessage::ImageDetails),
+                ))
+                .push(menu_item(
+                    fl!("menu-set-wallpaper"),
+                    ViewerMessage::SetWallpaper,
+                ))
+                .push(menu_item(
+                    fl!("menu-move-to-trash"),
+                    ViewerMessage::MoveToTrash,
+                ))
+                .push(menu_item(
+                    fl!("menu-delete-permanently"),
+                    ViewerMessage::DeletePermanently,
                 )),
         )
         .padding(1)
@@ -600,8 +644,11 @@ impl CosmicViewer {
     }
 
     fn build_annotate_toolbar(&self) -> Element<'_, ViewerMessage> {
-        let mode =
-            ToolbarMode::from_width(self.window_width.expect("Window size should not be none"));
+        let mode = if self.core().is_condensed() {
+            ToolbarMode::Compact
+        } else {
+            ToolbarMode::Full
+        };
 
         let icon_btn = |name: &'static str,
                         tooltip: String,
@@ -627,31 +674,29 @@ impl CosmicViewer {
         let mut toolbar = responsive_toolbar(mode)
             .start(ToolbarItem::new(undo_btn))
             .start(ToolbarItem::new(redo_btn))
-            .end(ToolbarItem::new(icon_btn(
+            .start(ToolbarItem::new(
+                divider::vertical::light().height(Length::Fixed(32.0)),
+            ))
+            .start(ToolbarItem::new(icon_btn(
                 "insert-text-symbolic",
                 fl!("text-tool"),
                 ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Text)),
             )))
-            .end(ToolbarItem::new(icon_btn(
+            .start(ToolbarItem::new(icon_btn(
                 "pen-symbolic",
                 fl!("drawing-pen"),
                 ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::draw_tools()[0])),
             )))
-            .end(ToolbarItem::new(icon_btn(
+            .start(ToolbarItem::new(icon_btn(
                 "insert-drawing-symbolic",
                 fl!("drawing-highlighter"),
                 ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Highlighter)),
             )))
-            .end(ToolbarItem::new(self.build_shape_selector()))
-            .end(ToolbarItem::new(icon_btn(
-                "window-close-symbolic",
-                fl!("toolbar-cancel"),
-                ViewerMessage::Edit(EditMessage::AnnotateCancel),
-            )))
+            .start(ToolbarItem::new(self.build_shape_selector()))
             .center(ToolbarItem::new(self.build_stroke_selector()));
 
         let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
-        let swatch_size = 20.0;
+        let swatch_size = 14.0;
 
         let colors = AnnotateColor::presets();
         for color in &colors {
@@ -730,6 +775,12 @@ impl CosmicViewer {
         }
 
         toolbar = toolbar.center(ToolbarItem::new(color_picker_popover));
+
+        toolbar = toolbar.end(ToolbarItem::new(icon_btn(
+            "window-close-symbolic",
+            fl!("toolbar-cancel"),
+            ViewerMessage::Edit(EditMessage::AnnotateCancel),
+        )));
 
         toolbar.view(|| ViewerMessage::ToolbarOverflowToggle)
     }
@@ -1036,6 +1087,10 @@ impl Application for CosmicViewer {
         };
         let font_index = families.iter().position(|&fam| fam == default_family);
 
+        let initial_color = config
+            .last_color
+            .map(|c| Color::from_rgba(c[0], c[1], c[2], c[3]));
+
         let mut viewer = Self {
             core,
             key_binds: key_binds::init_keybinds(),
@@ -1049,7 +1104,9 @@ impl Application for CosmicViewer {
             context_page: None,
             context_menu_position: None,
             annotate_tool: AnnotateTool::default(),
-            annotate_color: AnnotateColor::default(),
+            annotate_color: initial_color
+                .map(AnnotateColor)
+                .unwrap_or_default(),
             annotate_stroke_size: 2.,
             highlighter_stroke_size: 8.,
             crop_ratio: CropRatio::Custom,
@@ -1062,7 +1119,7 @@ impl Application for CosmicViewer {
                 "Hex",
                 "RGB",
                 None,
-                Some(Color::BLACK),
+                initial_color.or(Some(Color::BLACK)),
             )
             .width(Length::Fixed(248.0))
             .height(Length::Fixed(148.0)),
@@ -1076,6 +1133,9 @@ impl Application for CosmicViewer {
             toolbar_overflow_open: false,
             window_width: Some(0.0),
             is_fullscreen: false,
+            wallpaper_dialog: None,
+            delete_dialog: None,
+            available_outputs: Vec::new(),
         };
 
         tasks
@@ -1210,7 +1270,10 @@ impl Application for CosmicViewer {
             .height(Length::Fill);
 
         let mut pop = widget::popover(main);
-        if let Some(point) = self.context_menu_position {
+        if let Some(point) = self.context_menu_position
+            && self.wallpaper_dialog.is_none()
+            && self.delete_dialog.is_none()
+        {
             pop = pop
                 .popup(self.build_context_menu_element())
                 .position(widget::popover::Position::Point(point))
@@ -1228,7 +1291,107 @@ impl Application for CosmicViewer {
             }
         }
 
-        pop.into()
+        let view: Element<'_, Self::Message> = pop.into();
+
+        if let Some(ref path) = self.wallpaper_dialog {
+            let path = path.clone();
+            let spacing = cosmic::theme::active().cosmic().spacing;
+
+            let mut btn_col = column().spacing(spacing.space_s);
+            btn_col = btn_col.push(
+                button::standard(fl!("wallpaper-all-displays")).on_press(
+                    ViewerMessage::SetWallpaperOn(
+                        path.clone(),
+                        crate::message::WallpaperTarget::All,
+                    ),
+                ),
+            );
+            for output in &self.available_outputs {
+                btn_col = btn_col.push(
+                    button::standard(output.clone()).on_press(ViewerMessage::SetWallpaperOn(
+                        path.clone(),
+                        crate::message::WallpaperTarget::Output(output.clone()),
+                    )),
+                );
+            }
+
+            let dialog: Element<'_, Self::Message> = container(
+                container(
+                    column()
+                        .push(text::title4(fl!("wallpaper-dialog-title")))
+                        .push(btn_col)
+                        .push(
+                            button::text(fl!("wallpaper-cancel"))
+                                .on_press(ViewerMessage::CloseWallpaperDialog),
+                        )
+                        .spacing(spacing.space_s)
+                        .align_x(Alignment::Center),
+                )
+                .padding(spacing.space_m)
+                .class(cosmic::theme::Container::Dialog),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into();
+
+            let backdrop = cosmic::widget::mouse_area(
+                container(Space::new(Length::Fill, Length::Fill))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .class(cosmic::theme::Container::Transparent),
+            )
+            .on_press(ViewerMessage::CloseWallpaperDialog);
+
+            return cosmic::iced_widget::stack![view, backdrop, dialog].into();
+        }
+
+        if let Some(ref path) = self.delete_dialog {
+            let path = path.clone();
+            let spacing = cosmic::theme::active().cosmic().spacing;
+            let filename = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.to_string_lossy().to_string());
+
+            let dialog: Element<'_, Self::Message> = container(
+                container(
+                    column()
+                        .push(text::title4(fl!("delete-dialog-title")))
+                        .push(text::body(filename))
+                        .push(
+                            button::destructive(fl!("delete-confirm"))
+                                .on_press(ViewerMessage::ConfirmDelete(path.clone())),
+                        )
+                        .push(
+                            button::text(fl!("delete-cancel"))
+                                .on_press(ViewerMessage::CloseDeleteDialog),
+                        )
+                        .spacing(spacing.space_s)
+                        .align_x(Alignment::Center),
+                )
+                .padding(spacing.space_m)
+                .class(cosmic::theme::Container::Dialog),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into();
+
+            let backdrop = cosmic::widget::mouse_area(
+                container(Space::new(Length::Fill, Length::Fill))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .class(cosmic::theme::Container::Transparent),
+            )
+            .on_press(ViewerMessage::CloseDeleteDialog);
+
+            return cosmic::iced_widget::stack![view, backdrop, dialog].into();
+        }
+
+        view
     }
 
     fn update(&mut self, message: Self::Message) -> Task<Action<Self::Message>> {
@@ -1402,6 +1565,166 @@ impl Application for CosmicViewer {
             ViewerMessage::Print => {}
             ViewerMessage::Cancelled => {}
             ViewerMessage::Quit => {}
+            ViewerMessage::WatcherEvent(evt) => {
+                use crate::watcher::WatcherEvent;
+                match evt {
+                    WatcherEvent::Created(_) => {
+                        tasks.push(self.reload_image_list());
+                    }
+                    WatcherEvent::Modified(path) => {
+                        if !path.exists() {
+                            self.cache.clear_pending(&path);
+                            if self.nav.current() == Some(&path) {
+                                self.nav.deselect();
+                            }
+                            tasks.push(self.reload_image_list());
+                        }
+                    }
+                    WatcherEvent::Removed(path) => {
+                        self.cache.clear_pending(&path);
+                        if self.nav.current() == Some(&path) {
+                            self.nav.deselect();
+                        }
+                        tasks.push(self.reload_image_list());
+                    }
+                    WatcherEvent::Error(err) => {
+                        tracing::warn!("watcher error: {err}");
+                    }
+                }
+            }
+            ViewerMessage::SetWallpaper => {
+                self.context_menu_position = None;
+                if let Some(path) = self.nav.current().cloned() {
+                    #[cfg(target_os = "linux")]
+                    {
+                        if is_cosmic_desktop() {
+                            match self.config.wallpaper_behavior {
+                                viewer_config::WallpaperBehavior::Ask => {
+                                    self.available_outputs = get_cosmic_outputs();
+                                    if self.available_outputs.len() <= 1 {
+                                        return future(async move {
+                                            let result =
+                                                set_wallpaper_cosmic_on(&path, None).await;
+                                            Action::App(ViewerMessage::WallpaperResult(result))
+                                        });
+                                    }
+                                    self.wallpaper_dialog = Some(path);
+                                }
+                                viewer_config::WallpaperBehavior::AllDisplays => {
+                                    return future(async move {
+                                        let result = set_wallpaper_cosmic_on(&path, None).await;
+                                        Action::App(ViewerMessage::WallpaperResult(result))
+                                    });
+                                }
+                                viewer_config::WallpaperBehavior::CurrentDisplay => {
+                                    let outputs = get_cosmic_outputs();
+                                    let output = outputs.first().cloned();
+                                    return future(async move {
+                                        let result =
+                                            set_wallpaper_cosmic_on(&path, output.as_deref())
+                                                .await;
+                                        Action::App(ViewerMessage::WallpaperResult(result))
+                                    });
+                                }
+                            }
+                        } else {
+                            // Non-COSMIC Linux: set on all outputs
+                            return future(async move {
+                                let result = set_wallpaper_cosmic_on(&path, None).await;
+                                Action::App(ViewerMessage::WallpaperResult(result))
+                            });
+                        }
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    {
+                        let result = set_wallpaper_portable(&path);
+                        return self.update(ViewerMessage::WallpaperResult(result));
+                    }
+                }
+            }
+            ViewerMessage::SetWallpaperOn(path, target) => {
+                self.wallpaper_dialog = None;
+                let output = match target {
+                    crate::message::WallpaperTarget::All => None,
+                    crate::message::WallpaperTarget::Output(name) => Some(name),
+                };
+                return future(async move {
+                    let result = set_wallpaper_cosmic_on(&path, output.as_deref()).await;
+                    Action::App(ViewerMessage::WallpaperResult(result))
+                });
+            }
+            ViewerMessage::CloseWallpaperDialog => {
+                self.wallpaper_dialog = None;
+            }
+            ViewerMessage::WallpaperResult(result) => {
+                if let Err(err) = result {
+                    tracing::error!("Failed to set wallpaper: {err}");
+                }
+            }
+            ViewerMessage::MoveToTrash => {
+                self.context_menu_position = None;
+                if let Some(path) = self.nav.current().cloned() {
+                    let next_idx = self.nav.index().and_then(|idx| {
+                        if idx > 0 {
+                            Some(idx - 1)
+                        } else if self.nav.total() > 1 {
+                            Some(1)
+                        } else {
+                            None
+                        }
+                    });
+                    if let Some(idx) = next_idx {
+                        tasks.push(
+                            self.update(ViewerMessage::Nav(NavMessage::GridActivate(idx))),
+                        );
+                    } else {
+                        self.viewport.set_image(None, None);
+                    }
+                    tasks.push(future(async move {
+                        let result = trash::delete(&path)
+                            .map_err(|e| format!("Failed to move to trash: {e}"));
+                        Action::App(ViewerMessage::DeleteResult(result))
+                    }));
+                }
+            }
+            ViewerMessage::DeletePermanently => {
+                self.context_menu_position = None;
+                if let Some(path) = self.nav.current().cloned() {
+                    self.delete_dialog = Some(path);
+                }
+            }
+            ViewerMessage::ConfirmDelete(path) => {
+                self.delete_dialog = None;
+                let next_idx = self.nav.index().and_then(|idx| {
+                    if idx > 0 {
+                        Some(idx - 1)
+                    } else if self.nav.total() > 1 {
+                        Some(1)
+                    } else {
+                        None
+                    }
+                });
+                if let Some(idx) = next_idx {
+                    tasks.push(
+                        self.update(ViewerMessage::Nav(NavMessage::GridActivate(idx))),
+                    );
+                } else {
+                    self.viewport.set_image(None, None);
+                }
+                tasks.push(future(async move {
+                    let result = std::fs::remove_file(&path)
+                        .map_err(|e| format!("Failed to delete file: {e}"));
+                    Action::App(ViewerMessage::DeleteResult(result))
+                }));
+            }
+            ViewerMessage::CloseDeleteDialog => {
+                self.delete_dialog = None;
+            }
+            ViewerMessage::DeleteResult(result) => {
+                if let Err(err) = result {
+                    tracing::error!("Delete failed: {err}");
+                }
+            }
             ViewerMessage::ToolbarOverflowToggle => {
                 self.toolbar_overflow_open = !self.toolbar_overflow_open;
             }
@@ -1423,6 +1746,12 @@ impl Application for CosmicViewer {
                     && self.viewport.active_tool() == Some(ToolKind::Crop)
                 {
                     return self.update(ViewerMessage::Edit(EditMessage::CropCancel));
+                }
+
+                if matches!(key, Key::Named(Named::Delete))
+                    && self.viewport.active_tool().is_none()
+                {
+                    return self.update(ViewerMessage::MoveToTrash);
                 }
 
                 let is_text_editing = self.text_editing
@@ -1544,11 +1873,10 @@ impl Application for CosmicViewer {
                         self.grid.set_focused(Some(idx));
                         self.grid.set_selected(vec![idx]);
 
-                        // Clear any tool and any unsaved tool operations
                         self.viewport.cancel_tool();
-                        self.viewport.revert_all();
 
                         if let Some(cached) = self.cache.get_full(&path) {
+                            self.viewport.revert_all();
                             self.viewport.set_image(
                                 Some(CanvasImage {
                                     handle: cached.handle,
@@ -1557,9 +1885,9 @@ impl Application for CosmicViewer {
                                 }),
                                 Some(cached.image.clone()),
                             );
-                        } else {
-                            self.viewport.set_image(None, None);
                         }
+                        // Don't clear the viewport — keep the previous image
+                        // visible until the new one loads
 
                         tasks.push(self.load_full_image(path));
                     }
@@ -1570,6 +1898,19 @@ impl Application for CosmicViewer {
                         self.scroll_id.clone(),
                         AbsoluteOffset { x: 0.0, y: offset },
                     ));
+                }
+                NavMessage::DirectoryRefreshed(images) => {
+                    let selected = self.nav.current().cloned();
+                    let dir = self.nav.dir().map(|d| d.to_path_buf());
+                    if let Some(dir) = dir {
+                        self.nav
+                            .set_images(dir, images, selected.as_deref());
+                        self.rebuild_grid_items();
+
+                        if !self.nav.is_empty() {
+                            tasks.push(self.load_remaining_thumbnails());
+                        }
+                    }
                 }
             },
             ViewerMessage::Image(msg) => match msg {
@@ -1629,6 +1970,7 @@ impl Application for CosmicViewer {
                     if self.color_picker.get_is_active() {
                         if let Some(color) = self.color_picker.get_applied_color() {
                             self.annotate_color = AnnotateColor(color);
+                            self.save_last_color();
                         }
                         _ = self.color_picker.update::<ViewerMessage>(
                             cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
@@ -1766,6 +2108,7 @@ impl Application for CosmicViewer {
                 {
                     if let Some(color) = self.color_picker.get_applied_color() {
                         self.annotate_color = AnnotateColor(color);
+                        self.save_last_color();
                     }
                     _ = self.color_picker.update::<ViewerMessage>(
                         cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
@@ -1906,6 +2249,7 @@ impl Application for CosmicViewer {
                     }
                     EditMessage::AnnotateColor(color) => {
                         self.annotate_color = color;
+                        self.save_last_color();
 
                         // Update the active preview's color if one exists
                         if let Some(preview) = self.viewport.preview_mut() {
@@ -2042,6 +2386,7 @@ impl Application for CosmicViewer {
                                 );
                                 if let Some(color) = self.color_picker.get_applied_color() {
                                     self.annotate_color = AnnotateColor(color);
+                                    self.save_last_color();
                                 }
                                 if self.color_picker.get_is_active() {
                                     _ = self.color_picker
@@ -2064,6 +2409,7 @@ impl Application for CosmicViewer {
                                 if was_active {
                                     if let Some(color) = self.color_picker.get_applied_color() {
                                         self.annotate_color = AnnotateColor(color);
+                                        self.save_last_color();
                                     }
                                 }
                                 tasks.push(
@@ -2205,18 +2551,26 @@ impl Application for CosmicViewer {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        Subscription::batch([event::listen_with(|event, _status, _id| match event {
-            iced::Event::Window(iced::window::Event::Resized(size)) => {
-                Some(ViewerMessage::WindowResized(size))
-            }
-            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
-                key,
-                modifiers,
-                text,
-                ..
-            }) => Some(ViewerMessage::KeyPressed(key, modifiers, text)),
-            _ => None,
-        })])
+        let watcher_sub = crate::watcher::watch_directory(
+            self.nav.dir().map(|d| d.to_path_buf()),
+        )
+        .map(ViewerMessage::WatcherEvent);
+
+        Subscription::batch([
+            event::listen_with(|event, _status, _id| match event {
+                iced::Event::Window(iced::window::Event::Resized(size)) => {
+                    Some(ViewerMessage::WindowResized(size))
+                }
+                iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                    key,
+                    modifiers,
+                    text,
+                    ..
+                }) => Some(ViewerMessage::KeyPressed(key, modifiers, text)),
+                _ => None,
+            }),
+            watcher_sub,
+        ])
     }
 }
 
@@ -2306,4 +2660,256 @@ fn load_font_families() -> Vec<&'static str> {
         .into_iter()
         .map(|name| &*Box::leak(name.into_boxed_str()))
         .collect()
+}
+
+// Wallpaper functions
+
+fn is_cosmic_desktop() -> bool {
+    std::env::var("XDG_CURRENT_DESKTOP")
+        .map(|d| d.to_uppercase().contains("COSMIC"))
+        .unwrap_or(false)
+}
+
+fn get_cosmic_outputs() -> Vec<String> {
+    if let Ok(output) = std::process::Command::new("cosmic-randr")
+        .arg("list")
+        .output()
+        && output.status.success()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stripped = strip_ansi_codes(&stdout);
+        stripped
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                if line.contains("(enabled)") || line.contains("(disabled)") {
+                    line.split_whitespace().next().map(String::from)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    }
+}
+
+fn strip_ansi_codes(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                while let Some(&next) = chars.peek() {
+                    chars.next();
+                    if next.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
+}
+
+#[cfg(not(target_os = "linux"))]
+fn set_wallpaper_portable(path: &std::path::Path) -> Result<(), String> {
+    wallpaper::set_from_path(
+        path.to_str().ok_or_else(|| "Invalid file path".to_string())?,
+    )
+    .map_err(|e| format!("Failed to set wallpaper: {e}"))
+}
+
+async fn set_wallpaper_cosmic_on(
+    path: &std::path::Path,
+    output: Option<&str>,
+) -> Result<(), String> {
+    let config_dir = dirs::config_dir()
+        .ok_or("Could not find config directory")?
+        .join("cosmic/com.system76.CosmicBackground/v1");
+
+    std::fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("Failed to create config directory: {e}"))?;
+
+    let path_str = path.to_string_lossy();
+
+    let (config_filename, output_field) = match output {
+        Some(name) => (format!("output.{name}"), name.to_string()),
+        None => ("all".to_string(), "all".to_string()),
+    };
+
+    let config_path = config_dir.join(&config_filename);
+
+    let same_on_all_path = config_dir.join("same-on-all");
+    if let Some(output_name) = output {
+        std::fs::write(&same_on_all_path, "false\n")
+            .map_err(|e| format!("Failed to write same-on-all: {e}"))?;
+
+        update_backgrounds_list(&config_dir, output_name)?;
+    } else {
+        std::fs::write(&same_on_all_path, "true\n")
+            .map_err(|e| format!("Failed to write same-on-all: {e}"))?;
+    }
+
+    let content = if config_path.exists() {
+        let existing = std::fs::read_to_string(&config_path)
+            .map_err(|e| format!("Failed to read config: {e}"))?;
+        update_source_in_config(&existing, &path_str)
+    } else {
+        format!(
+            r#"(
+    output: "{}",
+    source: Path("{}"),
+    filter_by_theme: false,
+    rotation_frequency: 300,
+    filter_method: Lanczos,
+    scaling_mode: Zoom,
+    sampling_method: Alphanumeric,
+)
+"#,
+            output_field, path_str
+        )
+    };
+
+    std::fs::write(&config_path, content)
+        .map_err(|e| format!("Failed to write config file: {e}"))?;
+
+    add_to_cosmic_settings_custom_images(path)?;
+
+    Ok(())
+}
+
+fn add_to_cosmic_settings_custom_images(path: &std::path::Path) -> Result<(), String> {
+    let config_dir = dirs::config_dir()
+        .ok_or("Could not find config directory")?
+        .join("cosmic/com.system76.CosmicSettings.Wallpaper/v1");
+
+    std::fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("Failed to create config directory: {e}"))?;
+
+    let custom_images_path = config_dir.join("custom-images");
+
+    let mut custom_images: Vec<PathBuf> = std::fs::read_to_string(&custom_images_path)
+        .ok()
+        .and_then(|content| parse_path_list(&content))
+        .unwrap_or_default();
+
+    let path_buf = path.to_path_buf();
+    if !custom_images.contains(&path_buf) {
+        custom_images.push(path_buf);
+    }
+
+    // Remove any duplicates
+    let mut seen = std::collections::HashSet::new();
+    custom_images.retain(|p| seen.insert(p.clone()));
+
+    let content = format!(
+        "[\n    {},\n]",
+        custom_images
+            .iter()
+            .map(|p| format!("\"{}\"", p.display()))
+            .collect::<Vec<_>>()
+            .join(",\n    ")
+    );
+    std::fs::write(&custom_images_path, content)
+        .map_err(|e| format!("Failed to write custom-images: {e}"))?;
+
+    Ok(())
+}
+
+fn parse_path_list(content: &str) -> Option<Vec<PathBuf>> {
+    let trimmed = content.trim();
+    if trimmed.starts_with('[') && trimmed.ends_with(']') {
+        let inner = &trimmed[1..trimmed.len() - 1];
+        Some(
+            inner
+                .split(',')
+                .filter_map(|s| {
+                    let s = s.trim().trim_matches('"');
+                    if s.is_empty() { None } else { Some(PathBuf::from(s)) }
+                })
+                .collect(),
+        )
+    } else {
+        None
+    }
+}
+
+fn update_backgrounds_list(config_dir: &std::path::Path, output_name: &str) -> Result<(), String> {
+    let backgrounds_path = config_dir.join("backgrounds");
+    let mut backgrounds: Vec<String> = std::fs::read_to_string(&backgrounds_path)
+        .ok()
+        .and_then(|content| parse_backgrounds_list(&content))
+        .unwrap_or_default();
+
+    if !backgrounds.contains(&output_name.to_string()) {
+        backgrounds.push(output_name.to_string());
+        let content = format!(
+            "[\n    {},\n]",
+            backgrounds
+                .iter()
+                .map(|s| format!("\"{s}\""))
+                .collect::<Vec<_>>()
+                .join(",\n    ")
+        );
+        std::fs::write(&backgrounds_path, content)
+            .map_err(|e| format!("Failed to write backgrounds: {e}"))?;
+    }
+
+    Ok(())
+}
+
+fn parse_backgrounds_list(content: &str) -> Option<Vec<String>> {
+    let trimmed = content.trim();
+    if trimmed.starts_with('[') && trimmed.ends_with(']') {
+        let inner = &trimmed[1..trimmed.len() - 1];
+        Some(
+            inner
+                .split(',')
+                .filter_map(|s| {
+                    let s = s.trim().trim_matches('"');
+                    if s.is_empty() { None } else { Some(s.to_string()) }
+                })
+                .collect(),
+        )
+    } else {
+        None
+    }
+}
+
+fn update_source_in_config(existing: &str, new_path: &str) -> String {
+    let mut result = String::new();
+    let mut skip_until_comma_or_paren = false;
+
+    for line in existing.lines() {
+        let trimmed = line.trim();
+
+        if skip_until_comma_or_paren {
+            if trimmed.ends_with(',') || trimmed.ends_with(')') {
+                skip_until_comma_or_paren = false;
+            }
+            continue;
+        }
+
+        if trimmed.starts_with("source:") {
+            result.push_str(&format!("    source: Path(\"{new_path}\"),\n"));
+            if !trimmed.ends_with(',') && !trimmed.ends_with(')') {
+                skip_until_comma_or_paren = true;
+            }
+        } else {
+            result.push_str(line);
+            result.push('\n');
+        }
+    }
+
+    if !existing.ends_with('\n') && result.ends_with('\n') {
+        result.pop();
+    }
+
+    result
 }

@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{
     ToolOperation,
-    renderer::{build_path, stroke_on_image},
+    renderer::{build_path, fill_on_image, stroke_on_image},
     rotate::RotateDirection,
 };
 use cosmic::{
@@ -45,55 +45,78 @@ impl ToolOperation for ShapeOperation {
     }
 
     fn apply(&self, image: &mut DynamicImage) {
-        let Some(path) = build_path(|path_builder| match self.kind {
-            ShapeKind::Rectangle => {
-                let rect = normalize_rect(self.start, self.end);
-                if let Some(rect) = Rect::from_xywh(rect.x, rect.y, rect.width, rect.height) {
-                    path_builder.push_rect(rect);
-                }
-            }
-            ShapeKind::Ellipse => {
-                let rect = normalize_rect(self.start, self.end);
-                path_builder.push_oval(
-                    Rect::from_xywh(rect.x, rect.y, rect.width, rect.height)
-                        .unwrap_or(Rect::from_xywh(0.0, 0.0, 1.0, 1.0).unwrap()),
-                );
-            }
-            ShapeKind::Line => {
-                path_builder.move_to(self.start.x, self.start.y);
-                path_builder.line_to(self.end.x, self.end.y);
+        match self.kind {
+            ShapeKind::Star | ShapeKind::Polygon => {
+                let Some(path) = build_path(|pb| {
+                    let verts = match self.kind {
+                        ShapeKind::Star => star_vertices(self.start, self.end),
+                        ShapeKind::Polygon => polygon_vertices(self.start, self.end, 6),
+                        _ => unreachable!(),
+                    };
+                    if let Some(first) = verts.first() {
+                        pb.move_to(first.x, first.y);
+                        for vert in &verts[1..] {
+                            pb.line_to(vert.x, vert.y);
+                        }
+                        pb.close();
+                    }
+                }) else {
+                    return;
+                };
+                fill_on_image(image, &path, self.color);
             }
             ShapeKind::Arrow => {
-                for (a, b) in arrow_segments(self.start, self.end) {
-                    path_builder.move_to(a.x, a.y);
-                    path_builder.line_to(b.x, b.y);
+                // Stroke the shaft
+                if let Some(shaft) = build_path(|pb| {
+                    pb.move_to(self.start.x, self.start.y);
+                    pb.line_to(self.end.x, self.end.y);
+                }) {
+                    stroke_on_image(image, &shaft, self.color, self.width, SkiaLineCap::Round);
                 }
-            }
-            ShapeKind::Star => {
-                let verts = star_vertices(self.start, self.end);
-                if let Some(first) = verts.first() {
-                    path_builder.move_to(first.x, first.y);
-                    for vert in &verts[1..] {
-                        path_builder.line_to(vert.x, vert.y);
+                // Fill the arrowhead
+                let segs = arrow_segments(self.start, self.end);
+                if segs.len() >= 3 {
+                    let tip = segs[1].1; // arrow tip
+                    let left = segs[1].0;
+                    let right = segs[2].0;
+                    if let Some(head) = build_path(|pb| {
+                        pb.move_to(tip.x, tip.y);
+                        pb.line_to(left.x, left.y);
+                        pb.line_to(right.x, right.y);
+                        pb.close();
+                    }) {
+                        fill_on_image(image, &head, self.color);
                     }
-                    path_builder.close();
                 }
             }
-            ShapeKind::Polygon => {
-                let verts = polygon_vertices(self.start, self.end, 6);
-                if let Some(first) = verts.first() {
-                    path_builder.move_to(first.x, first.y);
-                    for vert in &verts[1..] {
-                        path_builder.line_to(vert.x, vert.y);
+            _ => {
+                let Some(path) = build_path(|pb| match self.kind {
+                    ShapeKind::Rectangle => {
+                        let rect = normalize_rect(self.start, self.end);
+                        if let Some(rect) =
+                            Rect::from_xywh(rect.x, rect.y, rect.width, rect.height)
+                        {
+                            pb.push_rect(rect);
+                        }
                     }
-                    path_builder.close();
-                }
+                    ShapeKind::Ellipse => {
+                        let rect = normalize_rect(self.start, self.end);
+                        pb.push_oval(
+                            Rect::from_xywh(rect.x, rect.y, rect.width, rect.height)
+                                .unwrap_or(Rect::from_xywh(0.0, 0.0, 1.0, 1.0).unwrap()),
+                        );
+                    }
+                    ShapeKind::Line => {
+                        pb.move_to(self.start.x, self.start.y);
+                        pb.line_to(self.end.x, self.end.y);
+                    }
+                    _ => unreachable!(),
+                }) else {
+                    return;
+                };
+                stroke_on_image(image, &path, self.color, self.width, SkiaLineCap::Round);
             }
-        }) else {
-            return;
-        };
-
-        stroke_on_image(image, &path, self.color, self.width, SkiaLineCap::Round);
+        }
     }
 
     fn commit(&self) -> Option<Box<dyn ToolOperation>> {

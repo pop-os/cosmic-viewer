@@ -21,12 +21,18 @@ pub enum ContextMessage {
 }
 
 #[derive(Debug, Clone)]
+pub enum WallpaperTarget {
+    All,
+    Output(String),
+}
+
+
+#[derive(Debug, Clone)]
 pub enum ViewerMessage {
     Copy,
     CopyToClipboard,
     CopyFilePath,
     Cut,
-    // Path resolved from CLI arg or dialog
     Open(PathBuf),
     OpenFileDialog,
     OpenFolderDialog,
@@ -39,6 +45,15 @@ pub enum ViewerMessage {
     SavedAs(PathBuf),
     Share,
     Print,
+    SetWallpaper,
+    SetWallpaperOn(PathBuf, WallpaperTarget),
+    CloseWallpaperDialog,
+    WallpaperResult(Result<(), String>),
+    MoveToTrash,
+    DeletePermanently,
+    ConfirmDelete(PathBuf),
+    CloseDeleteDialog,
+    DeleteResult(Result<(), String>),
     Cancelled,
     Quit,
     Nav(NavMessage),
@@ -46,18 +61,17 @@ pub enum ViewerMessage {
     WindowResized(Size),
     KeyPressed(Key, Modifiers, Option<SmolStr>),
     Image(ImageMessage),
-    // Context page message passing
     Context(ContextMessage),
-    // Viewport message passing
     Canvas(CanvasMessage),
-    // Edit message passing
     Edit(EditMessage),
     Surface(cosmic::surface::Action),
+    WatcherEvent(crate::watcher::WatcherEvent),
 }
 
 #[derive(Debug, Clone)]
 pub enum NavMessage {
     ScanComplete(PathBuf, Vec<PathBuf>, Option<PathBuf>),
+    DirectoryRefreshed(Vec<PathBuf>),
     GridActivate(usize),
     GridFocus(usize),
     GridScroll(f32),

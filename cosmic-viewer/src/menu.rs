@@ -66,6 +66,24 @@ fn build_file_menu(recent_folders: &[String]) -> Vec<menu::Item<MenuAction, Stri
     items.push(menu::Item::Divider);
 
     items.push(menu::Item::Button(
+        fl!("menu-set-wallpaper"),
+        None,
+        MenuAction::SetWallpaper,
+    ));
+    items.push(menu::Item::Button(
+        fl!("menu-move-to-trash"),
+        None,
+        MenuAction::MoveToTrash,
+    ));
+    items.push(menu::Item::Button(
+        fl!("menu-delete-permanently"),
+        None,
+        MenuAction::DeletePermanently,
+    ));
+
+    items.push(menu::Item::Divider);
+
+    items.push(menu::Item::Button(
         fl!("menu-image-details"),
         None,
         MenuAction::ImageDetails,
