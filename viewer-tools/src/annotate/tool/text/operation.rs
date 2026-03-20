@@ -12,7 +12,7 @@ use cosmic::{
     },
     iced_core::text::{LineHeight, Shaping},
     iced_widget::{
-        canvas::{self, Frame},
+        canvas::{self, Frame, Path, Stroke},
         graphics::text::{cosmic_text, font_system},
     },
 };
@@ -46,6 +46,54 @@ impl TextOperation {
             font_family,
             alignment,
         }
+    }
+}
+
+impl TextOperation {
+    pub fn bounds(&self) -> Rectangle {
+        let mut total_width = 0.0;
+        for span in &self.spans {
+            total_width += measure_span_width(
+                &span.text,
+                self.font_size,
+                self.font_family,
+                span.bold,
+                span.italic,
+            );
+        }
+
+        Rectangle::new(
+            self.position,
+            Size::new(total_width.max(1.0), self.font_size * 1.2),
+        )
+    }
+
+    pub fn hit_test(&self, point: Point) -> bool {
+        self.bounds().contains(point)
+    }
+
+    pub fn to_preview(&self) -> super::preview::TextPreview {
+        let mut preview = super::preview::TextPreview::new(
+            self.color,
+            self.font_size,
+            self.font_family,
+            false,
+            false,
+            false,
+            self.alignment,
+        );
+        preview.position = Some(self.position);
+        preview.spans = self.spans.clone();
+        preview.state = super::preview::TextEditState::Editing;
+
+        // Restore formatting from last span
+        if let Some(last) = self.spans.last() {
+            preview.bold = last.bold;
+            preview.italic = last.italic;
+            preview.underline = last.underline;
+        }
+
+        preview
     }
 }
 
@@ -87,13 +135,28 @@ impl ToolOperation for TextOperation {
             };
             frame.fill_text(text);
 
-            x_offset += measure_span_width(
+            let span_width = measure_span_width(
                 &span.text,
                 self.font_size,
                 self.font_family,
                 span.bold,
                 span.italic,
             ) / scale;
+
+            if span.underline {
+                let underline_y = self.position.y + self.font_size / scale;
+                frame.stroke(
+                    &Path::line(
+                        Point::new(self.position.x + x_offset, underline_y),
+                        Point::new(self.position.x + x_offset + span_width, underline_y),
+                    ),
+                    Stroke::default()
+                        .with_color(self.color)
+                        .with_width(1.0 / scale),
+                );
+            }
+
+            x_offset += span_width;
         }
     }
 
@@ -193,6 +256,36 @@ impl ToolOperation for TextOperation {
                     },
                 );
             }
+        }
+
+        // Draw underlines
+        let mut span_x = self.position.x;
+        for span in &self.spans {
+            let span_w = measure_span_width(
+                &span.text,
+                self.font_size,
+                self.font_family,
+                span.bold,
+                span.italic,
+            );
+
+            if span.underline && span_w > 0.0 {
+                let y = (self.position.y + self.font_size + 2.0) as i32;
+                let x_start = span_x as i32;
+                let x_end = (span_x + span_w) as i32;
+                let r = (self.color.r * 255.0) as u8;
+                let g = (self.color.g * 255.0) as u8;
+                let b = (self.color.b * 255.0) as u8;
+                let a = (self.color.a * 255.0) as u8;
+
+                if y >= 0 && y < img_height {
+                    for x in x_start.max(0)..x_end.min(img_width) {
+                        rgba.put_pixel(x as u32, y as u32, Rgba([r, g, b, a]));
+                    }
+                }
+            }
+
+            span_x += span_w;
         }
 
         *image = DynamicImage::ImageRgba8(rgba.clone());

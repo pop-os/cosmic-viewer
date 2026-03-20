@@ -41,7 +41,7 @@ use viewer_tools::{
     ToolOperation,
     annotate::{
         AnnotateColor, AnnotateTool, HighlighterPreview, PenPreview, PencilPreview, ShapeKind,
-        ShapePreview, TextPreview,
+        ShapePreview, TextOperation, TextPreview,
     },
     crop::{CropOperation, CropRatio, CropSelection},
     rotate::{RotateDirection, RotateOperation},
@@ -70,6 +70,7 @@ pub struct CosmicViewer {
     font_families: Vec<&'static str>,
     text_font_family: &'static str,
     text_font_index: Option<usize>,
+    text_font_size: f32,
     text_bold: bool,
     text_italic: bool,
     text_underline: bool,
@@ -786,10 +787,19 @@ impl CosmicViewer {
     }
 
     fn build_text_format_popup(&self) -> Element<'_, ViewerMessage> {
+        let font_sizes = vec!["12pt", "16pt", "20pt", "24pt", "32pt", "48pt", "64pt"];
+        let font_size_values = [12.0_f32, 16.0, 20.0, 24.0, 32.0, 48.0, 64.0];
+        let font_size_selected = font_size_values
+            .iter()
+            .position(|s| *s == self.text_font_size);
+
         let font_dropdown = row()
             .push(icon::from_name("font-symbolic").size(16).icon())
             .push(dropdown(&self.font_families, self.text_font_index, |idx| {
                 ViewerMessage::Edit(EditMessage::TextFontFamily(idx))
+            }))
+            .push(dropdown(font_sizes, font_size_selected, |idx| {
+                ViewerMessage::Edit(EditMessage::TextFontSize(idx))
             }))
             .align_y(Alignment::Center)
             .spacing(4);
@@ -1126,6 +1136,7 @@ impl Application for CosmicViewer {
             selected_shape: AnnotateTool::Rectangle,
             text_font_family: default_family,
             text_font_index: font_index,
+            text_font_size: 24.0,
             text_bold: false,
             text_italic: false,
             text_underline: false,
@@ -1285,9 +1296,26 @@ impl Application for CosmicViewer {
                 && let Some(pos) = text.position
                 && let Some(screen_pos) = self.viewport.image_to_screen(pos, bounds.get())
             {
+                // Estimate popup size and clamp to visible area
+                let popup_w = 300.0;
+                let popup_h = 120.0;
+                let margin = 8.0;
+                let canvas = bounds.get();
+
+                let x = screen_pos
+                    .x
+                    .clamp(canvas.x + margin, (canvas.x + canvas.width - popup_w - margin).max(canvas.x + margin));
+                let y = if screen_pos.y - popup_h - 10.0 >= canvas.y + margin {
+                    // Above the text
+                    screen_pos.y - 10.0
+                } else {
+                    // Below the text (not enough room above)
+                    screen_pos.y + self.text_font_size + 10.0
+                };
+
                 pop = pop
                     .popup(self.build_text_format_popup())
-                    .position(popover::Position::Point(screen_pos));
+                    .position(popover::Position::Point(Point::new(x, y)));
             }
         }
 
@@ -1784,7 +1812,7 @@ impl Application for CosmicViewer {
                             self.viewport.set_active_tool(Some(ToolKind::Annotate));
                             self.viewport.set_preview(Some(Box::new(TextPreview::new(
                                 self.annotate_color.0,
-                                self.annotate_stroke_size * 8.0,
+                                self.text_font_size,
                                 self.text_font_family,
                                 self.text_bold,
                                 self.text_italic,
@@ -1797,7 +1825,7 @@ impl Application for CosmicViewer {
                             self.viewport.set_active_tool(Some(ToolKind::Annotate));
                             self.viewport.set_preview(Some(Box::new(TextPreview::new(
                                 self.annotate_color.0,
-                                self.annotate_stroke_size * 8.0,
+                                self.text_font_size,
                                 self.text_font_family,
                                 self.text_bold,
                                 self.text_italic,
@@ -2026,6 +2054,58 @@ impl Application for CosmicViewer {
                         return Task::none();
                     }
 
+                    // Text tool: commit current text on second click, then
+                    // check if clicking an existing text to re-edit, or place new
+                    if matches!(self.annotate_tool, AnnotateTool::Text) {
+                        if self.text_editing {
+                            self.viewport.apply_tool();
+                            self.text_editing = false;
+                        }
+
+                        // Check if clicking on a committed TextOperation to re-edit
+                        let re_edit = {
+                            let ops = self.viewport.operations_mut();
+                            let hit = ops.iter().rposition(|op| {
+                                op.as_any()
+                                    .downcast_ref::<TextOperation>()
+                                    .is_some_and(|t| t.hit_test(point))
+                            });
+
+                            if let Some(idx) = hit {
+                                let op = ops.remove(idx);
+                                op.as_any()
+                                    .downcast_ref::<TextOperation>()
+                                    .map(|t| t.to_preview())
+                            } else {
+                                None
+                            }
+                        };
+
+                        if let Some(preview) = re_edit {
+                            self.text_bold = preview.bold;
+                            self.text_italic = preview.italic;
+                            self.text_underline = preview.underline;
+                            self.text_font_size = preview.font_size;
+                            self.text_font_family = preview.font_family;
+                            self.text_alignment = preview.alignment;
+                            self.annotate_color = AnnotateColor(preview.color);
+                            self.text_editing = true;
+                            self.viewport.set_preview(Some(Box::new(preview)));
+                            self.viewport.rebuild_display();
+                            return Task::none();
+                        }
+
+                        self.viewport.set_preview(Some(Box::new(TextPreview::new(
+                            self.annotate_color.0,
+                            self.text_font_size,
+                            self.text_font_family,
+                            self.text_bold,
+                            self.text_italic,
+                            self.text_underline,
+                            self.text_alignment,
+                        ))));
+                    }
+
                     if let Some(size) = self.viewport.image_size()
                         && let Some(preview) = self.viewport.preview_mut()
                     {
@@ -2236,7 +2316,7 @@ impl Application for CosmicViewer {
                             AnnotateTool::Text => {
                                 self.viewport.set_preview(Some(Box::new(TextPreview::new(
                                     self.annotate_color.0,
-                                    self.annotate_stroke_size * 8.0,
+                                    self.text_font_size,
                                     self.text_font_family,
                                     self.text_bold,
                                     self.text_italic,
@@ -2464,6 +2544,18 @@ impl Application for CosmicViewer {
                             && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
                         {
                             text.alignment = self.text_alignment;
+                        }
+                    }
+                    EditMessage::TextFontSize(idx) => {
+                        let sizes = [12.0_f32, 16.0, 20.0, 24.0, 32.0, 48.0, 64.0];
+                        if let Some(&size) = sizes.get(idx) {
+                            self.text_font_size = size;
+                            if let Some(preview) = self.viewport.preview_mut()
+                                && let Some(text) =
+                                    preview.as_any_mut().downcast_mut::<TextPreview>()
+                            {
+                                text.font_size = size;
+                            }
                         }
                     }
                     EditMessage::TextFontFamily(idx) => {

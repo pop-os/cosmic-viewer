@@ -114,6 +114,7 @@ pub enum EditMessage {
     TextBold,
     TextItalic,
     TextUnderline,
+    TextFontSize(usize),
     TextFontFamily(usize),
     TextAlignment(Horizontal),
     TextApply,
