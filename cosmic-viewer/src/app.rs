@@ -1074,7 +1074,8 @@ impl Application for CosmicViewer {
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
-        let content: Element<'_, Self::Message> = if self.viewport.image().is_some() {
+        let has_image = self.viewport.image().is_some();
+        let content: Element<'_, Self::Message> = if has_image {
             self.viewport.element().map(ViewerMessage::Canvas)
         } else {
             column()
@@ -1089,8 +1090,56 @@ impl Application for CosmicViewer {
 
         let spacing = cosmic::theme::active().cosmic().spacing;
 
+        let nav_collapsed = !self.core().nav_bar_active();
+        let cur_idx = self.nav.index().unwrap_or(0);
+
+        let image_area: Element<'_, Self::Message> = if nav_collapsed && has_image {
+            let has_prev = cur_idx > 0;
+            let has_next = cur_idx + 1 < self.nav.total();
+
+            let nav_btn = |icon_name: &'static str, msg: ViewerMessage, enabled: bool|
+             -> Element<'_, Self::Message> {
+                let mut btn = button::icon(icon::from_name(icon_name).size(24))
+                    .class(cosmic::theme::Button::Icon);
+                if enabled {
+                    btn = btn.on_press(msg);
+                }
+                container(btn)
+                    .center_y(Length::Fill)
+                    .into()
+            };
+
+            row()
+                .push(nav_btn(
+                    "go-previous-symbolic",
+                    ViewerMessage::Nav(NavMessage::GridActivate(cur_idx.saturating_sub(1))),
+                    has_prev,
+                ))
+                .push(
+                    container(content)
+                        .width(Length::Fill)
+                        .height(Length::Fill),
+                )
+                .push(nav_btn(
+                    "go-next-symbolic",
+                    ViewerMessage::Nav(NavMessage::GridActivate(
+                        (cur_idx + 1).min(self.nav.total().saturating_sub(1)),
+                    )),
+                    has_next,
+                ))
+                .align_y(Alignment::Center)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else {
+            container(content)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        };
+
         let main = column()
-            .push(content)
+            .push(image_area)
             .push(
                 container(self.build_toolbar())
                     .center_x(Length::Fill)
@@ -1376,6 +1425,20 @@ impl Application for CosmicViewer {
                                 }
                             }
                         }
+                    }
+                } else if !self.core().nav_bar_active()
+                    && matches!(key, Key::Named(Named::ArrowLeft))
+                {
+                    let idx = self.nav.index().unwrap_or(0);
+                    if idx > 0 {
+                        return self.update(ViewerMessage::Nav(NavMessage::GridActivate(idx - 1)));
+                    }
+                } else if !self.core().nav_bar_active()
+                    && matches!(key, Key::Named(Named::ArrowRight))
+                {
+                    let idx = self.nav.index().unwrap_or(0);
+                    if idx + 1 < self.nav.total() {
+                        return self.update(ViewerMessage::Nav(NavMessage::GridActivate(idx + 1)));
                     }
                 } else if let Some(msg) = keyboard_shortcut_handler(key, modifiers, text) {
                     return self.update(msg);
