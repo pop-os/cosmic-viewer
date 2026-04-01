@@ -1,6 +1,5 @@
 # Application
 app-name = COSMIC Viewer
-app-title = COSMIC Viewer
 app-description = Image viewer for the COSMIC desktop
 
 # Menu - File

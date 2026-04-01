@@ -1149,9 +1149,6 @@ impl Application for CosmicViewer {
             available_outputs: Vec::new(),
         };
 
-        tasks
-            .push(viewer.set_window_title(fl!("app-title"), viewer.core.main_window_id().unwrap()));
-
         if let Some(path) = flags {
             tasks.push(viewer.open_path(path));
         }
@@ -2021,13 +2018,11 @@ impl Application for CosmicViewer {
                     self.is_fullscreen = !self.is_fullscreen;
                     if let Some(window_id) = self.core.main_window_id() {
                         return if self.is_fullscreen {
-                            self.core.set_header_title(String::new());
                             cosmic::iced::window::change_mode(
                                 window_id,
                                 cosmic::iced::window::Mode::Fullscreen,
                             )
                         } else {
-                            self.core.set_header_title(fl!("app-title"));
                             cosmic::iced::window::change_mode(
                                 window_id,
                                 cosmic::iced::window::Mode::Windowed,
