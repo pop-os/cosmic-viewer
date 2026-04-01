@@ -20,7 +20,6 @@ pub enum MenuAction {
     Save,
     SaveAs,
     ImageDetails,
-    Share,
     Print,
     Quit,
     Undo,
@@ -57,7 +56,6 @@ impl MenuAction {
             MenuAction::Paste => ViewerMessage::Paste,
             MenuAction::Save => ViewerMessage::Save,
             MenuAction::SaveAs => ViewerMessage::SaveAs,
-            MenuAction::Share => ViewerMessage::Share,
             MenuAction::Print => ViewerMessage::Print,
             MenuAction::Quit => ViewerMessage::Quit,
             // Context Actions

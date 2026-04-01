@@ -89,11 +89,6 @@ fn build_file_menu(recent_folders: &[String]) -> Vec<menu::Item<MenuAction, Stri
         MenuAction::ImageDetails,
     ));
     items.push(menu::Item::Button(
-        fl!("menu-share"),
-        None,
-        MenuAction::Share,
-    ));
-    items.push(menu::Item::Button(
         fl!("menu-print"),
         None,
         MenuAction::Print,
