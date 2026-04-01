@@ -1584,7 +1584,11 @@ impl Application for CosmicViewer {
             }
             ViewerMessage::Print => {}
             ViewerMessage::Cancelled => {}
-            ViewerMessage::Quit => {}
+            ViewerMessage::Quit => {
+                if let Some(id) = self.core.main_window_id() {
+                    return iced::window::close(id);
+                }
+            }
             ViewerMessage::WatcherEvent(evt) => {
                 use crate::watcher::WatcherEvent;
                 match evt {
