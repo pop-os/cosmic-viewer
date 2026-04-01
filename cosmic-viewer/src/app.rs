@@ -41,7 +41,7 @@ use viewer_tools::{
     ToolOperation,
     annotate::{
         AnnotateColor, AnnotateTool, HighlighterPreview, PenPreview, PencilPreview, ShapeKind,
-        ShapePreview, TextPreview,
+        ShapePreview, TextOperation, TextPreview,
     },
     crop::{CropOperation, CropRatio, CropSelection},
     rotate::{RotateDirection, RotateOperation},
@@ -70,6 +70,7 @@ pub struct CosmicViewer {
     font_families: Vec<&'static str>,
     text_font_family: &'static str,
     text_font_index: Option<usize>,
+    text_font_size: f32,
     text_bold: bool,
     text_italic: bool,
     text_underline: bool,
@@ -721,10 +722,13 @@ impl CosmicViewer {
         }
 
         // Custom color picker button
-        let custom_color = self.color_picker.get_applied_color().unwrap_or(Color::BLACK);
+        let custom_color = self
+            .color_picker
+            .get_applied_color()
+            .unwrap_or(Color::BLACK);
         let is_custom_selected = !colors.iter().any(|c| *c == self.annotate_color);
-        let color_picker_btn = button::custom(
-            container(Space::new(swatch_size, swatch_size)).class(
+        let color_picker_btn =
+            button::custom(container(Space::new(swatch_size, swatch_size)).class(
                 cosmic::theme::Container::custom(move |_theme| container::Style {
                     background: Some(Background::Color(custom_color)),
                     border: Border {
@@ -734,13 +738,12 @@ impl CosmicViewer {
                     },
                     ..Default::default()
                 }),
-            ),
-        )
-        .padding(2)
-        .class(cosmic::theme::Button::Icon)
-        .on_press(ViewerMessage::Edit(EditMessage::ColorPicker(
-            cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
-        )));
+            ))
+            .padding(2)
+            .class(cosmic::theme::Button::Icon)
+            .on_press(ViewerMessage::Edit(EditMessage::ColorPicker(
+                cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
+            )));
 
         let mut color_picker_popover = popover(color_picker_btn);
         if self.color_picker.get_is_active() {
@@ -786,10 +789,19 @@ impl CosmicViewer {
     }
 
     fn build_text_format_popup(&self) -> Element<'_, ViewerMessage> {
+        let font_sizes = vec!["12pt", "16pt", "20pt", "24pt", "32pt", "48pt", "64pt"];
+        let font_size_values = [12.0_f32, 16.0, 20.0, 24.0, 32.0, 48.0, 64.0];
+        let font_size_selected = font_size_values
+            .iter()
+            .position(|s| *s == self.text_font_size);
+
         let font_dropdown = row()
             .push(icon::from_name("font-symbolic").size(16).icon())
             .push(dropdown(&self.font_families, self.text_font_index, |idx| {
                 ViewerMessage::Edit(EditMessage::TextFontFamily(idx))
+            }))
+            .push(dropdown(font_sizes, font_size_selected, |idx| {
+                ViewerMessage::Edit(EditMessage::TextFontSize(idx))
             }))
             .align_y(Alignment::Center)
             .spacing(4);
@@ -1104,9 +1116,7 @@ impl Application for CosmicViewer {
             context_page: None,
             context_menu_position: None,
             annotate_tool: AnnotateTool::default(),
-            annotate_color: initial_color
-                .map(AnnotateColor)
-                .unwrap_or_default(),
+            annotate_color: initial_color.map(AnnotateColor).unwrap_or_default(),
             annotate_stroke_size: 2.,
             highlighter_stroke_size: 8.,
             crop_ratio: CropRatio::Custom,
@@ -1126,6 +1136,7 @@ impl Application for CosmicViewer {
             selected_shape: AnnotateTool::Rectangle,
             text_font_family: default_family,
             text_font_index: font_index,
+            text_font_size: 24.0,
             text_bold: false,
             text_italic: false,
             text_underline: false,
@@ -1137,9 +1148,6 @@ impl Application for CosmicViewer {
             delete_dialog: None,
             available_outputs: Vec::new(),
         };
-
-        tasks
-            .push(viewer.set_window_title(fl!("app-title"), viewer.core.main_window_id().unwrap()));
 
         if let Some(path) = flags {
             tasks.push(viewer.open_path(path));
@@ -1285,9 +1293,27 @@ impl Application for CosmicViewer {
                 && let Some(pos) = text.position
                 && let Some(screen_pos) = self.viewport.image_to_screen(pos, bounds.get())
             {
+                // Estimate popup size and clamp to visible area
+                let popup_w = 300.0;
+                let popup_h = 120.0;
+                let margin = 8.0;
+                let canvas = bounds.get();
+
+                let x = screen_pos.x.clamp(
+                    canvas.x + margin,
+                    (canvas.x + canvas.width - popup_w - margin).max(canvas.x + margin),
+                );
+                let y = if screen_pos.y - popup_h - 10.0 >= canvas.y + margin {
+                    // Above the text
+                    screen_pos.y - 10.0
+                } else {
+                    // Below the text (not enough room above)
+                    screen_pos.y + self.text_font_size + 10.0
+                };
+
                 pop = pop
                     .popup(self.build_text_format_popup())
-                    .position(popover::Position::Point(screen_pos));
+                    .position(popover::Position::Point(Point::new(x, y)));
             }
         }
 
@@ -1298,21 +1324,16 @@ impl Application for CosmicViewer {
             let spacing = cosmic::theme::active().cosmic().spacing;
 
             let mut btn_col = column().spacing(spacing.space_s);
-            btn_col = btn_col.push(
-                button::standard(fl!("wallpaper-all-displays")).on_press(
+            btn_col = btn_col.push(button::standard(fl!("wallpaper-all-displays")).on_press(
+                ViewerMessage::SetWallpaperOn(path.clone(), crate::message::WallpaperTarget::All),
+            ));
+            for output in &self.available_outputs {
+                btn_col = btn_col.push(button::standard(output.clone()).on_press(
                     ViewerMessage::SetWallpaperOn(
                         path.clone(),
-                        crate::message::WallpaperTarget::All,
-                    ),
-                ),
-            );
-            for output in &self.available_outputs {
-                btn_col = btn_col.push(
-                    button::standard(output.clone()).on_press(ViewerMessage::SetWallpaperOn(
-                        path.clone(),
                         crate::message::WallpaperTarget::Output(output.clone()),
-                    )),
-                );
+                    ),
+                ));
             }
 
             let dialog: Element<'_, Self::Message> = container(
@@ -1561,10 +1582,13 @@ impl Application for CosmicViewer {
                 self.viewport.cancel_tool();
                 self.viewport.revert_all();
             }
-            ViewerMessage::Share => {}
             ViewerMessage::Print => {}
             ViewerMessage::Cancelled => {}
-            ViewerMessage::Quit => {}
+            ViewerMessage::Quit => {
+                if let Some(id) = self.core.main_window_id() {
+                    return iced::window::close(id);
+                }
+            }
             ViewerMessage::WatcherEvent(evt) => {
                 use crate::watcher::WatcherEvent;
                 match evt {
@@ -1603,8 +1627,7 @@ impl Application for CosmicViewer {
                                     self.available_outputs = get_cosmic_outputs();
                                     if self.available_outputs.len() <= 1 {
                                         return future(async move {
-                                            let result =
-                                                set_wallpaper_cosmic_on(&path, None).await;
+                                            let result = set_wallpaper_cosmic_on(&path, None).await;
                                             Action::App(ViewerMessage::WallpaperResult(result))
                                         });
                                     }
@@ -1621,8 +1644,7 @@ impl Application for CosmicViewer {
                                     let output = outputs.first().cloned();
                                     return future(async move {
                                         let result =
-                                            set_wallpaper_cosmic_on(&path, output.as_deref())
-                                                .await;
+                                            set_wallpaper_cosmic_on(&path, output.as_deref()).await;
                                         Action::App(ViewerMessage::WallpaperResult(result))
                                     });
                                 }
@@ -1674,9 +1696,7 @@ impl Application for CosmicViewer {
                         }
                     });
                     if let Some(idx) = next_idx {
-                        tasks.push(
-                            self.update(ViewerMessage::Nav(NavMessage::GridActivate(idx))),
-                        );
+                        tasks.push(self.update(ViewerMessage::Nav(NavMessage::GridActivate(idx))));
                     } else {
                         self.viewport.set_image(None, None);
                     }
@@ -1705,9 +1725,7 @@ impl Application for CosmicViewer {
                     }
                 });
                 if let Some(idx) = next_idx {
-                    tasks.push(
-                        self.update(ViewerMessage::Nav(NavMessage::GridActivate(idx))),
-                    );
+                    tasks.push(self.update(ViewerMessage::Nav(NavMessage::GridActivate(idx))));
                 } else {
                     self.viewport.set_image(None, None);
                 }
@@ -1748,8 +1766,7 @@ impl Application for CosmicViewer {
                     return self.update(ViewerMessage::Edit(EditMessage::CropCancel));
                 }
 
-                if matches!(key, Key::Named(Named::Delete))
-                    && self.viewport.active_tool().is_none()
+                if matches!(key, Key::Named(Named::Delete)) && self.viewport.active_tool().is_none()
                 {
                     return self.update(ViewerMessage::MoveToTrash);
                 }
@@ -1784,7 +1801,7 @@ impl Application for CosmicViewer {
                             self.viewport.set_active_tool(Some(ToolKind::Annotate));
                             self.viewport.set_preview(Some(Box::new(TextPreview::new(
                                 self.annotate_color.0,
-                                self.annotate_stroke_size * 8.0,
+                                self.text_font_size,
                                 self.text_font_family,
                                 self.text_bold,
                                 self.text_italic,
@@ -1797,7 +1814,7 @@ impl Application for CosmicViewer {
                             self.viewport.set_active_tool(Some(ToolKind::Annotate));
                             self.viewport.set_preview(Some(Box::new(TextPreview::new(
                                 self.annotate_color.0,
-                                self.annotate_stroke_size * 8.0,
+                                self.text_font_size,
                                 self.text_font_family,
                                 self.text_bold,
                                 self.text_italic,
@@ -1841,6 +1858,11 @@ impl Application for CosmicViewer {
                     self.viewport.set_image(None, None);
 
                     self.nav.set_images(dir, images, select.as_deref());
+
+                    if self.nav.index().is_none() && !self.nav.is_empty() {
+                        self.nav.select(0);
+                    }
+
                     self.rebuild_grid_items();
 
                     // If no image is selected on load, start loading from image 1 (idx = 0)
@@ -1903,8 +1925,7 @@ impl Application for CosmicViewer {
                     let selected = self.nav.current().cloned();
                     let dir = self.nav.dir().map(|d| d.to_path_buf());
                     if let Some(dir) = dir {
-                        self.nav
-                            .set_images(dir, images, selected.as_deref());
+                        self.nav.set_images(dir, images, selected.as_deref());
                         self.rebuild_grid_items();
 
                         if !self.nav.is_empty() {
@@ -2006,13 +2027,11 @@ impl Application for CosmicViewer {
                     self.is_fullscreen = !self.is_fullscreen;
                     if let Some(window_id) = self.core.main_window_id() {
                         return if self.is_fullscreen {
-                            self.core.set_header_title(String::new());
                             cosmic::iced::window::change_mode(
                                 window_id,
                                 cosmic::iced::window::Mode::Fullscreen,
                             )
                         } else {
-                            self.core.set_header_title(fl!("app-title"));
                             cosmic::iced::window::change_mode(
                                 window_id,
                                 cosmic::iced::window::Mode::Windowed,
@@ -2024,6 +2043,58 @@ impl Application for CosmicViewer {
                     if self.context_menu_position.is_some() {
                         self.context_menu_position = None;
                         return Task::none();
+                    }
+
+                    // Text tool: commit current text on second click, then
+                    // check if clicking an existing text to re-edit, or place new
+                    if matches!(self.annotate_tool, AnnotateTool::Text) {
+                        if self.text_editing {
+                            self.viewport.apply_tool();
+                            self.text_editing = false;
+                        }
+
+                        // Check if clicking on a committed TextOperation to re-edit
+                        let re_edit = {
+                            let ops = self.viewport.operations_mut();
+                            let hit = ops.iter().rposition(|op| {
+                                op.as_any()
+                                    .downcast_ref::<TextOperation>()
+                                    .is_some_and(|t| t.hit_test(point))
+                            });
+
+                            if let Some(idx) = hit {
+                                let op = ops.remove(idx);
+                                op.as_any()
+                                    .downcast_ref::<TextOperation>()
+                                    .map(|t| t.to_preview())
+                            } else {
+                                None
+                            }
+                        };
+
+                        if let Some(preview) = re_edit {
+                            self.text_bold = preview.bold;
+                            self.text_italic = preview.italic;
+                            self.text_underline = preview.underline;
+                            self.text_font_size = preview.font_size;
+                            self.text_font_family = preview.font_family;
+                            self.text_alignment = preview.alignment;
+                            self.annotate_color = AnnotateColor(preview.color);
+                            self.text_editing = true;
+                            self.viewport.set_preview(Some(Box::new(preview)));
+                            self.viewport.rebuild_display();
+                            return Task::none();
+                        }
+
+                        self.viewport.set_preview(Some(Box::new(TextPreview::new(
+                            self.annotate_color.0,
+                            self.text_font_size,
+                            self.text_font_family,
+                            self.text_bold,
+                            self.text_italic,
+                            self.text_underline,
+                            self.text_alignment,
+                        ))));
                     }
 
                     if let Some(size) = self.viewport.image_size()
@@ -2236,7 +2307,7 @@ impl Application for CosmicViewer {
                             AnnotateTool::Text => {
                                 self.viewport.set_preview(Some(Box::new(TextPreview::new(
                                     self.annotate_color.0,
-                                    self.annotate_stroke_size * 8.0,
+                                    self.text_font_size,
                                     self.text_font_family,
                                     self.text_bold,
                                     self.text_italic,
@@ -2389,7 +2460,8 @@ impl Application for CosmicViewer {
                                     self.save_last_color();
                                 }
                                 if self.color_picker.get_is_active() {
-                                    _ = self.color_picker
+                                    _ = self
+                                        .color_picker
                                         .update::<ViewerMessage>(ToggleColorPicker);
                                 }
                             }
@@ -2400,7 +2472,8 @@ impl Application for CosmicViewer {
                                         .map(|_| Action::None),
                                 );
                                 if self.color_picker.get_is_active() {
-                                    _ = self.color_picker
+                                    _ = self
+                                        .color_picker
                                         .update::<ViewerMessage>(ToggleColorPicker);
                                 }
                             }
@@ -2427,9 +2500,9 @@ impl Application for CosmicViewer {
                                 // ActionFinished auto-closes the picker in the model;
                                 // reopen it so the user can keep adjusting
                                 if !self.color_picker.get_is_active() {
-                                    _ = self.color_picker.update::<ViewerMessage>(
-                                        ToggleColorPicker,
-                                    );
+                                    _ = self
+                                        .color_picker
+                                        .update::<ViewerMessage>(ToggleColorPicker);
                                 }
                             }
                         }
@@ -2464,6 +2537,18 @@ impl Application for CosmicViewer {
                             && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
                         {
                             text.alignment = self.text_alignment;
+                        }
+                    }
+                    EditMessage::TextFontSize(idx) => {
+                        let sizes = [12.0_f32, 16.0, 20.0, 24.0, 32.0, 48.0, 64.0];
+                        if let Some(&size) = sizes.get(idx) {
+                            self.text_font_size = size;
+                            if let Some(preview) = self.viewport.preview_mut()
+                                && let Some(text) =
+                                    preview.as_any_mut().downcast_mut::<TextPreview>()
+                            {
+                                text.font_size = size;
+                            }
                         }
                     }
                     EditMessage::TextFontFamily(idx) => {
@@ -2551,10 +2636,8 @@ impl Application for CosmicViewer {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        let watcher_sub = crate::watcher::watch_directory(
-            self.nav.dir().map(|d| d.to_path_buf()),
-        )
-        .map(ViewerMessage::WatcherEvent);
+        let watcher_sub = crate::watcher::watch_directory(self.nav.dir().map(|d| d.to_path_buf()))
+            .map(ViewerMessage::WatcherEvent);
 
         Subscription::batch([
             event::listen_with(|event, _status, _id| match event {
@@ -2720,7 +2803,8 @@ fn strip_ansi_codes(s: &str) -> String {
 #[cfg(not(target_os = "linux"))]
 fn set_wallpaper_portable(path: &std::path::Path) -> Result<(), String> {
     wallpaper::set_from_path(
-        path.to_str().ok_or_else(|| "Invalid file path".to_string())?,
+        path.to_str()
+            .ok_or_else(|| "Invalid file path".to_string())?,
     )
     .map_err(|e| format!("Failed to set wallpaper: {e}"))
 }
@@ -2831,7 +2915,11 @@ fn parse_path_list(content: &str) -> Option<Vec<PathBuf>> {
                 .split(',')
                 .filter_map(|s| {
                     let s = s.trim().trim_matches('"');
-                    if s.is_empty() { None } else { Some(PathBuf::from(s)) }
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(PathBuf::from(s))
+                    }
                 })
                 .collect(),
         )
@@ -2873,7 +2961,11 @@ fn parse_backgrounds_list(content: &str) -> Option<Vec<String>> {
                 .split(',')
                 .filter_map(|s| {
                     let s = s.trim().trim_matches('"');
-                    if s.is_empty() { None } else { Some(s.to_string()) }
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.to_string())
+                    }
                 })
                 .collect(),
         )

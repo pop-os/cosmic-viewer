@@ -12,8 +12,7 @@ use cosmic::{
     },
     iced_core::text::{LineHeight, Shaping},
     iced_widget::{
-        canvas::{self, Frame},
-        graphics::text::{cosmic_text, font_system},
+        canvas::{self, Frame, Path, Stroke},
     },
 };
 use image::DynamicImage;
@@ -159,13 +158,28 @@ impl ToolOperation for TextPreview {
 
             frame.fill_text(text);
 
-            x_offset += measure_span_width(
+            let span_width = measure_span_width(
                 &span.text,
                 self.font_size,
                 self.font_family,
                 span.bold,
                 span.italic,
             ) / scale;
+
+            if span.underline {
+                let underline_y = pos.y + self.font_size / scale;
+                frame.stroke(
+                    &Path::line(
+                        Point::new(pos.x + x_offset, underline_y),
+                        Point::new(pos.x + x_offset + span_width, underline_y),
+                    ),
+                    Stroke::default()
+                        .with_color(self.color)
+                        .with_width(1.0 / scale),
+                );
+            }
+
+            x_offset += span_width;
         }
 
         // Cursor
@@ -225,9 +239,7 @@ impl ToolOperation for TextPreview {
     }
 
     fn on_drag(&mut self, point: Point, _image_size: Size) {
-        if self.state == TextEditState::Placing {
-            self.position = Some(point);
-        }
+        self.position = Some(point);
     }
 
     fn cursor_at(&self, _point: Point) -> mouse::Interaction {

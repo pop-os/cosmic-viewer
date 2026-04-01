@@ -26,7 +26,6 @@ pub enum WallpaperTarget {
     Output(String),
 }
 
-
 #[derive(Debug, Clone)]
 pub enum ViewerMessage {
     Copy,
@@ -43,7 +42,6 @@ pub enum ViewerMessage {
     Save,
     SaveAs,
     SavedAs(PathBuf),
-    Share,
     Print,
     SetWallpaper,
     SetWallpaperOn(PathBuf, WallpaperTarget),
@@ -114,6 +112,7 @@ pub enum EditMessage {
     TextBold,
     TextItalic,
     TextUnderline,
+    TextFontSize(usize),
     TextFontFamily(usize),
     TextAlignment(Horizontal),
     TextApply,
