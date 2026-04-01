@@ -1451,26 +1451,49 @@ impl Application for CosmicViewer {
                         .filter(
                             FileFilter::new("All")
                                 .extension("jpg")
+                                .extension("JPG")
                                 .extension("jpeg")
+                                .extension("JPEG")
                                 .extension("png")
+                                .extension("PNG")
                                 .extension("gif")
+                                .extension("GIF")
                                 .extension("webp")
+                                .extension("WEBP")
                                 .extension("bmp")
+                                .extension("BMP")
+                                .extension("tiff")
+                                .extension("TIFF")
+                                .extension("tif")
+                                .extension("TIF")
+                                .extension("ico")
+                                .extension("ICO")
+                                .extension("avif")
+                                .extension("AVIF")
+                                .extension("hdr")
+                                .extension("HDR"),
+                        )
+                        .filter(
+                            FileFilter::new("JPEG")
+                                .extension("jpg")
+                                .extension("jpeg")
+                                .extension("JPEG")
+                                .extension("JPG"),
+                        )
+                        .filter(FileFilter::new("png").extension("png").extension("PNG"))
+                        .filter(FileFilter::new("gif").extension("gif").extension("GIF"))
+                        .filter(FileFilter::new("webp").extension("webp").extension("WEBP"))
+                        .filter(FileFilter::new("bmp").extension("bmp").extension("BMP"))
+                        .filter(
+                            FileFilter::new("tiff")
                                 .extension("tiff")
                                 .extension("tif")
-                                .extension("ico")
-                                .extension("avif")
-                                .extension("hdr"),
+                                .extension("TIFF")
+                                .extension("TIF"),
                         )
-                        .filter(FileFilter::new("jpeg").extension("jpg").extension("jpeg"))
-                        .filter(FileFilter::new("png").extension("png"))
-                        .filter(FileFilter::new("gif").extension("gif"))
-                        .filter(FileFilter::new("webp").extension("webp"))
-                        .filter(FileFilter::new("bmp").extension("bmp"))
-                        .filter(FileFilter::new("tiff").extension("tiff").extension("tif"))
-                        .filter(FileFilter::new("avif").extension("avif"))
-                        .filter(FileFilter::new("ico").extension("ico"))
-                        .filter(FileFilter::new("hdr").extension("hdr"));
+                        .filter(FileFilter::new("avif").extension("avif").extension("AVIF"))
+                        .filter(FileFilter::new("ico").extension("ico").extension("ICO"))
+                        .filter(FileFilter::new("hdr").extension("hdr").extension("HDR"));
 
                     match dialog.open_file().await {
                         Ok(response) => {
