@@ -7,10 +7,11 @@ pub mod views;
 pub mod watcher;
 
 use app::CosmicViewer;
+use cosmic::{app::Settings, iced::Limits};
 use std::path::PathBuf;
 
 fn main() -> cosmic::iced::Result {
-    let settings = cosmic::app::Settings::default();
+    let settings = Settings::default().size_limits(Limits::NONE.min_width(360.0).min_height(300.0));
 
     // Get the image if opened from the file manager or cli
     let mut optional_image = std::env::args().nth(1).map(PathBuf::from);
