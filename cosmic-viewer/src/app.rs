@@ -1858,6 +1858,11 @@ impl Application for CosmicViewer {
                     self.viewport.set_image(None, None);
 
                     self.nav.set_images(dir, images, select.as_deref());
+
+                    if self.nav.index().is_none() && !self.nav.is_empty() {
+                        self.nav.select(0);
+                    }
+
                     self.rebuild_grid_items();
 
                     // If no image is selected on load, start loading from image 1 (idx = 0)
