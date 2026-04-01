@@ -16,7 +16,6 @@ menu-set-wallpaper = Set as wallpaper
 menu-move-to-trash = Move to trash
 menu-delete-permanently = Delete permanently
 menu-image-details = Image details
-menu-share = Share
 menu-print = Print
 menu-quit = Quit
 
