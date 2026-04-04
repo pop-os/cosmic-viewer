@@ -3,12 +3,13 @@ pub mod preview;
 
 use cosmic::iced::mouse;
 use cosmic::iced_widget::graphics::text::cosmic_text;
-use std::collections::HashSet;
-use std::sync::Mutex;
 pub use operation::TextOperation;
 pub use preview::TextPreview;
+use std::collections::HashSet;
+use std::sync::Mutex;
 
 static INTERNED: Mutex<Option<HashSet<&'static str>>> = Mutex::new(None);
+pub(crate) const TEXT_INSET: f32 = 6.0;
 
 pub(crate) fn intern_str(s: &str) -> &'static str {
     let mut guard = INTERNED.lock().unwrap();
@@ -68,8 +69,10 @@ pub(crate) fn decode_align(val: u8) -> cosmic_text::Align {
 }
 pub(crate) const MIN_BOX_WIDTH: f32 = 40.0;
 pub(crate) const MIN_BOX_HEIGHT: f32 = 20.0;
-pub(crate) const DEFAULT_BOX_WIDTH: f32 = 150.0;
+pub(crate) const DEFAULT_BOX_WIDTH: f32 = 200.0;
 pub(crate) const LINE_HEIGHT_FACTOR: f32 = 1.2;
+// iced canvas::Text uses LineHeight::Relative(1.4) by default
+pub(crate) const CANVAS_LINE_HEIGHT: f32 = 1.4;
 const DRAG_THRESHOLD: f32 = 5.0;
 
 #[derive(Debug, Clone)]
@@ -109,17 +112,31 @@ pub(crate) fn span_attrs<'a>(
     font_scale: f32,
 ) -> cosmic_text::Attrs<'a> {
     let mut a = base
-        .weight(if span.bold { cosmic_text::Weight::BOLD } else { cosmic_text::Weight::NORMAL })
-        .style(if span.italic { cosmic_text::Style::Italic } else { cosmic_text::Style::Normal })
+        .weight(if span.bold {
+            cosmic_text::Weight::BOLD
+        } else {
+            cosmic_text::Weight::NORMAL
+        })
+        .style(if span.italic {
+            cosmic_text::Style::Italic
+        } else {
+            cosmic_text::Style::Normal
+        })
         .metadata(if span.underline { 1 } else { 0 });
     if let Some([r, g, b, alpha]) = span.color {
         a = a.color(cosmic_text::Color::rgba(
-            (r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8, (alpha * 255.0) as u8,
+            (r * 255.0) as u8,
+            (g * 255.0) as u8,
+            (b * 255.0) as u8,
+            (alpha * 255.0) as u8,
         ));
     }
     if let Some(fs) = span.font_size {
         let scaled = fs * font_scale;
-        a = a.metrics(cosmic_text::Metrics::new(scaled, scaled * LINE_HEIGHT_FACTOR));
+        a = a.metrics(cosmic_text::Metrics::new(
+            scaled,
+            scaled * LINE_HEIGHT_FACTOR,
+        ));
     }
     if let Some(fam) = span.font_family {
         a = a.family(cosmic_text::Family::Name(fam));
@@ -148,4 +165,3 @@ pub(crate) fn content_height(buf: &cosmic_text::Buffer) -> f32 {
     buf.layout_runs()
         .fold(0.0, |h, run| (run.line_top + run.line_height).max(h))
 }
-

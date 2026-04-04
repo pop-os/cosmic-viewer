@@ -118,6 +118,7 @@ pub enum EditMessage {
     TextAlignment(Horizontal),
     TextApply,
     TextCancel,
+    ToggleMoveMode,
     Undo,
     Redo,
     RevertAll,

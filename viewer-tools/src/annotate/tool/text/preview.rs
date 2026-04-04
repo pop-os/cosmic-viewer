@@ -1,14 +1,13 @@
-use std::any::Any;
 use std::cell::Cell;
 use std::time::Instant;
+use std::{any::Any, f32};
 
 use super::{
-    TextDragHandle, TextOperation, TextSpan,
-    BORDER_WIDTH, DEFAULT_BOX_WIDTH, DRAG_THRESHOLD, LINE_HEIGHT_FACTOR,
-    MIN_BOX_HEIGHT, MIN_BOX_WIDTH, build_buffer_line, content_height,
+    BORDER_WIDTH, DEFAULT_BOX_WIDTH, DRAG_THRESHOLD, LINE_HEIGHT_FACTOR, MIN_BOX_HEIGHT,
+    MIN_BOX_WIDTH, TextDragHandle, TextOperation, TextSpan, build_buffer_line, content_height,
     encode_align, group_spans, intern_str, span_attrs,
 };
-use crate::ToolOperation;
+use crate::{ToolOperation, annotate::tool::text::TEXT_INSET};
 use cosmic::{
     Renderer,
     iced::{
@@ -92,10 +91,14 @@ impl TextPreview {
 
     fn init_editor(&mut self) {
         let scale = self.last_scale.get();
-        let metrics = cosmic_text::Metrics::new(self.font_size, self.font_size * LINE_HEIGHT_FACTOR);
+        let metrics =
+            cosmic_text::Metrics::new(self.font_size, self.font_size * LINE_HEIGHT_FACTOR);
         let mut font_sys = font_system().write().expect("Write font system");
         let mut buffer = cosmic_text::Buffer::new(font_sys.raw(), metrics);
-        buffer.set_size(Some(self.bounding_box.width * scale), None);
+        buffer.set_size(
+            Some((self.bounding_box.width - TEXT_INSET * 2.0) * scale),
+            None,
+        );
         buffer.set_wrap(cosmic_text::Wrap::WordOrGlyph);
         self.editor = Some(cosmic_text::Editor::new(buffer));
     }
@@ -115,10 +118,13 @@ impl TextPreview {
         if let Some(editor) = &mut self.editor {
             let mut font_sys = font_system().write().expect("Write font system");
             editor.with_buffer_mut(|buf| {
-                buf.set_size(Some(self.bounding_box.width * scale), None);
+                buf.set_size(
+                    Some((self.bounding_box.width - TEXT_INSET * 2.0) * scale),
+                    None,
+                );
                 buf.set_scroll(cosmic_text::Scroll::default());
             });
-            editor.shape_as_needed(font_sys.raw(),false);
+            editor.shape_as_needed(font_sys.raw(), false);
         }
     }
 
@@ -130,12 +136,10 @@ impl TextPreview {
             editor.with_buffer_mut(|buf| {
                 buf.set_text(text, &attrs, cosmic_text::Shaping::Advanced, None);
             });
-            editor.shape_as_needed(font_sys.raw(),false);
+            editor.shape_as_needed(font_sys.raw(), false);
 
             let scale = self.last_scale.get();
-            let content_h: f32 = editor.with_buffer(|buf| {
-                content_height(buf)
-            }) / scale;
+            let content_h: f32 = editor.with_buffer(|buf| content_height(buf)) / scale;
             if content_h > self.bounding_box.height {
                 self.bounding_box.height = content_h;
             }
@@ -143,11 +147,10 @@ impl TextPreview {
     }
 
     pub fn init_editor_from_spans(&mut self, spans: &[TextSpan]) {
-
         self.init_editor();
         if let Some(editor) = &mut self.editor {
-            let default_attrs = cosmic_text::Attrs::new()
-                .family(cosmic_text::Family::Name(self.font_family));
+            let default_attrs =
+                cosmic_text::Attrs::new().family(cosmic_text::Family::Name(self.font_family));
             let lines = group_spans(spans);
 
             let mut font_sys = font_system().write().expect("Write font system");
@@ -158,12 +161,14 @@ impl TextPreview {
                     let mut offset = 0;
                     for span in line_spans {
                         let end = offset + span.text.len();
-                        attrs_list.add_span(offset..end, &span_attrs(default_attrs.clone(), span, 1.0));
+                        attrs_list
+                            .add_span(offset..end, &span_attrs(default_attrs.clone(), span, 1.0));
                         offset = end;
                     }
-                    buf.lines.push(build_buffer_line(line_text, attrs_list, *line_align));
+                    buf.lines
+                        .push(build_buffer_line(line_text, attrs_list, *line_align));
                 }
-                buf.shape_until_scroll(font_sys.raw(),false);
+                buf.shape_until_scroll(font_sys.raw(), false);
             });
 
             let scale = self.last_scale.get();
@@ -197,7 +202,11 @@ impl TextPreview {
                 let line = &mut buf.lines[line_i];
                 let text_len = line.text().len();
                 let from = if line_i == start.line { start.index } else { 0 };
-                let to = if line_i == end.line { end.index } else { text_len };
+                let to = if line_i == end.line {
+                    end.index
+                } else {
+                    text_len
+                };
                 let to = to.min(text_len);
 
                 if from >= to || text_len == 0 {
@@ -215,7 +224,7 @@ impl TextPreview {
 
                 line.set_attrs_list(new_attrs);
             }
-            buf.shape_until_scroll(font_sys.raw(),false);
+            buf.shape_until_scroll(font_sys.raw(), false);
         });
     }
 
@@ -236,12 +245,10 @@ impl TextPreview {
         if let Some(editor) = &mut self.editor {
             editor.set_cursor(cosmic_text::Cursor::new(0, 0));
             let last_line = editor.with_buffer(|buf| buf.lines.len().saturating_sub(1));
-            let last_idx = editor.with_buffer(|buf| {
-                buf.lines.last().map_or(0, |l| l.text().len())
-            });
-            editor.set_selection(cosmic_text::Selection::Normal(
-                cosmic_text::Cursor::new(0, 0),
-            ));
+            let last_idx = editor.with_buffer(|buf| buf.lines.last().map_or(0, |l| l.text().len()));
+            editor.set_selection(cosmic_text::Selection::Normal(cosmic_text::Cursor::new(
+                0, 0,
+            )));
             editor.set_cursor(cosmic_text::Cursor::new(last_line, last_idx));
         }
     }
@@ -266,7 +273,7 @@ impl TextPreview {
         if let Some(editor) = &mut self.editor {
             let mut font_sys = font_system().write().expect("Write font system");
             editor.insert_string(data, Some(attrs_list));
-            editor.shape_as_needed(font_sys.raw(),false);
+            editor.shape_as_needed(font_sys.raw(), false);
         }
         self.sync_height();
     }
@@ -276,7 +283,11 @@ impl TextPreview {
             let cursor = editor.cursor();
             editor.with_buffer(|buf| {
                 if let Some(line) = buf.lines.get(cursor.line) {
-                    let idx = if cursor.index > 0 { cursor.index - 1 } else { 0 };
+                    let idx = if cursor.index > 0 {
+                        cursor.index - 1
+                    } else {
+                        0
+                    };
                     let a = line.attrs_list().get_span(idx);
                     self.bold = a.weight >= cosmic_text::Weight::BOLD;
                     self.italic = a.style == cosmic_text::Style::Italic;
@@ -294,8 +305,7 @@ impl TextPreview {
                         self.font_size = metrics.font_size;
                     }
                     if let cosmic_text::Family::Name(n) = a.family {
-                        self.font_family =
-                            intern_str(n);
+                        self.font_family = intern_str(n);
                     }
                 }
             });
@@ -332,9 +342,7 @@ impl TextPreview {
         if let Some(editor) = &mut self.editor {
             let scale = self.last_scale.get();
             let min_h = self.font_size * LINE_HEIGHT_FACTOR / scale;
-            let content_h: f32 = editor.with_buffer(|buf| {
-                content_height(buf)
-            }) / scale;
+            let content_h: f32 = editor.with_buffer(|buf| content_height(buf)) / scale;
             self.bounding_box.height = content_h.max(min_h);
 
             editor.with_buffer_mut(|buf| {
@@ -350,13 +358,11 @@ impl TextPreview {
             let scale = self.last_scale.get();
             let mut font_sys = font_system().write().expect("Write font system");
             editor.action(font_sys.raw(), action);
-            editor.shape_as_needed(font_sys.raw(),false);
+            editor.shape_as_needed(font_sys.raw(), false);
 
             // Fit box height to content
             let min_h = self.font_size * LINE_HEIGHT_FACTOR / scale;
-            let content_h: f32 = editor.with_buffer(|buf| {
-                content_height(buf)
-            }) / scale;
+            let content_h: f32 = editor.with_buffer(|buf| content_height(buf)) / scale;
             self.bounding_box.height = content_h.max(min_h);
 
             editor.with_buffer_mut(|buf| {
@@ -367,9 +373,9 @@ impl TextPreview {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.editor.as_ref().is_none_or(|ed| {
-            ed.with_buffer(|buf| buf.lines.iter().all(|l| l.text().is_empty()))
-        })
+        self.editor
+            .as_ref()
+            .is_none_or(|ed| ed.with_buffer(|buf| buf.lines.iter().all(|l| l.text().is_empty())))
     }
 
     pub fn set_line_alignment(&mut self, align: Horizontal) {
@@ -386,7 +392,7 @@ impl TextPreview {
                 if let Some(line) = buf.lines.get_mut(cursor.line) {
                     line.set_align(Some(ct_align));
                 }
-                buf.shape_until_scroll(font_sys.raw(),false);
+                buf.shape_until_scroll(font_sys.raw(), false);
             });
         }
     }
@@ -420,35 +426,26 @@ impl TextPreview {
         // Interior
         let inner = Rectangle::new(
             Point::new(r.x + edge, r.y + edge),
-            Size::new((r.width - edge * 2.0).max(0.0), (r.height - edge * 2.0).max(0.0)),
+            Size::new(
+                (r.width - edge * 2.0).max(0.0),
+                (r.height - edge * 2.0).max(0.0),
+            ),
         );
         if inner.contains(point) {
             return TextDragHandle::Move;
         }
 
         // Edges
-        if (point.x - r.x).abs() < edge
-            && point.y > r.y
-            && point.y < r.y + r.height
-        {
+        if (point.x - r.x).abs() < edge && point.y > r.y && point.y < r.y + r.height {
             return TextDragHandle::Left;
         }
-        if (point.x - (r.x + r.width)).abs() < edge
-            && point.y > r.y
-            && point.y < r.y + r.height
-        {
+        if (point.x - (r.x + r.width)).abs() < edge && point.y > r.y && point.y < r.y + r.height {
             return TextDragHandle::Right;
         }
-        if (point.y - r.y).abs() < edge
-            && point.x > r.x
-            && point.x < r.x + r.width
-        {
+        if (point.y - r.y).abs() < edge && point.x > r.x && point.x < r.x + r.width {
             return TextDragHandle::Top;
         }
-        if (point.y - (r.y + r.height)).abs() < edge
-            && point.x > r.x
-            && point.x < r.x + r.width
-        {
+        if (point.y - (r.y + r.height)).abs() < edge && point.x > r.x && point.x < r.x + r.width {
             return TextDragHandle::Bottom;
         }
 
@@ -466,7 +463,9 @@ impl TextPreview {
         let reg = self.drag_start_box;
 
         let (mut x, mut y, mut w, mut h) = match self.active_handle {
-            TextDragHandle::BottomRight => (reg.x, reg.y, reg.width + delta_x, reg.height + delta_y),
+            TextDragHandle::BottomRight => {
+                (reg.x, reg.y, reg.width + delta_x, reg.height + delta_y)
+            }
             TextDragHandle::TopLeft => (
                 reg.x + delta_x,
                 reg.y + delta_y,
@@ -495,13 +494,19 @@ impl TextPreview {
 
         // Enforce minimums, adjust position to keep opposite edge fixed
         if w < MIN_BOX_WIDTH {
-            if matches!(self.active_handle, TextDragHandle::TopLeft | TextDragHandle::BottomLeft | TextDragHandle::Left) {
+            if matches!(
+                self.active_handle,
+                TextDragHandle::TopLeft | TextDragHandle::BottomLeft | TextDragHandle::Left
+            ) {
                 x = reg.x + reg.width - MIN_BOX_WIDTH;
             }
             w = MIN_BOX_WIDTH;
         }
         if h < MIN_BOX_HEIGHT {
-            if matches!(self.active_handle, TextDragHandle::TopLeft | TextDragHandle::TopRight | TextDragHandle::Top) {
+            if matches!(
+                self.active_handle,
+                TextDragHandle::TopLeft | TextDragHandle::TopRight | TextDragHandle::Top
+            ) {
                 y = reg.y + reg.height - MIN_BOX_HEIGHT;
             }
             h = MIN_BOX_HEIGHT;
@@ -521,11 +526,9 @@ impl TextPreview {
                 buf.set_size(Some(self.bounding_box.width * scale), None);
                 buf.set_scroll(cosmic_text::Scroll::default());
             });
-            editor.shape_as_needed(font_sys.raw(),false);
+            editor.shape_as_needed(font_sys.raw(), false);
 
-            let content_h: f32 = editor.with_buffer(|buf| {
-                content_height(buf)
-            }) / scale;
+            let content_h: f32 = editor.with_buffer(|buf| content_height(buf)) / scale;
 
             let width_only = matches!(
                 self.active_handle,
@@ -560,30 +563,124 @@ impl TextPreview {
                 Point::new(r.x + inset, r.y + inset),
                 Size::new(r.width - border_w, r.height - border_w),
             ),
-            Stroke::default()
-                .with_color(accent)
-                .with_width(border_w),
+            Stroke::default().with_color(accent).with_width(border_w),
         );
 
         // Corner handles
         // Top-left
-        draw_handle(frame, Point::new(r.x, r.y), bar_long, bar_short, 0.0, 0.0, accent);
-        draw_handle(frame, Point::new(r.x, r.y), bar_short, bar_long, 0.0, 0.0, accent);
+        draw_handle(
+            frame,
+            Point::new(r.x, r.y),
+            bar_long,
+            bar_short,
+            0.0,
+            0.0,
+            accent,
+        );
+        draw_handle(
+            frame,
+            Point::new(r.x, r.y),
+            bar_short,
+            bar_long,
+            0.0,
+            0.0,
+            accent,
+        );
         // Top-right
-        draw_handle(frame, Point::new(r.x + r.width, r.y), bar_long, bar_short, 1.0, 0.0, accent);
-        draw_handle(frame, Point::new(r.x + r.width, r.y), bar_short, bar_long, 1.0, 0.0, accent);
+        draw_handle(
+            frame,
+            Point::new(r.x + r.width, r.y),
+            bar_long,
+            bar_short,
+            1.0,
+            0.0,
+            accent,
+        );
+        draw_handle(
+            frame,
+            Point::new(r.x + r.width, r.y),
+            bar_short,
+            bar_long,
+            1.0,
+            0.0,
+            accent,
+        );
         // Bottom-left
-        draw_handle(frame, Point::new(r.x, r.y + r.height), bar_long, bar_short, 0.0, 1.0, accent);
-        draw_handle(frame, Point::new(r.x, r.y + r.height), bar_short, bar_long, 0.0, 1.0, accent);
+        draw_handle(
+            frame,
+            Point::new(r.x, r.y + r.height),
+            bar_long,
+            bar_short,
+            0.0,
+            1.0,
+            accent,
+        );
+        draw_handle(
+            frame,
+            Point::new(r.x, r.y + r.height),
+            bar_short,
+            bar_long,
+            0.0,
+            1.0,
+            accent,
+        );
         // Bottom-right
-        draw_handle(frame, Point::new(r.x + r.width, r.y + r.height), bar_long, bar_short, 1.0, 1.0, accent);
-        draw_handle(frame, Point::new(r.x + r.width, r.y + r.height), bar_short, bar_long, 1.0, 1.0, accent);
+        draw_handle(
+            frame,
+            Point::new(r.x + r.width, r.y + r.height),
+            bar_long,
+            bar_short,
+            1.0,
+            1.0,
+            accent,
+        );
+        draw_handle(
+            frame,
+            Point::new(r.x + r.width, r.y + r.height),
+            bar_short,
+            bar_long,
+            1.0,
+            1.0,
+            accent,
+        );
 
         // Edge handles
-        draw_handle(frame, Point::new(r.x + r.width / 2.0, r.y), bar_long, bar_short, 0.5, 0.0, accent);
-        draw_handle(frame, Point::new(r.x + r.width / 2.0, r.y + r.height), bar_long, bar_short, 0.5, 1.0, accent);
-        draw_handle(frame, Point::new(r.x, r.y + r.height / 2.0), bar_short, bar_long, 0.0, 0.5, accent);
-        draw_handle(frame, Point::new(r.x + r.width, r.y + r.height / 2.0), bar_short, bar_long, 1.0, 0.5, accent);
+        draw_handle(
+            frame,
+            Point::new(r.x + r.width / 2.0, r.y),
+            bar_long,
+            bar_short,
+            0.5,
+            0.0,
+            accent,
+        );
+        draw_handle(
+            frame,
+            Point::new(r.x + r.width / 2.0, r.y + r.height),
+            bar_long,
+            bar_short,
+            0.5,
+            1.0,
+            accent,
+        );
+        draw_handle(
+            frame,
+            Point::new(r.x, r.y + r.height / 2.0),
+            bar_short,
+            bar_long,
+            0.0,
+            0.5,
+            accent,
+        );
+        draw_handle(
+            frame,
+            Point::new(r.x + r.width, r.y + r.height / 2.0),
+            bar_short,
+            bar_long,
+            1.0,
+            0.5,
+            accent,
+        );
     }
 }
 
@@ -598,9 +695,34 @@ impl ToolOperation for TextPreview {
             self.draw_bounding_box(frame, scale);
         }
 
-        let origin = self.bounding_box.position();
+        let inset = TEXT_INSET / scale;
+        let origin = Point::new(self.bounding_box.x + inset, self.bounding_box.y);
         if self.bounding_box.width < 1.0 {
             return;
+        }
+
+        if self.state == TextEditState::Editing && self.is_empty() {
+            let text_h = self.font_size * LINE_HEIGHT_FACTOR / scale;
+            let center_y = self.bounding_box.y + self.bounding_box.height / 2.0 - text_h / 2.0;
+            let placeholder = canvas::Text {
+                content: "Type here...".to_string(),
+                position: Point::new(origin.x, center_y),
+                color: Color {
+                    a: 0.4,
+                    ..self.color
+                },
+                size: (self.font_size / scale).into(),
+                font: Font {
+                    family: font::Family::Name(self.font_family),
+                    ..Default::default()
+                },
+                max_width: f32::INFINITY,
+                line_height: LineHeight::Relative(LINE_HEIGHT_FACTOR),
+                align_x: Horizontal::Left.into(),
+                align_y: Vertical::Top,
+                shaping: Shaping::Advanced,
+            };
+            frame.fill_text(placeholder);
         }
 
         let Some(editor) = &self.editor else {
@@ -618,10 +740,7 @@ impl ToolOperation for TextPreview {
                 for run in buffer.layout_runs() {
                     for (x_start, x_width) in run.highlight(start, end) {
                         frame.fill_rectangle(
-                            Point::new(
-                                origin.x + x_start * inv,
-                                origin.y + run.line_top * inv,
-                            ),
+                            Point::new(origin.x + x_start * inv, origin.y + run.line_top * inv),
                             Size::new(x_width * inv, run.line_height * inv),
                             Fill::from(sel_color),
                         );
@@ -708,7 +827,12 @@ impl ToolOperation for TextPreview {
                     frame.fill_text(text);
 
                     if underline {
-                        let uy = origin.y + (run.line_top + baseline_offset + span_font_size * LINE_HEIGHT_FACTOR) * inv - 1.0 / scale;
+                        let uy = origin.y
+                            + (run.line_top
+                                + baseline_offset
+                                + span_font_size * LINE_HEIGHT_FACTOR)
+                                * inv
+                            - 1.0 / scale;
                         let ux = origin.x + first.x * inv;
                         let uw = (last.x + last.w - first.x) * inv;
                         frame.stroke(
@@ -731,35 +855,39 @@ impl ToolOperation for TextPreview {
             && cursor_visible
             && let Some((cx, cy)) = editor.cursor_position()
         {
-                let cursor = editor.cursor();
-                let (line_h, cursor_fs) = editor.with_buffer(|buf| {
-                    let mut lh = self.font_size * LINE_HEIGHT_FACTOR;
-                    let mut fs = self.font_size;
-                    for run in buf.layout_runs() {
-                        if run.line_i == cursor.line {
-                            lh = run.line_height;
-                            if let Some(line) = buf.lines.get(run.line_i) {
-                                let idx = if cursor.index > 0 { cursor.index - 1 } else { 0 };
-                                let a = line.attrs_list().get_span(idx);
-                                if let Some(m) = a.metrics_opt {
-                                    let metrics: cosmic_text::Metrics = m.into();
-                                    fs = metrics.font_size;
-                                }
+            let cursor = editor.cursor();
+            let (line_h, cursor_fs) = editor.with_buffer(|buf| {
+                let mut lh = self.font_size * LINE_HEIGHT_FACTOR;
+                let mut fs = self.font_size;
+                for run in buf.layout_runs() {
+                    if run.line_i == cursor.line {
+                        lh = run.line_height;
+                        if let Some(line) = buf.lines.get(run.line_i) {
+                            let idx = if cursor.index > 0 {
+                                cursor.index - 1
+                            } else {
+                                0
+                            };
+                            let a = line.attrs_list().get_span(idx);
+                            if let Some(m) = a.metrics_opt {
+                                let metrics: cosmic_text::Metrics = m.into();
+                                fs = metrics.font_size;
                             }
-                            break;
                         }
+                        break;
                     }
-                    (lh, fs)
-                });
-                let offset = (line_h - cursor_fs * LINE_HEIGHT_FACTOR).max(0.0);
-                let cursor_x = origin.x + cx as f32 * inv;
-                let cursor_y = origin.y + (cy as f32 + offset) * inv;
-                let cursor_h = cursor_fs * LINE_HEIGHT_FACTOR * inv;
-                frame.fill_rectangle(
-                    Point::new(cursor_x, cursor_y),
-                    Size::new(1.0 / scale, cursor_h),
-                    Fill::from(self.color),
-                );
+                }
+                (lh, fs)
+            });
+            let offset = (line_h - cursor_fs * LINE_HEIGHT_FACTOR).max(0.0);
+            let cursor_x = origin.x + cx as f32 * inv;
+            let cursor_y = origin.y + (cy as f32 + offset) * inv;
+            let cursor_h = cursor_fs * LINE_HEIGHT_FACTOR * inv;
+            frame.fill_rectangle(
+                Point::new(cursor_x, cursor_y),
+                Size::new(1.0 / scale, cursor_h),
+                Fill::from(self.color),
+            );
         }
     }
 
@@ -825,9 +953,7 @@ impl ToolOperation for TextPreview {
                                 metrics.font_size
                             }),
                             font_family: match a.family {
-                                cosmic_text::Family::Name(n) => {
-                                    Some(intern_str(n))
-                                }
+                                cosmic_text::Family::Name(n) => Some(intern_str(n)),
                                 _ => None,
                             },
                             align: if first { line_align } else { None },
@@ -870,7 +996,7 @@ impl ToolOperation for TextPreview {
     fn on_press(&mut self, point: Point, _image_size: Size) -> mouse::Interaction {
         match self.state {
             TextEditState::Placing => {
-                let h = self.font_size * LINE_HEIGHT_FACTOR;
+                let h = self.font_size * LINE_HEIGHT_FACTOR + TEXT_INSET * 2.0;
                 self.bounding_box = Rectangle::new(point, Size::new(DEFAULT_BOX_WIDTH, h));
                 self.drag_origin = point;
                 self.drag_start_box = self.bounding_box;

@@ -67,6 +67,9 @@ pub struct CosmicViewer {
     crop_ratio: CropRatio,
     crop_ratio_popup: bool,
     text_editing: bool,
+    move_mode: bool,
+    move_target: Option<usize>,
+    move_start: Option<Point>,
     font_families: Vec<&'static str>,
     text_font_family: &'static str,
     text_font_index: Option<usize>,
@@ -708,6 +711,19 @@ impl CosmicViewer {
                 ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Highlighter)),
             )))
             .start(ToolbarItem::new(self.build_shape_selector()))
+            .start(ToolbarItem::new({
+                let has_movable = self.viewport.operations().iter().any(|op| op.movable())
+                    && !self.text_editing;
+                let mut btn = button::icon(icon::from_name("object-move-symbolic"))
+                    .tooltip(fl!("toolbar-move"));
+                if self.move_mode {
+                    btn = btn.class(cosmic::theme::Button::Suggested);
+                }
+                let el: Element<'_, ViewerMessage> = btn
+                    .on_press_maybe(has_movable.then(|| ViewerMessage::Edit(EditMessage::ToggleMoveMode)))
+                    .into();
+                el
+            }))
             .center(ToolbarItem::new(self.build_stroke_selector()));
 
         let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
@@ -1196,6 +1212,9 @@ impl Application for CosmicViewer {
             crop_ratio: CropRatio::Custom,
             crop_ratio_popup: false,
             text_editing: false,
+            move_mode: false,
+            move_target: None,
+            move_start: None,
             font_families: load_font_families(),
             shape_popup: false,
             stroke_popup: false,
@@ -1900,6 +1919,13 @@ impl Application for CosmicViewer {
                     return self.update(ViewerMessage::Edit(EditMessage::CropCancel));
                 }
 
+                if self.move_mode && matches!(key, Key::Named(Named::Escape)) {
+                    self.move_mode = false;
+                    self.move_target = None;
+                    self.move_start = None;
+                    return Task::none();
+                }
+
                 if matches!(key, Key::Named(Named::Escape))
                     && self.viewport.active_tool() == Some(ToolKind::Annotate)
                     && !self.text_editing
@@ -2351,6 +2377,19 @@ impl Application for CosmicViewer {
                         return Task::none();
                     }
 
+                    if self.move_mode {
+                        let hit = self
+                            .viewport
+                            .operations_mut()
+                            .iter()
+                            .rposition(|op| op.movable() && op.hit_test(point));
+
+                        self.move_target = hit;
+                        self.move_start = Some(point);
+                        self.viewport.tool_dragging = true;
+                        return Task::none();
+                    }
+
                     if matches!(self.annotate_tool, AnnotateTool::Text) {
                         if self.text_editing {
                             let on_box = self
@@ -2451,13 +2490,31 @@ impl Application for CosmicViewer {
                     }
                 }
                 CanvasMessage::ToolDrag(point) => {
-                    if let Some(size) = self.viewport.image_size()
+                    if self.move_mode {
+                        if let Some(idx) = self.move_target
+                            && let Some(start) = self.move_start
+                        {
+                            let dx = point.x - start.x;
+                            let dy = point.y - start.y;
+                            if let Some(op) = self.viewport.operations_mut().get_mut(idx) {
+                                op.translate(dx, dy);
+                            }
+                            self.move_start = Some(point);
+                            self.viewport.rebuild_display();
+                        }
+                    } else if let Some(size) = self.viewport.image_size()
                         && let Some(preview) = self.viewport.preview_mut()
                     {
                         preview.on_drag(point, size);
                     }
                 }
                 CanvasMessage::ToolEnd => {
+                    if self.move_mode {
+                        self.move_target = None;
+                        self.move_start = None;
+                        self.viewport.tool_dragging = false;
+                        return Task::none();
+                    }
                     self.viewport.tool_dragging = false;
                     if let Some(size) = self.viewport.image_size()
                         && let Some(preview) = self.viewport.preview_mut()
@@ -3004,6 +3061,11 @@ impl Application for CosmicViewer {
                     EditMessage::TextApply => {
                         self.viewport.apply_tool();
                         self.text_editing = false;
+                    }
+                    EditMessage::ToggleMoveMode => {
+                        self.move_mode = !self.move_mode;
+                        self.move_target = None;
+                        self.move_start = None;
                     }
                     EditMessage::Undo => {
                         if let Some(op) = self.viewport.undo() {

@@ -1,7 +1,9 @@
 use crate::{
     ToolOperation,
-    annotate::tool::text::{TextSpan, LINE_HEIGHT_FACTOR, intern_str},
-    annotate::tool::text::preview::{TextEditState, TextPreview},
+    annotate::tool::text::{
+        LINE_HEIGHT_FACTOR, TEXT_INSET, TextSpan, intern_str,
+        preview::{TextEditState, TextPreview},
+    },
     rotate::RotateDirection,
 };
 use cosmic::{
@@ -106,18 +108,19 @@ impl TextOperation {
 
 impl TextOperation {
     fn build_buffer(&self, scale: f32) -> cosmic_text::Buffer {
-        use crate::annotate::tool::text::{group_spans, span_attrs, build_buffer_line};
+        use crate::annotate::tool::text::{build_buffer_line, group_spans, span_attrs};
 
-        let metrics = cosmic_text::Metrics::new(
-            self.font_size,
-            self.font_size * LINE_HEIGHT_FACTOR,
-        );
-        let default_attrs = cosmic_text::Attrs::new()
-            .family(cosmic_text::Family::Name(self.font_family));
+        let metrics =
+            cosmic_text::Metrics::new(self.font_size, self.font_size * LINE_HEIGHT_FACTOR);
+        let default_attrs =
+            cosmic_text::Attrs::new().family(cosmic_text::Family::Name(self.font_family));
 
         let mut font_sys = font_system().write().expect("Write font system");
         let mut buffer = cosmic_text::Buffer::new(font_sys.raw(), metrics);
-        buffer.set_size(Some(self.bounding_box.width * scale), None);
+        buffer.set_size(
+            Some((self.bounding_box.width - TEXT_INSET * 2.0) * scale),
+            None,
+        );
         buffer.set_wrap(cosmic_text::Wrap::WordOrGlyph);
 
         let lines = group_spans(&self.spans);
@@ -130,7 +133,9 @@ impl TextOperation {
                 attrs_list.add_span(offset..end, &span_attrs(default_attrs.clone(), span, 1.0));
                 offset = end;
             }
-            buffer.lines.push(build_buffer_line(line_text, attrs_list, *line_align));
+            buffer
+                .lines
+                .push(build_buffer_line(line_text, attrs_list, *line_align));
         }
         buffer.shape_until_scroll(font_sys.raw(), false);
         buffer
@@ -200,8 +205,23 @@ impl ToolOperation for TextOperation {
         };
 
         let inv = 1.0 / scale;
-        let origin = self.bounding_box.position();
-        for (content, x, x_end, line_top, line_h, bold, italic, underline, span_color, span_fs, span_fam) in &runs {
+        let inset = TEXT_INSET / scale;
+        let origin = Point::new(self.bounding_box.x + inset, self.bounding_box.y);
+
+        for (
+            content,
+            x,
+            x_end,
+            line_top,
+            line_h,
+            bold,
+            italic,
+            underline,
+            span_color,
+            span_fs,
+            span_fam,
+        ) in &runs
+        {
             let text = canvas::Text {
                 content: content.clone(),
                 position: Point::new(
@@ -237,10 +257,7 @@ impl ToolOperation for TextOperation {
                 let ux = origin.x + x * inv;
                 let uw = (x_end - x) * inv;
                 frame.stroke(
-                    &canvas::Path::line(
-                        Point::new(ux, uy),
-                        Point::new(ux + uw, uy),
-                    ),
+                    &canvas::Path::line(Point::new(ux, uy), Point::new(ux + uw, uy)),
                     canvas::Stroke::default()
                         .with_color(*span_color)
                         .with_width(1.0 / scale),
@@ -254,20 +271,17 @@ impl ToolOperation for TextOperation {
             return;
         }
 
-        use crate::annotate::tool::text::{group_spans, span_attrs, build_buffer_line};
+        use crate::annotate::tool::text::{build_buffer_line, group_spans, span_attrs};
 
         let img_font = self.font_size / self.edit_scale;
-        let img_metrics = cosmic_text::Metrics::new(
-            img_font,
-            img_font * LINE_HEIGHT_FACTOR,
-        );
-        let default_attrs = cosmic_text::Attrs::new()
-            .family(cosmic_text::Family::Name(self.font_family));
+        let img_metrics = cosmic_text::Metrics::new(img_font, img_font * LINE_HEIGHT_FACTOR);
+        let default_attrs =
+            cosmic_text::Attrs::new().family(cosmic_text::Family::Name(self.font_family));
         let font_scale = 1.0 / self.edit_scale;
 
         let mut font_sys = font_system().write().expect("Write font system");
         let mut buffer = cosmic_text::Buffer::new(font_sys.raw(), img_metrics);
-        buffer.set_size(Some(self.bounding_box.width), None);
+        buffer.set_size(Some(self.bounding_box.width - TEXT_INSET * 2.0), None);
         buffer.set_wrap(cosmic_text::Wrap::WordOrGlyph);
 
         let lines = group_spans(&self.spans);
@@ -277,10 +291,15 @@ impl ToolOperation for TextOperation {
             let mut offset = 0;
             for span in line_spans {
                 let end = offset + span.text.len();
-                attrs_list.add_span(offset..end, &span_attrs(default_attrs.clone(), span, font_scale));
+                attrs_list.add_span(
+                    offset..end,
+                    &span_attrs(default_attrs.clone(), span, font_scale),
+                );
                 offset = end;
             }
-            buffer.lines.push(build_buffer_line(line_text, attrs_list, *line_align));
+            buffer
+                .lines
+                .push(build_buffer_line(line_text, attrs_list, *line_align));
         }
         buffer.shape_until_scroll(font_sys.raw(), false);
 
@@ -295,8 +314,7 @@ impl ToolOperation for TextOperation {
         );
 
         let mut swash_cache = cosmic_text::SwashCache::new();
-        let origin = self.bounding_box.position();
-
+        let origin = Point::new(self.bounding_box.x + TEXT_INSET, self.bounding_box.y);
         for run in buffer.layout_runs() {
             let line = &buffer.lines[run.line_i];
             let attrs_list = line.attrs_list();
@@ -327,8 +345,7 @@ impl ToolOperation for TextOperation {
                                     blend_channel(existing[0], color.r(), alpha),
                                     blend_channel(existing[1], color.g(), alpha),
                                     blend_channel(existing[2], color.b(), alpha),
-                                    (existing[3] as f32 * (1.0 - alpha) + 255.0 * alpha)
-                                        .min(255.0)
+                                    (existing[3] as f32 * (1.0 - alpha) + 255.0 * alpha).min(255.0)
                                         as u8,
                                 ]);
                                 rgba.put_pixel(px as u32, py as u32, blended);

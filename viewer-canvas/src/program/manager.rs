@@ -495,7 +495,6 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
     ) -> mouse::Interaction {
         let bounds = layout.bounds();
 
-        // Handle tool cursors
         if self.manager.active_tool.is_some() {
             if let Some(position) = cursor.position_in(bounds)
                 && let (Some(preview), Some(img_point)) = (
@@ -506,7 +505,11 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
                 return preview.cursor_at(img_point);
             }
 
-            return mouse::Interaction::Crosshair;
+            return if cursor.position_in(bounds).is_some() {
+                mouse::Interaction::Crosshair
+            } else {
+                mouse::Interaction::default()
+            };
         }
 
         // Delegate to base canvas for non-tool cursors
