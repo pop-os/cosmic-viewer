@@ -88,9 +88,18 @@ pub struct CosmicViewer {
     wallpaper_dialog: Option<PathBuf>,
     delete_dialog: Option<PathBuf>,
     available_outputs: Vec<String>,
+    watcher_rescan_pending: bool,
+    nav_bar_user_pref: bool,
+    was_narrow: bool,
 }
 
 impl CosmicViewer {
+    fn is_narrow(&self) -> bool {
+        let nav_width = self.config.thumbnail_size.pixels() as f32 + 36.0;
+        let threshold = nav_width + 360.0;
+        self.window_width.map(|w| w < threshold).unwrap_or(false)
+    }
+
     fn save_last_color(&mut self) {
         let c = self.annotate_color.0;
         self.config.last_color = Some([c.r, c.g, c.b, c.a]);
@@ -1240,6 +1249,9 @@ impl Application for CosmicViewer {
             wallpaper_dialog: None,
             delete_dialog: None,
             available_outputs: Vec::new(),
+            watcher_rescan_pending: false,
+            nav_bar_user_pref: true,
+            was_narrow: false,
         };
 
         if let Some(path) = flags {
@@ -1270,13 +1282,13 @@ impl Application for CosmicViewer {
     }
 
     fn nav_bar(&self) -> Option<Element<'_, Action<Self::Message>>> {
-        if !self.core().nav_bar_active() {
+        if self.is_narrow() || !self.core().nav_bar_active() {
             return None;
         }
 
         let thumbnail_size = self.config.thumbnail_size.pixels();
         let col_spacing: f32 = 8.0;
-        let panel_width = thumbnail_size as f32 + col_spacing * 2.0 + 20.;
+        let panel_width = thumbnail_size as f32 + col_spacing * 2.0 + 36.;
 
         let grid = image_grid(self.grid.items().to_vec())
             .thumbnail_size(thumbnail_size)
@@ -1288,6 +1300,7 @@ impl Application for CosmicViewer {
                 Action::App(ViewerMessage::Nav(NavMessage::GridScroll(req.offset_y)))
             })
             .scrollable(self.scroll_id.clone())
+            .padding([4, 8, 0, 8])
             .into_element();
 
         Some(
@@ -1744,30 +1757,36 @@ impl Application for CosmicViewer {
             }
             ViewerMessage::WatcherEvent(evt) => {
                 use crate::watcher::WatcherEvent;
-                match evt {
-                    WatcherEvent::Created(_) => {
-                        tasks.push(self.reload_image_list());
+                match &evt {
+                    WatcherEvent::Modified(path) if path.exists() => {
+                        self.cache.remove_full(path);
+                        self.cache.remove_thumbnail(path);
                     }
-                    WatcherEvent::Modified(path) => {
-                        if !path.exists() {
-                            self.cache.clear_pending(&path);
-                            if self.nav.current() == Some(&path) {
-                                self.nav.deselect();
-                            }
-                            tasks.push(self.reload_image_list());
-                        }
-                    }
-                    WatcherEvent::Removed(path) => {
-                        self.cache.clear_pending(&path);
-                        if self.nav.current() == Some(&path) {
+                    WatcherEvent::Modified(path) | WatcherEvent::Removed(path) => {
+                        self.cache.clear_pending(path);
+                        self.cache.remove_full(path);
+                        self.cache.remove_thumbnail(path);
+                        if self.nav.current() == Some(path) {
                             self.nav.deselect();
                         }
-                        tasks.push(self.reload_image_list());
                     }
+                    WatcherEvent::Created(_) => {}
                     WatcherEvent::Error(err) => {
                         tracing::warn!("watcher error: {err}");
                     }
                 }
+
+                if !matches!(evt, WatcherEvent::Error(_)) && !self.watcher_rescan_pending {
+                    self.watcher_rescan_pending = true;
+                    tasks.push(future(async {
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        Action::App(ViewerMessage::WatcherRescan)
+                    }));
+                }
+            }
+            ViewerMessage::WatcherRescan => {
+                self.watcher_rescan_pending = false;
+                tasks.push(self.reload_image_list());
             }
             ViewerMessage::SetWallpaper => {
                 self.context_menu_position = None;
@@ -2177,7 +2196,22 @@ impl Application for CosmicViewer {
                     return self.update(msg);
                 }
             }
-            ViewerMessage::WindowResized(size) => self.window_width = Some(size.width),
+            ViewerMessage::WindowResized(size) => {
+                self.window_width = Some(size.width);
+                let narrow = self.is_narrow();
+                if narrow != self.was_narrow {
+                    if narrow {
+                        self.nav_bar_user_pref = self.core().nav_bar_active();
+                        self.core.nav_bar_toggle_condensed();
+                    } else if self.nav_bar_user_pref {
+                        // Only restore if user had it open — toggle back if condensed state is wrong
+                        if !self.core().nav_bar_active() {
+                            self.core.nav_bar_toggle_condensed();
+                        }
+                    }
+                    self.was_narrow = narrow;
+                }
+            }
             ViewerMessage::Nav(msg) => match msg {
                 NavMessage::ScanComplete(dir, images, select) => {
                     self.viewport.cancel_tool();
@@ -2262,6 +2296,12 @@ impl Application for CosmicViewer {
 
                         if !self.nav.is_empty() {
                             tasks.push(self.load_remaining_thumbnails());
+                        }
+
+                        if let Some(path) = self.nav.current().cloned() {
+                            if self.cache.get_full(&path).is_none() {
+                                tasks.push(self.load_full_image(path));
+                            }
                         }
                     }
                 }
