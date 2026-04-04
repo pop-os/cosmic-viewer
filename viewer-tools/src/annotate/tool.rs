@@ -20,8 +20,6 @@ pub enum AnnotateTool {
 }
 
 impl AnnotateTool {
-    /// Return the Icon name for each tool
-
     /// Presets shown in each dropdown group.
     pub fn draw_tools() -> &'static [AnnotateTool] {
         &[AnnotateTool::Pen, AnnotateTool::Pencil]

@@ -7,7 +7,7 @@ use cosmic::{
         Rectangle, Size, Vector,
         mouse::{self, Button, Cursor, Event as MouseEvent},
     },
-    iced_widget::canvas::{Event, Frame, Geometry, Program, event::Status},
+    iced_widget::canvas::{Action, Event, Frame, Geometry, Program},
 };
 use viewer_tools::ToolOperation;
 
@@ -28,30 +28,29 @@ impl<'a> Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'a> {
     fn update(
         &self,
         state: &mut Interaction,
-        event: Event,
+        event: &Event,
         bounds: Rectangle,
         cursor: Cursor,
-    ) -> (Status, Option<CanvasMessage>) {
+    ) -> Option<Action<CanvasMessage>> {
         let Some(position) = cursor.position_in(bounds) else {
-            return (Status::Ignored, None);
+            return None;
         };
 
         match event {
             Event::Mouse(mouse_event) => match mouse_event {
-                MouseEvent::ButtonPressed(Button::Right) => (
-                    Status::Captured,
-                    Some(CanvasMessage::ContextMenu(Some(position))),
-                ),
+                MouseEvent::ButtonPressed(Button::Right) => {
+                    Some(Action::publish(CanvasMessage::ContextMenu(Some(position))))
+                }
                 MouseEvent::ButtonPressed(Button::Left) => {
-                    (Status::Captured, Some(CanvasMessage::ContextMenu(None)))
+                    Some(Action::publish(CanvasMessage::ContextMenu(None)))
                 }
                 MouseEvent::CursorMoved { .. } => {
                     *state = Interaction::None;
-                    (Status::Ignored, None)
+                    None
                 }
                 MouseEvent::ButtonReleased(Button::Left) => {
                     *state = Interaction::None;
-                    (Status::Captured, None)
+                    Some(Action::capture())
                 }
                 MouseEvent::WheelScrolled { delta } => {
                     let y = match delta {
@@ -59,17 +58,17 @@ impl<'a> Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'a> {
                         | mouse::ScrollDelta::Pixels { y, .. } => y,
                     };
 
-                    let msg = if y < 0.0 {
+                    let msg = if *y < 0.0 {
                         CanvasMessage::ZoomOut
                     } else {
                         CanvasMessage::ZoomIn
                     };
 
-                    (Status::Captured, Some(msg))
+                    Some(Action::publish(msg))
                 }
-                _ => (Status::Ignored, None),
+                _ => None,
             },
-            _ => (Status::Ignored, None),
+            _ => None,
         }
     }
 

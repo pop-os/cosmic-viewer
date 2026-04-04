@@ -423,38 +423,4 @@ impl ToolOperation for CropSelection {
         self.hit_test(point).cursor()
     }
 
-    fn on_zoom_changed(&mut self, old_zoom: f32, new_zoom: f32, image_size: Size) {
-        if !self.visible || self.region.width < MIN_SIZE {
-            return;
-        }
-
-        let scale_factor = old_zoom / new_zoom;
-        let center_x = self.region.x + self.region.width / 2.0;
-        let center_y = self.region.y + self.region.height / 2.0;
-
-        let mut new_width = (self.region.width * scale_factor).min(image_size.width);
-        let mut new_height = if let Some(aspect) = self.ratio.resolve(image_size) {
-            new_width / aspect
-        } else {
-            (self.region.height * scale_factor).min(image_size.height)
-        };
-
-        if new_height > image_size.height {
-            new_height = image_size.height;
-
-            if let Some(aspect) = self.ratio.resolve(image_size) {
-                new_width = new_height * aspect;
-            }
-        }
-
-        new_width = new_width.max(MIN_SIZE);
-        new_height = new_height.max(MIN_SIZE);
-
-        let new_x =
-            (center_x - new_width / 2.0).clamp(0.0, (image_size.width - new_width).max(0.0));
-        let new_y =
-            (center_y - new_height / 2.0).clamp(0.0, (image_size.height - new_height).max(0.0));
-
-        self.region = Rectangle::new(Point::new(new_x, new_y), Size::new(new_width, new_height));
-    }
 }

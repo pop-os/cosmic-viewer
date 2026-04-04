@@ -37,6 +37,29 @@ impl ShapeOperation {
     }
 }
 
+impl ShapeOperation {
+    pub fn bounds(&self) -> Rectangle {
+        normalize_rect(self.start, self.end)
+    }
+
+    pub fn hit_test(&self, point: Point) -> bool {
+        let b = self.bounds();
+        let pad = self.width.max(4.0);
+        Rectangle::new(
+            Point::new(b.x - pad, b.y - pad),
+            Size::new(b.width + pad * 2.0, b.height + pad * 2.0),
+        )
+        .contains(point)
+    }
+
+    pub fn translate(&mut self, dx: f32, dy: f32) {
+        self.start.x += dx;
+        self.start.y += dy;
+        self.end.x += dx;
+        self.end.y += dy;
+    }
+}
+
 impl ToolOperation for ShapeOperation {
     fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
         draw_shape(
@@ -66,17 +89,15 @@ impl ToolOperation for ShapeOperation {
                 fill_on_image(image, &path, self.color);
             }
             ShapeKind::Arrow => {
-                // Stroke the shaft
                 if let Some(shaft) = build_path(|pb| {
                     pb.move_to(self.start.x, self.start.y);
                     pb.line_to(self.end.x, self.end.y);
                 }) {
                     stroke_on_image(image, &shaft, self.color, self.width, SkiaLineCap::Round);
                 }
-                // Fill the arrowhead
                 let segs = arrow_segments(self.start, self.end);
                 if segs.len() >= 3 {
-                    let tip = segs[1].1; // arrow tip
+                    let tip = segs[1].1;
                     let left = segs[1].0;
                     let right = segs[2].0;
                     if let Some(head) = build_path(|pb| {
@@ -120,7 +141,7 @@ impl ToolOperation for ShapeOperation {
     }
 
     fn commit(&self) -> Option<Box<dyn ToolOperation>> {
-        None // Already committed
+        None
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -148,5 +169,21 @@ impl ToolOperation for ShapeOperation {
             point.x -= region.x;
             point.y -= region.y;
         }
+    }
+
+    fn movable(&self) -> bool {
+        true
+    }
+
+    fn hit_test(&self, point: Point) -> bool {
+        ShapeOperation::hit_test(self, point)
+    }
+
+    fn translate(&mut self, dx: f32, dy: f32) {
+        ShapeOperation::translate(self, dx, dy);
+    }
+
+    fn bounds(&self) -> Option<Rectangle> {
+        Some(ShapeOperation::bounds(self))
     }
 }

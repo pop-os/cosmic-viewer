@@ -21,7 +21,7 @@ use cosmic::{
             svg::Renderer as SvgRenderer,
             widget::{Id, Operation, Tree},
         },
-        event::{Event, Status},
+        event::Event,
         keyboard::{self, Key},
         mouse::{self, Button, Cursor},
     },
@@ -247,6 +247,37 @@ struct ImageGridInner<'a, M> {
 }
 
 impl<'a, M> ImageGridInner<'a, M> {
+    fn grid_config(&self) -> core::GridConfig {
+        let item_size = self.thumbnail_size as f32;
+        let button_padding = self.col_spacing as f32;
+        core::GridConfig {
+            item_width: item_size + (button_padding * 2.0),
+            column_spacing: self.col_spacing as f32,
+            row_spacing: self.row_spacing as f32,
+            min_cols: 1,
+            max_cols: None,
+            padding: self.padding,
+        }
+    }
+
+    fn grid_metrics(&self, avail_width: f32) -> core::GridMetrics {
+        let cfg = self.grid_config();
+        let cols = core::calculate_columns(
+            avail_width,
+            cfg.item_width,
+            cfg.column_spacing,
+            cfg.min_cols,
+            cfg.max_cols,
+            self.items.len(),
+        );
+        let rows = self.items.len().div_ceil(cols);
+        core::GridMetrics {
+            cols,
+            rows,
+            row_height: cfg.item_width,
+        }
+    }
+
     fn item_at_position(&self, position: Point, bounds: Rectangle) -> Option<usize> {
         let cols = self.cached_cols.get();
         let row_height = self.cached_row_height.get();
@@ -255,10 +286,8 @@ impl<'a, M> ImageGridInner<'a, M> {
             return None;
         }
 
+        let cfg = self.grid_config();
         let rows = self.items.len().div_ceil(cols);
-        let item_size = self.thumbnail_size as f32;
-
-        // Conver to local coords
         let local_x = position.x - bounds.x;
         let local_y = position.y - bounds.y;
 
@@ -266,11 +295,11 @@ impl<'a, M> ImageGridInner<'a, M> {
             (local_x, local_y),
             cols,
             rows,
-            item_size + (self.col_spacing * 2) as f32, // Include button padding
+            cfg.item_width,
             row_height,
-            self.col_spacing as f32,
-            self.row_spacing as f32,
-            self.padding,
+            cfg.column_spacing,
+            cfg.row_spacing,
+            cfg.padding,
             self.items.len(),
         )
     }
@@ -294,46 +323,26 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
         Size::new(self.width, self.height)
     }
 
-    fn layout(&self, _tree: &mut Tree, _renderer: &Renderer, limits: &Limits) -> Node {
+    fn layout(&mut self, _tree: &mut Tree, _renderer: &Renderer, limits: &Limits) -> Node {
         if self.items.is_empty() {
             return Node::new(Size::ZERO);
         }
 
         let limits = limits.width(self.width).height(self.height);
         let max_size = limits.max();
-        let avail_width = max_size.width - self.padding.horizontal();
+        let avail_width = max_size.width - self.padding.x();
 
-        let item_size = self.thumbnail_size as f32;
-        // Use spacing as button padding
-        let button_padding = self.col_spacing as f32;
-        let cell_size = item_size + (button_padding * 2.0);
+        let metrics = self.grid_metrics(avail_width);
 
-        let cols = core::calculate_columns(
-            avail_width,
-            cell_size,
-            self.col_spacing as f32,
-            1,
-            None,
-            self.items.len(),
-        );
+        let total_height = (metrics.rows as f32 * metrics.row_height)
+            + ((metrics.rows.saturating_sub(1)) as f32 * self.row_spacing as f32)
+            + self.padding.y();
 
-        let rows = self.items.len().div_ceil(cols);
+        self.cached_cols.set(metrics.cols);
+        self.cached_row_height.set(metrics.row_height);
+        self.last_layout.set((metrics.cols, metrics.row_height.to_bits()));
 
-        // Calculate total height
-        let row_height = cell_size;
-        let total_height = (rows as f32 * row_height)
-            + ((rows.saturating_sub(1)) as f32 * self.row_spacing as f32)
-            + self.padding.vertical();
-
-        // Cache layout info for event handling
-        self.cached_cols.set(cols);
-        self.cached_row_height.set(row_height);
-
-        // Store for layout change detection
-        let row_height_bits = row_height.to_bits();
-        self.last_layout.set((cols, row_height_bits));
-
-        let content_size = Size::new(avail_width + self.padding.horizontal(), total_height);
+        let content_size = Size::new(avail_width + self.padding.x(), total_height);
 
         Node::new(limits.resolve(self.width, self.height, content_size))
     }
@@ -400,6 +409,7 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                             color: Color::TRANSPARENT,
                         },
                         shadow: Default::default(),
+                        snap: true,
                     },
                     Color::from_rgba(1.0, 1.0, 1.0, 0.1),
                 );
@@ -419,12 +429,16 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                 );
 
                 renderer.draw_image(
-                    handle.clone(),
-                    cosmic::iced::widget::image::FilterMethod::Linear,
+                    cosmic::iced::advanced::image::Image {
+                        handle: handle.clone(),
+                        filter_method: cosmic::iced::widget::image::FilterMethod::Linear,
+                        rotation: cosmic::iced::Radians(0.0),
+                        opacity: 1.0,
+                        snap: true,
+                        border_radius: radius.into(),
+                    },
                     centered,
-                    cosmic::iced::Radians(0.0),
-                    1.0,
-                    radius,
+                    bounds,
                 );
             } else {
                 let placeholder_size = item_size / 2.0;
@@ -444,6 +458,7 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                             ..Default::default()
                         },
                         shadow: Default::default(),
+                        snap: true,
                     },
                     Color::from_rgba(0.5, 0.5, 0.5, 0.3),
                 );
@@ -467,6 +482,7 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                                 color: accent,
                             },
                             shadow: Default::default(),
+                            snap: true,
                         },
                         Color::TRANSPARENT,
                     );
@@ -489,6 +505,7 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                                 color: accent,
                             },
                             shadow: Default::default(),
+                            snap: true,
                         },
                         bg,
                     );
@@ -514,6 +531,7 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                                 border_radius: [0.0; 4],
                             },
                             icon_bounds,
+                            bounds,
                         );
                     }
                 });
@@ -521,24 +539,21 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
         }
     }
 
-    fn on_event(
+    fn update(
         &mut self,
         _tree: &mut Tree,
-        event: Event,
+        event: &Event,
         layout: Layout<'_>,
         cursor: Cursor,
         _renderer: &Renderer,
         _clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, M>,
         viewport: &Rectangle,
-    ) -> Status {
+    ) {
         let bounds = layout.bounds();
 
         match event {
-            // Mouse hover - visual only, no messages (draw() handles highlight from cursor)
-            Event::Mouse(mouse::Event::CursorMoved { .. }) => { /* No-op: visual hover handled in draw() */
-            }
-            // Click - activate
+            Event::Mouse(mouse::Event::CursorMoved { .. }) => {}
             Event::Mouse(mouse::Event::ButtonPressed(Button::Left)) => {
                 if let Some(pos) = cursor.position()
                     && bounds.contains(pos)
@@ -547,18 +562,18 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                     if let Some(ref on_activate) = self.on_activate {
                         shell.publish(on_activate(idx));
                     }
-                    return Status::Captured;
+                    shell.capture_event();
+                    return;
                 }
             }
-            // Keyboard nav
             Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) => {
                 if !self.keyboard_nav_enabled {
-                    return Status::Ignored;
+                    return;
                 }
 
                 let cols = self.cached_cols.get();
                 if cols == 0 || self.items.is_empty() {
-                    return Status::Ignored;
+                    return;
                 }
 
                 let current = self.focused_idx.unwrap_or(0);
@@ -593,39 +608,33 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                         shell.publish(on_focus(new_idx));
                     }
 
-                    // Only scroll if item is out of view
                     if let Some(ref on_scroll_request) = self.on_scroll_request {
                         let row_height = self.cached_row_height.get();
                         let row = new_idx / cols;
                         let row_spacing = self.row_spacing as f32;
 
-                        // Item position relative to grid content
                         let item_top = self.padding.top + (row as f32 * (row_height + row_spacing));
                         let item_bottom = item_top + row_height;
 
-                        // Viewport position relative to grid (scroll offset)
                         let scroll_offset = viewport.y - bounds.y;
                         let visible_top = scroll_offset;
                         let visible_bottom = scroll_offset + viewport.height;
 
-                        // Only scroll if item is not fully visible
                         if item_top < visible_top {
-                            // Item is above viewport - scroll up to show it at top
                             shell.publish(on_scroll_request(ScrollRequest { offset_y: item_top }));
                         } else if item_bottom > visible_bottom {
-                            // Item is below viewport - scroll down to show it at bottom
                             let new_offset = item_bottom - viewport.height;
                             shell.publish(on_scroll_request(ScrollRequest {
                                 offset_y: new_offset.max(0.0),
                             }));
                         }
                     }
-                    return Status::Captured;
+                    shell.capture_event();
+                    return;
                 }
             }
             _ => {}
         }
-        Status::Ignored
     }
 
     fn mouse_interaction(
@@ -648,12 +657,12 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
     }
 
     fn operate(
-        &self,
+        &mut self,
         _tree: &mut Tree,
         _layout: Layout<'_>,
         _renderer: &Renderer,
         _operation: &mut dyn Operation,
-    ) { /* Not needed for this widget */
+    ) {
     }
 
     fn overlay<'b>(
@@ -661,6 +670,7 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
         _tree: &'b mut Tree,
         _layout: Layout<'_>,
         _renderer: &Renderer,
+        _viewport: &Rectangle,
         _translation: cosmic::iced::Vector,
     ) -> Option<overlay::Element<'b, M, cosmic::Theme, Renderer>> {
         None
