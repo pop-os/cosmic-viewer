@@ -7,7 +7,7 @@ use cosmic::{
     Renderer,
     iced::{
         Color, Font, Point, Rectangle, Size,
-        alignment::{Horizontal, Vertical},
+        alignment::{Alignment, Vertical},
         font,
     },
     iced_core::text::{LineHeight, Shaping},
@@ -26,7 +26,7 @@ pub struct TextOperation {
     pub color: Color,
     pub font_size: f32,
     pub font_family: &'static str,
-    pub alignment: Horizontal,
+    pub alignment: Alignment,
 }
 
 impl TextOperation {
@@ -36,7 +36,7 @@ impl TextOperation {
         color: Color,
         font_size: f32,
         font_family: &'static str,
-        alignment: Horizontal,
+        alignment: Alignment,
     ) -> Self {
         Self {
             position,
@@ -80,7 +80,7 @@ impl TextOperation {
             false,
             false,
             false,
-            self.alignment,
+            self.alignment.into(),
         );
         preview.position = Some(self.position);
         preview.spans = self.spans.clone();
@@ -129,9 +129,10 @@ impl ToolOperation for TextOperation {
                     stretch: font::Stretch::Normal,
                 },
                 line_height: LineHeight::default(),
-                horizontal_alignment: self.alignment,
-                vertical_alignment: Vertical::Top,
+                align_x: self.alignment.into(),
+                align_y: Vertical::Top,
                 shaping: Shaping::Advanced,
+                ..Default::default()
             };
             frame.fill_text(text);
 

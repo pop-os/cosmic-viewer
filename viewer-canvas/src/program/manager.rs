@@ -5,7 +5,6 @@ use cosmic::{
     iced::{
         Event, Length, Limits, Point, Rectangle, Renderer, Size, Vector,
         advanced::renderer as iced_renderer,
-        event,
         mouse::{self, Button, Cursor, Event as MouseEvent},
         overlay,
     },
@@ -356,10 +355,10 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
         Size::new(Length::Fill, Length::Fill)
     }
 
-    fn layout(&self, tree: &mut Tree, renderer: &Renderer, limits: &Limits) -> Node {
-        let element = self.canvas_element();
+    fn layout(&mut self, tree: &mut Tree, renderer: &Renderer, limits: &Limits) -> Node {
+        let mut element = self.canvas_element();
         let child = element
-            .as_widget()
+            .as_widget_mut()
             .layout(&mut tree.children[0], renderer, limits);
         let size = child.size();
         Node::with_children(size, vec![child])
@@ -426,29 +425,30 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
         }
     }
 
-    fn on_event(
+    fn update(
         &mut self,
         tree: &mut Tree,
-        event: Event,
+        event: &Event,
         layout: Layout<'_>,
         cursor: Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, CanvasMessage>,
         viewport: &Rectangle,
-    ) -> event::Status {
+    ) {
         let bounds = layout.bounds();
 
         // Tool interaction takes priority
         if self.manager.active_tool.is_some()
-            && let Event::Mouse(mouse_event) = &event
+            && let Event::Mouse(mouse_event) = event
             && let Some(position) = cursor.position_in(bounds)
         {
             match mouse_event {
                 MouseEvent::ButtonPressed(Button::Left) => {
                     if let Some(pt) = self.manager.screen_to_image(position, bounds) {
                         shell.publish(CanvasMessage::ToolStart(pt));
-                        return event::Status::Captured;
+                        shell.capture_event();
+                        return;
                     }
                 }
                 MouseEvent::CursorMoved { .. } => {
@@ -456,13 +456,15 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
                         && let Some(pt) = self.manager.screen_to_image_clamped(position, bounds)
                     {
                         shell.publish(CanvasMessage::ToolDrag(pt));
-                        return event::Status::Captured;
+                        shell.capture_event();
+                        return;
                     }
                 }
                 MouseEvent::ButtonReleased(Button::Left) => {
                     if self.manager.tool_dragging {
                         shell.publish(CanvasMessage::ToolEnd);
-                        return event::Status::Captured;
+                        shell.capture_event();
+                        return;
                     }
                 }
                 _ => {}
@@ -471,7 +473,7 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
 
         // Fall through to base canvas for zoom, context menu, etc.
         let mut element = self.canvas_element();
-        element.as_widget_mut().on_event(
+        element.as_widget_mut().update(
             &mut tree.children[0],
             event,
             layout.children().next().unwrap(),
@@ -480,7 +482,7 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
             clipboard,
             shell,
             viewport,
-        )
+        );
     }
 
     fn mouse_interaction(
@@ -519,14 +521,14 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
     }
 
     fn operate(
-        &self,
+        &mut self,
         tree: &mut Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
         operation: &mut dyn Operation,
     ) {
-        let element = self.canvas_element();
-        element.as_widget().operate(
+        let mut element = self.canvas_element();
+        element.as_widget_mut().operate(
             &mut tree.children[0],
             layout.children().next().unwrap(),
             renderer,
@@ -539,6 +541,7 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
         _tree: &'b mut Tree,
         _layout: Layout<'_>,
         _renderer: &Renderer,
+        _viewport: &Rectangle,
         _translation: Vector,
     ) -> Option<overlay::Element<'b, CanvasMessage, Theme, Renderer>> {
         None

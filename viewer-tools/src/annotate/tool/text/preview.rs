@@ -11,9 +11,7 @@ use cosmic::{
         font, mouse,
     },
     iced_core::text::{LineHeight, Shaping},
-    iced_widget::{
-        canvas::{self, Frame, Path, Stroke},
-    },
+    iced_widget::canvas::{self, Frame, Path, Stroke},
 };
 use image::DynamicImage;
 use std::any::Any;
@@ -151,9 +149,10 @@ impl ToolOperation for TextPreview {
                     stretch: font::Stretch::Normal,
                 },
                 line_height: LineHeight::default(),
-                horizontal_alignment: self.alignment,
-                vertical_alignment: Vertical::Top,
+                align_x: self.alignment.into(),
+                align_y: Vertical::Top,
                 shaping: Shaping::Advanced,
+                ..Default::default()
             };
 
             frame.fill_text(text);
@@ -208,7 +207,7 @@ impl ToolOperation for TextPreview {
                 self.color,
                 self.font_size,
                 self.font_family,
-                self.alignment,
+                self.alignment.into(),
             )))
         } else {
             None
