@@ -71,8 +71,17 @@ pub trait ToolOperation: Debug {
     /// Transform this operation's coordinates for a crop.
     fn transform_crop(&mut self, _region: Rectangle) {}
 
-    /// Returns the bounding box of the operation
     fn bounds(&self) -> Option<Rectangle> {
         None
     }
+
+    fn movable(&self) -> bool {
+        false
+    }
+
+    fn hit_test(&self, point: Point) -> bool {
+        self.bounds().is_some_and(|b| b.contains(point))
+    }
+
+    fn translate(&mut self, _dx: f32, _dy: f32) {}
 }

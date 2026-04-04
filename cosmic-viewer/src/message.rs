@@ -64,6 +64,7 @@ pub enum ViewerMessage {
     Edit(EditMessage),
     Surface(cosmic::surface::Action),
     WatcherEvent(crate::watcher::WatcherEvent),
+    TextPaste(String),
 }
 
 #[derive(Debug, Clone)]

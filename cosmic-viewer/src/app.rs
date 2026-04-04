@@ -41,7 +41,7 @@ use viewer_tools::{
     ToolOperation,
     annotate::{
         AnnotateColor, AnnotateTool, HighlighterPreview, PenPreview, PencilPreview, ShapeKind,
-        ShapePreview, TextOperation, TextPreview,
+        ShapePreview, TextDragHandle, TextOperation, TextPreview,
     },
     crop::{CropOperation, CropRatio, CropSelection},
     rotate::{RotateDirection, RotateOperation},
@@ -418,6 +418,20 @@ impl CosmicViewer {
         .into()
     }
 
+    fn popup_style(theme: &cosmic::Theme) -> container::Style {
+        let cosmic = theme.cosmic();
+        let component = &cosmic.background.component;
+        container::Style {
+            background: Some(Background::Color(component.base.into())),
+            border: Border {
+                radius: cosmic.radius_s().map(|x| x + 1.0).into(),
+                width: 1.0,
+                color: component.divider.into(),
+            },
+            ..Default::default()
+        }
+    }
+
     fn build_toolbar(&self) -> Element<'_, ViewerMessage> {
         match self.viewport.active_tool() {
             Some(ToolKind::Crop) => self.build_crop_toolbar(),
@@ -788,7 +802,7 @@ impl CosmicViewer {
         toolbar.view(|| ViewerMessage::ToolbarOverflowToggle)
     }
 
-    fn build_text_format_popup(&self) -> Element<'_, ViewerMessage> {
+    fn build_text_format_popup(&self, popup_below: bool) -> Element<'_, ViewerMessage> {
         let font_sizes = vec!["12pt", "16pt", "20pt", "24pt", "32pt", "48pt", "64pt"];
         let font_size_values = [12.0_f32, 16.0, 20.0, 24.0, 32.0, 48.0, 64.0];
         let font_size_selected = font_size_values
@@ -806,7 +820,6 @@ impl CosmicViewer {
             .align_y(Alignment::Center)
             .spacing(4);
 
-        // Bold, italic, underline as icon buttons
         let bold_btn = button::icon(icon::from_name("format-text-bold-symbolic"))
             .class(if self.text_bold {
                 cosmic::theme::Button::Suggested
@@ -831,7 +844,6 @@ impl CosmicViewer {
             })
             .on_press(ViewerMessage::Edit(EditMessage::TextUnderline));
 
-        // Align buttons
         let align_left = button::icon(icon::from_name("format-justify-left-symbolic"))
             .class(if self.text_alignment == Horizontal::Left {
                 cosmic::theme::Button::Suggested
@@ -865,44 +877,106 @@ impl CosmicViewer {
         let apply_btn = button::icon(icon::from_name("object-select-symbolic"))
             .on_press(ViewerMessage::Edit(EditMessage::TextApply));
 
+        let swatch_size = 14.0;
+        let swatch_radius = swatch_size / 2.0;
+        let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
+        let colors = AnnotateColor::presets();
+        let mut color_row = Row::new().spacing(2);
+        for color in &colors {
+            let c = *color;
+            let is_selected = c == self.annotate_color;
+            color_row = color_row.push(
+                button::custom(container(Space::new().width(swatch_size).height(swatch_size)).class(
+                    cosmic::style::Container::custom(move |_theme| container::Style {
+                        background: Some(Background::Color(c.0)),
+                        border: Border {
+                            radius: swatch_radius.into(),
+                            width: if is_selected { 2.0 } else { 1.0 },
+                            color: if is_selected {
+                                accent
+                            } else {
+                                Color::from_rgba(0.5, 0.5, 0.5, 0.5)
+                            },
+                        },
+                        ..Default::default()
+                    }),
+                ))
+                .padding(2)
+                .class(cosmic::theme::Button::Icon)
+                .on_press(ViewerMessage::Edit(EditMessage::AnnotateColor(c))),
+            );
+        }
+
+        let custom_color = self.color_picker.get_applied_color().unwrap_or(Color::BLACK);
+        let is_custom = !colors.contains(&self.annotate_color);
+        let picker_btn = button::custom(
+            container(Space::new().width(swatch_size).height(swatch_size)).class(
+                cosmic::style::Container::custom(move |_theme| container::Style {
+                    background: Some(Background::Color(custom_color)),
+                    border: Border {
+                        radius: swatch_radius.into(),
+                        width: if is_custom { 2.0 } else { 0.0 },
+                        color: accent,
+                    },
+                    ..Default::default()
+                }),
+            ),
+        )
+        .padding(2)
+        .class(cosmic::theme::Button::Icon)
+        .on_press(ViewerMessage::Edit(EditMessage::ColorPicker(
+            cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
+        )));
+
+        let mut picker_popover = popover(picker_btn);
+        if self.color_picker.get_is_active() {
+            let picker = self
+                .color_picker
+                .builder(|u| ViewerMessage::Edit(EditMessage::ColorPicker(u)))
+                .reset_label("Reset to default")
+                .save_label("Apply")
+                .cancel_label("Cancel")
+                .build("Recent colors", "Copy", "Copied!");
+
+            let popup = container(picker)
+                .padding(4)
+                .max_width(260.0)
+                .style(Self::popup_style);
+
+            let picker_y = if popup_below { 24.0 } else { -360.0 };
+            picker_popover = picker_popover
+                .popup(popup)
+                .position(popover::Position::Point(Point::new(-110.0, picker_y)));
+        }
+        color_row = color_row.push(picker_popover);
+
         container(
             Column::new()
-                .push(font_dropdown)
                 .push(
                     Row::new()
-                        .push(align_left)
-                        .push(align_center)
-                        .push(align_right)
-                        .spacing(4),
+                        .push(font_dropdown)
+                        .push(color_row)
+                        .align_y(Alignment::Center)
+                        .spacing(8),
                 )
                 .push(
                     Row::new()
                         .push(bold_btn)
                         .push(italic_btn)
                         .push(underline_btn)
-                        //.push(horizontal_space())
-                        .push(cancel_btn)
+                        .push(Space::new().width(8))
+                        .push(align_left)
+                        .push(align_center)
+                        .push(align_right)
+                        .push(Space::new().width(8))
                         .push(apply_btn)
-                        .spacing(4),
+                        .push(cancel_btn)
+                        .spacing(2),
                 )
-                .spacing(8)
-                .padding(12),
+                .spacing(6)
+                .padding(8),
         )
-        .style(|theme| {
-            let cosmic = theme.cosmic();
-            let component = &cosmic.background.component;
-            container::Style {
-                icon_color: None,
-                text_color: None,
-                background: Some(Background::Color(component.base.into())),
-                border: Border {
-                    radius: cosmic.radius_s().map(|x| x + 1.0).into(),
-                    width: 1.0,
-                    color: component.divider.into(),
-                },
-                ..Default::default()
-            }
-        })
+        .style(Self::popup_style)
         .width(Length::Shrink)
         .into()
     }
@@ -1290,30 +1364,56 @@ impl Application for CosmicViewer {
             let bounds = self.viewport.last_bounds();
             if let Some(preview) = self.viewport.preview_ref()
                 && let Some(text) = preview.as_any().downcast_ref::<TextPreview>()
-                && let Some(pos) = text.position
-                && let Some(screen_pos) = self.viewport.image_to_screen(pos, bounds.get())
+                && text.bounding_box.width > 1.0
             {
-                // Estimate popup size and clamp to visible area
-                let popup_w = 300.0;
+                let bb = text.bounding_box;
+                let canvas = bounds.get();
                 let popup_h = 120.0;
                 let margin = 8.0;
-                let canvas = bounds.get();
 
-                let x = screen_pos.x.clamp(
-                    canvas.x + margin,
-                    (canvas.x + canvas.width - popup_w - margin).max(canvas.x + margin),
+                let top = self.viewport.image_to_screen(bb.position(), canvas);
+                let bottom = self.viewport.image_to_screen(
+                    Point::new(bb.x, bb.y + bb.height),
+                    canvas,
                 );
-                let y = if screen_pos.y - popup_h - 10.0 >= canvas.y + margin {
-                    // Above the text
-                    screen_pos.y - 10.0
-                } else {
-                    // Below the text (not enough room above)
-                    screen_pos.y + self.text_font_size + 10.0
-                };
+                let right = self.viewport.image_to_screen(
+                    Point::new(bb.x + bb.width, bb.y),
+                    canvas,
+                );
 
-                pop = pop
-                    .popup(self.build_text_format_popup())
-                    .position(popover::Position::Point(Point::new(x, y)));
+                if let (Some(top_pt), Some(bot_pt), Some(right_pt)) = (top, bottom, right) {
+                    let popup_w = 420.0;
+                    let gap = 10.0;
+
+                    let fits_below = bot_pt.y + popup_h + gap < canvas.height - margin;
+                    let fits_above = top_pt.y - popup_h - gap >= margin;
+                    let fits_right = right_pt.x + popup_w + gap < canvas.width - margin;
+                    let fits_left = top_pt.x - popup_w - gap >= margin;
+
+                    let (x, y, popup_below) = if fits_below {
+                        let x = top_pt.x.clamp(margin, (canvas.width - popup_w - margin).max(margin));
+                        (x, bot_pt.y + gap, true)
+                    } else if fits_above {
+                        let x = top_pt.x.clamp(margin, (canvas.width - popup_w - margin).max(margin));
+                        (x, top_pt.y - popup_h - gap, false)
+                    } else if fits_right {
+                        let y = top_pt.y.clamp(margin, (canvas.height - popup_h - margin).max(margin));
+                        (right_pt.x + gap, y, true)
+                    } else if fits_left {
+                        let y = top_pt.y.clamp(margin, (canvas.height - popup_h - margin).max(margin));
+                        (top_pt.x - popup_w - gap, y, false)
+                    } else {
+                        (
+                            (canvas.width - popup_w - margin).max(margin),
+                            (canvas.height - popup_h - margin).max(margin),
+                            true,
+                        )
+                    };
+
+                    pop = pop
+                        .popup(self.build_text_format_popup(popup_below))
+                        .position(popover::Position::Point(Point::new(x, y)));
+                }
             }
         }
 
@@ -1554,6 +1654,7 @@ impl Application for CosmicViewer {
                         self.viewport.revert_all();
                         self.cache.remove_full(path);
                         self.viewport.cancel_tool();
+                        self.text_editing = false;
                         tasks.push(self.load_full_image(path.clone()));
                     }
                 }
@@ -1610,6 +1711,16 @@ impl Application for CosmicViewer {
             ViewerMessage::Quit => {
                 if let Some(id) = self.core.main_window_id() {
                     return iced::window::close(id);
+                }
+            }
+            ViewerMessage::TextPaste(text) => {
+                if self.text_editing && !text.is_empty() {
+                    if let Some(preview) = self.viewport.preview_mut()
+                        && let Some(t) = preview.as_any_mut().downcast_mut::<TextPreview>()
+                    {
+                        t.insert_with_attrs(&text);
+                    }
+                    self.viewport.rebuild_display();
                 }
             }
             ViewerMessage::WatcherEvent(evt) => {
@@ -1789,6 +1900,17 @@ impl Application for CosmicViewer {
                     return self.update(ViewerMessage::Edit(EditMessage::CropCancel));
                 }
 
+                if matches!(key, Key::Named(Named::Escape))
+                    && self.viewport.active_tool() == Some(ToolKind::Annotate)
+                    && !self.text_editing
+                {
+                    self.viewport.apply_tool();
+                    self.viewport.set_active_tool(None);
+                    self.viewport.set_preview(None);
+                    self.viewport.rebuild_display();
+                    return Task::none();
+                }
+
                 if matches!(key, Key::Named(Named::Delete)) && self.viewport.active_tool().is_none()
                 {
                     return self.update(ViewerMessage::MoveToTrash);
@@ -1807,54 +1929,209 @@ impl Application for CosmicViewer {
                     .and_then(|preview| preview.as_any_mut().downcast_mut::<TextPreview>());
 
                 if is_text_editing {
+                    use cosmic::iced_widget::graphics::text::cosmic_text as ct;
+                    let shift = modifiers.shift();
+
+                    if modifiers.control() {
+                        if let Key::Character(c) = &key {
+                            match c.as_str() {
+                                "b" => {
+                                    self.text_bold = !self.text_bold;
+                                    if let Some(preview) = self.viewport.preview_mut()
+                                        && let Some(t) = preview.as_any_mut().downcast_mut::<TextPreview>()
+                                    {
+                                        if t.has_selection() {
+                                            let bold = self.text_bold;
+                                            t.apply_attr_to_selection(|a| {
+                                                a.weight(if bold { ct::Weight::BOLD } else { ct::Weight::NORMAL })
+                                            });
+                                        }
+                                        t.bold = self.text_bold;
+                                    }
+                                    return Task::none();
+                                }
+                                "i" => {
+                                    self.text_italic = !self.text_italic;
+                                    if let Some(preview) = self.viewport.preview_mut()
+                                        && let Some(t) = preview.as_any_mut().downcast_mut::<TextPreview>()
+                                    {
+                                        if t.has_selection() {
+                                            let italic = self.text_italic;
+                                            t.apply_attr_to_selection(|a| {
+                                                a.style(if italic { ct::Style::Italic } else { ct::Style::Normal })
+                                            });
+                                        }
+                                        t.italic = self.text_italic;
+                                    }
+                                    return Task::none();
+                                }
+                                "u" => {
+                                    self.text_underline = !self.text_underline;
+                                    if let Some(preview) = self.viewport.preview_mut()
+                                        && let Some(t) = preview.as_any_mut().downcast_mut::<TextPreview>()
+                                    {
+                                        if t.has_selection() {
+                                            let underline = self.text_underline;
+                                            t.apply_attr_to_selection(|a| {
+                                                a.metadata(if underline { 1 } else { 0 })
+                                            });
+                                        }
+                                        t.underline = self.text_underline;
+                                    }
+                                    return Task::none();
+                                }
+                                "a" => {
+                                    if let Some(preview) = self.viewport.preview_mut()
+                                        && let Some(t) = preview.as_any_mut().downcast_mut::<TextPreview>()
+                                    {
+                                        t.select_all();
+                                    }
+                                    return Task::none();
+                                }
+                                "c" => {
+                                    if let Some(preview) = self.viewport.preview_ref()
+                                        && let Some(t) = preview.as_any().downcast_ref::<TextPreview>()
+                                        && let Some(sel) = t.copy_selection()
+                                    {
+                                        return cosmic::iced::clipboard::write(sel);
+                                    }
+                                    return Task::none();
+                                }
+                                "v" => {
+                                    return cosmic::iced::clipboard::read().map(|opt| {
+                                        cosmic::Action::App(
+                                            ViewerMessage::TextPaste(opt.unwrap_or_default()),
+                                        )
+                                    });
+                                }
+                                "x" => {
+                                    if let Some(preview) = self.viewport.preview_ref()
+                                        && let Some(t) = preview.as_any().downcast_ref::<TextPreview>()
+                                        && let Some(sel) = t.copy_selection()
+                                    {
+                                        let task = cosmic::iced::clipboard::write(sel);
+                                        if let Some(preview) = self.viewport.preview_mut()
+                                            && let Some(t) = preview.as_any_mut().downcast_mut::<TextPreview>()
+                                        {
+                                            t.delete_selection();
+                                        }
+                                        return task;
+                                    }
+                                    return Task::none();
+                                }
+                                _ => {}
+                            }
+                        }
+                        return Task::none();
+                    }
+
                     match &key {
+                        Key::Named(Named::Enter) if shift => {
+                            if let Some(preview) = preview {
+                                preview.editor_action(ct::Action::Enter);
+                            }
+                        }
+                        Key::Named(Named::Enter) | Key::Named(Named::Escape) => {
+                            if self.color_picker.get_is_active() {
+                                _ = self.color_picker.update::<ViewerMessage>(
+                                    cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
+                                );
+                            }
+                            self.viewport.apply_tool();
+                            self.text_editing = false;
+                            self.text_bold = false;
+                            self.text_italic = false;
+                            self.text_underline = false;
+                            self.viewport.set_active_tool(Some(ToolKind::Annotate));
+                            self.viewport.set_preview(Some(Box::new(TextPreview::new(
+                                self.annotate_color.0,
+                                self.text_font_size,
+                                self.text_font_family,
+                                false,
+                                false,
+                                false,
+                                self.text_alignment,
+                            ))));
+                        }
                         Key::Named(Named::Backspace) => {
                             if let Some(preview) = preview {
-                                preview.pop_char();
+                                preview.editor_action(ct::Action::Backspace);
+                            }
+                        }
+                        Key::Named(Named::Delete) => {
+                            if let Some(preview) = preview {
+                                preview.editor_action(ct::Action::Delete);
+                            }
+                        }
+                        Key::Named(Named::ArrowLeft) => {
+                            if let Some(preview) = preview {
+                                preview.motion_with_shift(ct::Motion::Left, shift);
+                            }
+                        }
+                        Key::Named(Named::ArrowRight) => {
+                            if let Some(preview) = preview {
+                                preview.motion_with_shift(ct::Motion::Right, shift);
+                            }
+                        }
+                        Key::Named(Named::ArrowUp) => {
+                            if let Some(preview) = preview {
+                                preview.motion_with_shift(ct::Motion::Up, shift);
+                            }
+                        }
+                        Key::Named(Named::ArrowDown) => {
+                            if let Some(preview) = preview {
+                                preview.motion_with_shift(ct::Motion::Down, shift);
+                            }
+                        }
+                        Key::Named(Named::Home) => {
+                            if let Some(preview) = preview {
+                                preview.motion_with_shift(ct::Motion::Home, shift);
+                            }
+                        }
+                        Key::Named(Named::End) => {
+                            if let Some(preview) = preview {
+                                preview.motion_with_shift(ct::Motion::End, shift);
                             }
                         }
                         Key::Character(c) if c.as_str() == " " => {
                             if let Some(preview) = preview {
-                                preview.push_char(' ');
+                                preview.insert_with_attrs(" ");
                             }
-                        }
-                        Key::Named(Named::Enter) => {
-                            self.viewport.apply_tool();
-                            self.text_editing = false;
-                            self.viewport.set_active_tool(Some(ToolKind::Annotate));
-                            self.viewport.set_preview(Some(Box::new(TextPreview::new(
-                                self.annotate_color.0,
-                                self.text_font_size,
-                                self.text_font_family,
-                                self.text_bold,
-                                self.text_italic,
-                                self.text_underline,
-                                self.text_alignment,
-                            ))));
-                        }
-                        Key::Named(Named::Escape) => {
-                            self.text_editing = false;
-                            self.viewport.set_active_tool(Some(ToolKind::Annotate));
-                            self.viewport.set_preview(Some(Box::new(TextPreview::new(
-                                self.annotate_color.0,
-                                self.text_font_size,
-                                self.text_font_family,
-                                self.text_bold,
-                                self.text_italic,
-                                self.text_underline,
-                                self.text_alignment,
-                            ))));
                         }
                         _ => {
                             if let Some(txt) = &text
-                                && preview.is_some()
                                 && let Some(preview) = preview
                             {
                                 for ch in txt.chars() {
-                                    preview.push_char(ch);
+                                    let mut buf = [0u8; 4];
+                                    preview.insert_with_attrs(ch.encode_utf8(&mut buf));
                                 }
                             }
                         }
+                    }
+
+                    let is_modifier = matches!(
+                        key,
+                        Key::Named(
+                            Named::Shift
+                                | Named::Control
+                                | Named::Alt
+                                | Named::Super
+                                | Named::CapsLock
+                        )
+                    );
+                    if !is_modifier
+                        && let Some(preview) = self.viewport.preview_mut()
+                        && let Some(t) = preview.as_any_mut().downcast_mut::<TextPreview>()
+                    {
+                        t.sync_format_at_cursor();
+                        self.text_bold = t.bold;
+                        self.text_italic = t.italic;
+                        self.text_underline = t.underline;
+                        self.text_font_size = t.font_size;
+                        self.text_font_family = t.font_family;
+                        self.text_font_index = self.font_families.iter().position(|&f| f == t.font_family);
+                        self.annotate_color = AnnotateColor(t.color);
                     }
                 } else if !self.core().nav_bar_active()
                     && matches!(key, Key::Named(Named::ArrowLeft))
@@ -1919,6 +2196,12 @@ impl Application for CosmicViewer {
                         self.grid.set_selected(vec![idx]);
 
                         self.viewport.cancel_tool();
+                        self.text_editing = false;
+                        if self.color_picker.get_is_active() {
+                            _ = self.color_picker.update::<ViewerMessage>(
+                                cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
+                            );
+                        }
 
                         if let Some(cached) = self.cache.get_full(&path) {
                             self.viewport.revert_all();
@@ -2068,15 +2351,55 @@ impl Application for CosmicViewer {
                         return Task::none();
                     }
 
-                    // Text tool: commit current text on second click, then
-                    // check if clicking an existing text to re-edit, or place new
                     if matches!(self.annotate_tool, AnnotateTool::Text) {
                         if self.text_editing {
+                            let on_box = self
+                                .viewport
+                                .preview_ref()
+                                .and_then(|p| p.as_any().downcast_ref::<TextPreview>())
+                                .is_some_and(|t| {
+                                    t.hit_test_handle(point) != TextDragHandle::None
+                                });
+
+                            if on_box {
+                                if let Some(size) = self.viewport.image_size()
+                                    && let Some(preview) = self.viewport.preview_mut()
+                                {
+                                    preview.on_press(point, size);
+                                    self.viewport.tool_dragging = true;
+                                }
+                                if let Some(preview) = self.viewport.preview_mut()
+                                    && let Some(t) = preview.as_any_mut().downcast_mut::<TextPreview>()
+                                {
+                                    t.sync_format_at_cursor();
+                                    self.text_bold = t.bold;
+                                    self.text_italic = t.italic;
+                                    self.text_underline = t.underline;
+                                }
+                                return Task::none();
+                            }
+
+                            if self.color_picker.get_is_active() {
+                                _ = self.color_picker.update::<ViewerMessage>(
+                                    cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
+                                );
+                            }
                             self.viewport.apply_tool();
                             self.text_editing = false;
+                            self.viewport.set_active_tool(Some(ToolKind::Annotate));
+                            self.viewport.set_preview(Some(Box::new(TextPreview::new(
+                                self.annotate_color.0,
+                                self.text_font_size,
+                                self.text_font_family,
+                                self.text_bold,
+                                self.text_italic,
+                                self.text_underline,
+                                self.text_alignment,
+                            ))));
+                            self.viewport.rebuild_display();
+                            return Task::none();
                         }
 
-                        // Check if clicking on a committed TextOperation to re-edit
                         let re_edit = {
                             let ops = self.viewport.operations_mut();
                             let hit = ops.iter().rposition(|op| {
@@ -2223,6 +2546,14 @@ impl Application for CosmicViewer {
                         self.viewport.set_preview(None);
                     }
                     EditMessage::AnnotateCancel => {
+                        if self.text_editing {
+                            if self.color_picker.get_is_active() {
+                                _ = self.color_picker.update::<ViewerMessage>(
+                                    cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
+                                );
+                            }
+                            self.text_editing = false;
+                        }
                         self.viewport.cancel_tool();
                         self.viewport.revert_all();
                         self.viewport.set_active_tool(None);
@@ -2365,8 +2696,21 @@ impl Application for CosmicViewer {
                                 preview.as_any_mut().downcast_mut::<TextPreview>()
                             {
                                 text.color = color.0;
+                                if text.has_selection() {
+                                    use cosmic::iced_widget::graphics::text::cosmic_text as ct;
+                                    let c = color.0;
+                                    text.apply_attr_to_selection(|a| {
+                                        a.color(ct::Color::rgba(
+                                            (c.r * 255.0) as u8,
+                                            (c.g * 255.0) as u8,
+                                            (c.b * 255.0) as u8,
+                                            (c.a * 255.0) as u8,
+                                        ))
+                                    });
+                                }
                             }
                         }
+                        self.viewport.rebuild_display();
                     }
                     EditMessage::Crop => {
                         if self.viewport.active_tool() != Some(ToolKind::Crop) {
@@ -2529,38 +2873,99 @@ impl Application for CosmicViewer {
                                 }
                             }
                         }
+
+                        if let Some(preview) = self.viewport.preview_mut() {
+                            if let Some(text) =
+                                preview.as_any_mut().downcast_mut::<TextPreview>()
+                            {
+                                text.color = self.annotate_color.0;
+                                if text.has_selection() {
+                                    use cosmic::iced_widget::graphics::text::cosmic_text as ct;
+                                    let c = self.annotate_color.0;
+                                    text.apply_attr_to_selection(|a| {
+                                        a.color(ct::Color::rgba(
+                                            (c.r * 255.0) as u8,
+                                            (c.g * 255.0) as u8,
+                                            (c.b * 255.0) as u8,
+                                            (c.a * 255.0) as u8,
+                                        ))
+                                    });
+                                }
+                            } else if let Some(pen) =
+                                preview.as_any_mut().downcast_mut::<PenPreview>()
+                            {
+                                pen.color = self.annotate_color.0;
+                            } else if let Some(pencil) =
+                                preview.as_any_mut().downcast_mut::<PencilPreview>()
+                            {
+                                pencil.color = self.annotate_color.0;
+                            } else if let Some(highlighter) =
+                                preview.as_any_mut().downcast_mut::<HighlighterPreview>()
+                            {
+                                highlighter.color = self.annotate_color.0;
+                            } else if let Some(shape) =
+                                preview.as_any_mut().downcast_mut::<ShapePreview>()
+                            {
+                                shape.color = self.annotate_color.0;
+                            }
+                        }
+                        self.viewport.rebuild_display();
                     }
                     EditMessage::TextBold => {
+                        use cosmic::iced_widget::graphics::text::cosmic_text as ct;
                         self.text_bold = !self.text_bold;
                         if let Some(preview) = self.viewport.preview_mut()
                             && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
                         {
+                            if text.has_selection() {
+                                let bold = self.text_bold;
+                                text.apply_attr_to_selection(|a| {
+                                    a.weight(if bold { ct::Weight::BOLD } else { ct::Weight::NORMAL })
+                                });
+                            }
                             text.bold = self.text_bold;
                         }
+                        self.viewport.rebuild_display();
                     }
                     EditMessage::TextItalic => {
+                        use cosmic::iced_widget::graphics::text::cosmic_text as ct;
                         self.text_italic = !self.text_italic;
                         if let Some(preview) = self.viewport.preview_mut()
                             && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
                         {
+                            if text.has_selection() {
+                                let italic = self.text_italic;
+                                text.apply_attr_to_selection(|a| {
+                                    a.style(if italic { ct::Style::Italic } else { ct::Style::Normal })
+                                });
+                            }
                             text.italic = self.text_italic;
                         }
+                        self.viewport.rebuild_display();
                     }
                     EditMessage::TextUnderline => {
                         self.text_underline = !self.text_underline;
                         if let Some(preview) = self.viewport.preview_mut()
                             && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
                         {
+                            if text.has_selection() {
+                                let underline = self.text_underline;
+                                text.apply_attr_to_selection(|a| {
+                                    a.metadata(if underline { 1 } else { 0 })
+                                });
+                            }
                             text.underline = self.text_underline;
                         }
+                        self.viewport.rebuild_display();
                     }
                     EditMessage::TextAlignment(alignment) => {
                         self.text_alignment = alignment;
                         if let Some(preview) = self.viewport.preview_mut()
                             && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
                         {
-                            text.alignment = self.text_alignment;
+                            text.set_line_alignment(alignment);
                         }
+                        self.viewport.rebuild_display();
                     }
                     EditMessage::TextFontSize(idx) => {
                         let sizes = [12.0_f32, 16.0, 20.0, 24.0, 32.0, 48.0, 64.0];
@@ -2570,17 +2975,27 @@ impl Application for CosmicViewer {
                                 && let Some(text) =
                                     preview.as_any_mut().downcast_mut::<TextPreview>()
                             {
-                                text.font_size = size;
+                                text.update_font_size(size);
                             }
+                            self.viewport.rebuild_display();
                         }
                     }
                     EditMessage::TextFontFamily(idx) => {
                         self.text_font_index = Some(idx);
+                        let fam = self.font_families[idx];
+                        self.text_font_family = fam;
                         if let Some(preview) = self.viewport.preview_mut()
                             && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
                         {
-                            text.font_family = self.font_families[idx];
+                            if text.has_selection() {
+                                use cosmic::iced_widget::graphics::text::cosmic_text as ct;
+                                text.apply_attr_to_selection(|a| {
+                                    a.family(ct::Family::Name(fam))
+                                });
+                            }
+                            text.font_family = fam;
                         }
+                        self.viewport.rebuild_display();
                     }
                     EditMessage::TextCancel => {
                         self.viewport.cancel_tool();
@@ -2618,6 +3033,8 @@ impl Application for CosmicViewer {
                                 }
 
                                 self.rebuild_working_image();
+                            } else {
+                                self.viewport.rebuild_display();
                             }
                         }
                     }
@@ -2640,6 +3057,8 @@ impl Application for CosmicViewer {
                                 }
 
                                 self.rebuild_working_image();
+                            } else {
+                                self.viewport.rebuild_display();
                             }
                         }
                     }
