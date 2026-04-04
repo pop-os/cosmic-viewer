@@ -32,5 +32,6 @@ features = [
   "wgpu",
   "a11y",
   "surface-message",
-  "rfd"
+  "rfd",
+  "wayland"
 ]
