@@ -22,10 +22,10 @@ use cosmic::{
         stack,
     },
     task::future,
-    theme::Button,
+    theme::{self, Button, Container},
     widget::{
-        self, Column, Id, Row, Space, Toast, Toasts, button,
-        color_picker::ColorPickerUpdate::{AppliedColor, Cancel, ToggleColorPicker},
+        self, Column, Id, Row, Space, Toast, Toasts, button, canvas,
+        color_picker::ColorPickerUpdate::{self, AppliedColor, Cancel, ToggleColorPicker},
         container, divider, dropdown, icon,
         menu::{KeyBind, menu_button},
         nav_bar, popover,
@@ -55,7 +55,7 @@ use viewer_tools::{
     crop::{CropOperation, CropRatio, CropSelection},
     rotate::{RotateDirection, RotateOperation},
 };
-use viewer_widgets::{GridItem, ImageGrid, image_grid::image_grid};
+use viewer_widgets::{GridItem, ImageGrid, dashed_shape::DashedBorder, image_grid::image_grid};
 
 pub struct CosmicViewer {
     core: Core,
@@ -90,6 +90,7 @@ pub struct CosmicViewer {
     shape_popup: bool,
     stroke_popup: bool,
     color_picker: cosmic::widget::ColorPickerModel,
+    has_custom_color: bool,
     selected_shape: AnnotateTool,
     window_width: Option<f32>,
     is_fullscreen: bool,
@@ -774,24 +775,59 @@ impl CosmicViewer {
             .get_applied_color()
             .unwrap_or(Color::BLACK);
         let is_custom_selected = !colors.contains(&self.annotate_color);
-        let color_picker_btn = button::custom(
-            container(Space::new().width(swatch_size).height(swatch_size)).class(
-                cosmic::theme::Container::custom(move |_theme| container::Style {
+
+        let inner: Element<'_, ViewerMessage> = if is_custom_selected {
+            let filled = container(Space::new().width(swatch_size).height(swatch_size)).class(
+                theme::Container::custom(move |_theme| container::Style {
                     background: Some(Background::Color(custom_color)),
                     border: Border {
                         radius: (swatch_size / 2.0).into(),
-                        width: if is_custom_selected { 2.0 } else { 0.0 },
-                        color: accent,
+                        ..Default::default()
                     },
                     ..Default::default()
                 }),
-            ),
-        )
-        .padding(2)
-        .class(cosmic::theme::Button::Icon)
-        .on_press(ViewerMessage::Edit(EditMessage::ColorPicker(
-            cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
-        )));
+            );
+
+            let dashed_accent = DashedBorder::circle(accent, 2.0).dash_pattern(3.0, 3.0);
+
+            let border_layer = canvas(dashed_accent)
+                .width(Length::Fixed(swatch_size))
+                .height(Length::Fixed(swatch_size));
+
+            stack!()
+                .push(filled)
+                .push(border_layer)
+                .width(Length::Fixed(swatch_size))
+                .height(Length::Fixed(swatch_size))
+                .into()
+        } else {
+            let neutral: Color = theme::active().cosmic().palette.neutral_5.into();
+            let dashed = DashedBorder::circle(Color { ..neutral }, 2.0).dash_pattern(3.0, 3.0);
+
+            let canvas_bg = canvas(dashed)
+                .width(Length::Fixed(swatch_size))
+                .height(Length::Fixed(swatch_size));
+
+            let add_icon = container(icon::from_name("list-add-symbolic").size(10).icon())
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill);
+
+            stack!()
+                .push(canvas_bg)
+                .push(add_icon)
+                .width(Length::Fixed(swatch_size))
+                .height(Length::Fixed(swatch_size))
+                .into()
+        };
+
+        let color_picker_btn = button::custom(inner)
+            .padding(2)
+            .class(theme::Button::Icon)
+            .on_press(ViewerMessage::Edit(EditMessage::ColorPicker(
+                ToggleColorPicker,
+            )));
 
         let mut color_picker_popover = popover(color_picker_btn);
         if self.color_picker.get_is_active() {
@@ -1272,6 +1308,7 @@ impl Application for CosmicViewer {
             )
             .width(Length::Fixed(248.0))
             .height(Length::Fixed(148.0)),
+            has_custom_color: false,
             selected_shape: AnnotateTool::Rectangle,
             text_font_family: default_family,
             text_font_index: font_index,
@@ -3021,20 +3058,33 @@ impl Application for CosmicViewer {
                                         .map(|_| Action::None),
                                 );
                             }
+                            ColorPickerUpdate::ActionFinished => {
+                                if let Some(color) = self.color_picker.get_applied_color() {
+                                    self.annotate_color = AnnotateColor(color);
+                                    self.has_custom_color = true;
+                                }
+
+                                tasks.push(
+                                    self.color_picker
+                                        .update::<ViewerMessage>(update)
+                                        .map(|_| Action::None),
+                                );
+
+                                // ActionFinished auto-closes the picker in the model;
+                                // reopen it so the user can keep adjusting until they
+                                // are explicitly done.
+                                if !self.color_picker.get_is_active() {
+                                    _ = self
+                                        .color_picker
+                                        .update::<ViewerMessage>(ToggleColorPicker);
+                                }
+                            }
                             _ => {
                                 tasks.push(
                                     self.color_picker
                                         .update::<ViewerMessage>(update)
                                         .map(|_| Action::None),
                                 );
-                                // ActionFinished auto-closes the picker in the model;
-                                // reopen it so the user can keep adjusting until they
-                                // are explcitly done.
-                                if !self.color_picker.get_is_active() {
-                                    _ = self
-                                        .color_picker
-                                        .update::<ViewerMessage>(ToggleColorPicker);
-                                }
                             }
                         }
 

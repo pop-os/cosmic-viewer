@@ -1,3 +1,4 @@
+pub mod dashed_shape;
 pub mod image_grid;
 
 // Re-exports
