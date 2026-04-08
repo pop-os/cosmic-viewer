@@ -187,15 +187,15 @@ pub fn init_keybinds() -> HashMap<KeyBind, MenuAction> {
 
     binds.insert(
         KeyBind {
-            modifiers: vec![],
-            key: Key::Character("+".into()),
+            modifiers: vec![Modifier::Shift],
+            key: Key::Character("=".into()),
         },
         MenuAction::ZoomIn,
     );
 
     binds.insert(
         KeyBind {
-            modifiers: vec![],
+            modifiers: vec![Modifier::Shift],
             key: Key::Character("-".into()),
         },
         MenuAction::ZoomOut,
