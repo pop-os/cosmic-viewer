@@ -89,7 +89,6 @@ pub struct CosmicViewer {
     stroke_popup: bool,
     color_picker: cosmic::widget::ColorPickerModel,
     selected_shape: AnnotateTool,
-    toolbar_overflow_open: bool,
     window_width: Option<f32>,
     is_fullscreen: bool,
     wallpaper_dialog: Option<PathBuf>,
@@ -472,7 +471,6 @@ impl CosmicViewer {
         let zoom_pct = format!("{}%", (self.viewport.zoom() * 100.0).round() as u32);
 
         responsive_toolbar(mode)
-            .overflow_open(self.toolbar_overflow_open)
             .start(
                 ToolbarItem::new(icon_btn(
                     "markup-symbolic",
@@ -707,6 +705,7 @@ impl CosmicViewer {
             .on_press_maybe(can_redo.then(|| ViewerMessage::Edit(EditMessage::Redo)));
 
         let mut toolbar = responsive_toolbar(mode)
+            .available_width(self.window_width.unwrap_or(0.0))
             .start(ToolbarItem::new(undo_btn))
             .start(ToolbarItem::new(redo_btn))
             .start(ToolbarItem::new(
@@ -1283,7 +1282,6 @@ impl Application for CosmicViewer {
             text_italic: false,
             text_underline: false,
             text_alignment: Horizontal::Left,
-            toolbar_overflow_open: false,
             window_width: Some(0.0),
             is_fullscreen: false,
             wallpaper_dialog: None,
@@ -1951,9 +1949,7 @@ impl Application for CosmicViewer {
                 }
             }
             ViewerMessage::CloseToast(toast_id) => self.toasts.remove(toast_id),
-            ViewerMessage::ToolbarOverflowToggle => {
-                self.toolbar_overflow_open = !self.toolbar_overflow_open;
-            }
+            ViewerMessage::ToolbarOverflowToggle => {}
             ViewerMessage::KeyPressed(key, modifiers, text) => {
                 if self.context_menu_position.is_some() && matches!(key, Key::Named(Named::Escape))
                 {

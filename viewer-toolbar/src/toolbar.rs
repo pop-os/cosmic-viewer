@@ -15,6 +15,7 @@ pub struct ResponsiveToolbar<'a, Message> {
     end: Vec<ToolbarItem<'a, Message>>,
     spacing: u16,
     mode: ToolbarMode,
+    available_width: Option<f32>,
 }
 
 impl<'a, Message: Clone + 'static> ResponsiveToolbar<'a, Message> {
@@ -26,6 +27,7 @@ impl<'a, Message: Clone + 'static> ResponsiveToolbar<'a, Message> {
             end: Vec::new(),
             spacing: spacing.space_xxs,
             mode,
+            available_width: None,
         }
     }
 
@@ -53,9 +55,9 @@ impl<'a, Message: Clone + 'static> ResponsiveToolbar<'a, Message> {
         self
     }
 
-    /// Kept for API compatibility, no longer used.
     #[must_use]
-    pub fn overflow_open(self, _open: bool) -> Self {
+    pub fn available_width(mut self, width: f32) -> Self {
+        self.available_width = Some(width);
         self
     }
 
@@ -79,7 +81,34 @@ impl<'a, Message: Clone + 'static> ResponsiveToolbar<'a, Message> {
         let has_center = !center.is_empty();
         let has_end = !end.is_empty();
 
-        match self.mode {
+        let mode = if self.mode == ToolbarMode::Full {
+            if let Some(available) = self.available_width {
+                let total_items = start.len() + center.len() + end.len();
+                let item_size = spacing.space_xl as f32;
+                let item_spacing = self.spacing as f32;
+                let divider_count = [has_start, has_center, has_end]
+                    .iter()
+                    .filter(|div| **div)
+                    .count()
+                    .saturating_sub(1);
+                let padding = spacing.space_s as f32 * 2.0;
+                let needed = total_items as f32 * (item_size + item_spacing)
+                    + divider_count as f32 * (1.0 + item_spacing)
+                    + padding;
+
+                if available < needed {
+                    ToolbarMode::Compact
+                } else {
+                    ToolbarMode::Full
+                }
+            } else {
+                ToolbarMode::Full
+            }
+        } else {
+            self.mode
+        };
+
+        match mode {
             ToolbarMode::Full => {
                 // Single row: start | center | end
                 let mut toolbar_row = row::with_capacity(8)
