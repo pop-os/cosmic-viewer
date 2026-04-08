@@ -22,10 +22,13 @@ use cosmic::{
         stack,
     },
     task::future,
+    theme::Button,
     widget::{
         self, Column, Id, Row, Space, Toast, Toasts, button, container, divider, dropdown, icon,
         menu::{KeyBind, menu_button},
-        nav_bar, popover, text, toaster,
+        nav_bar, popover,
+        space::horizontal,
+        text, toaster,
     },
 };
 use image::DynamicImage;
@@ -1036,31 +1039,48 @@ impl CosmicViewer {
 
     fn build_shape_selector(&self) -> Element<'_, ViewerMessage> {
         let current_icon = self.selected_shape.icon_name();
-        let trigger = button::icon(icon::from_name(current_icon))
-            .on_press(ViewerMessage::Edit(EditMessage::ShapePopupToggle));
+        let trigger = button::custom(
+            Row::new()
+                .push(icon::from_name(current_icon).size(16).icon())
+                .push(icon::from_name("pan-down-symbolic").size(12).icon())
+                .align_y(Alignment::Center)
+                .spacing(2),
+        )
+        .class(Button::Icon)
+        .on_press(ViewerMessage::Edit(EditMessage::ShapePopupToggle));
 
         let mut pop = popover(trigger);
 
         if self.shape_popup {
-            let make_btn = |tool: AnnotateTool| -> Element<'_, ViewerMessage> {
-                button::icon(icon::from_name(tool.icon_name()))
-                    .class(if tool == self.annotate_tool {
-                        cosmic::theme::Button::Suggested
+            let make_btn = |tool: AnnotateTool, label: String| -> Element<'_, ViewerMessage> {
+                let is_selected = tool == self.annotate_tool;
+                let item = Row::new()
+                    .push((icon::from_name(tool.icon_name())).size(16).icon())
+                    .push(text::body(label))
+                    .push(if is_selected {
+                        Element::from(icon::from_name("object-select-symbolic").size(16).icon())
                     } else {
-                        cosmic::theme::Button::Icon
+                        Element::from(horizontal().width(16))
                     })
+                    .align_y(Alignment::Center)
+                    .spacing(8)
+                    .width(Length::Shrink);
+
+                button::custom(item)
+                    .class(Button::Icon)
+                    .width(Length::Shrink)
                     .on_press(ViewerMessage::Edit(EditMessage::AnnotateTool(tool)))
                     .into()
             };
 
             let list = Column::new()
-                .push(make_btn(AnnotateTool::Rectangle))
-                .push(make_btn(AnnotateTool::Ellipse))
-                .push(make_btn(AnnotateTool::Arrow))
-                .push(make_btn(AnnotateTool::Line))
-                .push(make_btn(AnnotateTool::Star))
-                .push(make_btn(AnnotateTool::Polygon))
-                .spacing(4);
+                .push(make_btn(AnnotateTool::Rectangle, fl!("shapes-rectangle")))
+                .push(make_btn(AnnotateTool::Ellipse, fl!("shapes-ellipse")))
+                .push(make_btn(AnnotateTool::Arrow, fl!("shapes-arrow")))
+                .push(make_btn(AnnotateTool::Line, fl!("shapes-line")))
+                .push(make_btn(AnnotateTool::Star, fl!("shapes-star")))
+                .push(make_btn(AnnotateTool::Polygon, fl!("shapes-polygon")))
+                .spacing(2);
 
             let popup = container(list).padding(8).style(|theme| {
                 let cosmic = theme.cosmic();
@@ -1877,11 +1897,6 @@ impl Application for CosmicViewer {
             }
             ViewerMessage::UndoTrash(id, recently_trashed) => {
                 self.toasts.remove(id);
-
-                let show_hidden = self.config.show_hidden_files;
-                let sort_mode = self.config.sort_mode;
-                let sort_order = self.config.sort_order;
-                let dir = self.nav.dir().map(|dir| dir.to_path_buf());
 
                 tasks.push(future(async move {
                     // Rescan trash to find matching TrashItem entries
