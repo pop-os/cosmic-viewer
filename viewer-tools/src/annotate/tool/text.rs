@@ -71,8 +71,6 @@ pub(crate) const MIN_BOX_WIDTH: f32 = 40.0;
 pub(crate) const MIN_BOX_HEIGHT: f32 = 20.0;
 pub(crate) const DEFAULT_BOX_WIDTH: f32 = 200.0;
 pub(crate) const LINE_HEIGHT_FACTOR: f32 = 1.2;
-// iced canvas::Text uses LineHeight::Relative(1.4) by default
-pub(crate) const CANVAS_LINE_HEIGHT: f32 = 1.4;
 const DRAG_THRESHOLD: f32 = 5.0;
 
 #[derive(Debug, Clone)]

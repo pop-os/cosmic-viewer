@@ -563,7 +563,6 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                         shell.publish(on_activate(idx));
                     }
                     shell.capture_event();
-                    return;
                 }
             }
             Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) => {
@@ -630,7 +629,6 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                         }
                     }
                     shell.capture_event();
-                    return;
                 }
             }
             _ => {}
