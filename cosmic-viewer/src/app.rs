@@ -2628,7 +2628,6 @@ impl Application for CosmicViewer {
                                 op.translate(dx, dy);
                             }
                             self.move_start = Some(point);
-                            self.viewport.rebuild_display();
                         }
                     } else if let Some(size) = self.viewport.image_size()
                         && let Some(preview) = self.viewport.preview_mut()
