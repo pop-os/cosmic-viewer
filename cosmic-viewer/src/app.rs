@@ -666,11 +666,15 @@ impl CosmicViewer {
                 fl!("toolbar-cancel"),
                 ViewerMessage::Edit(EditMessage::CropCancel),
             )))
-            .end(ToolbarItem::new(icon_btn(
-                "object-select-symbolic",
-                fl!("toolbar-apply"),
-                ViewerMessage::Edit(EditMessage::CropApply),
-            )))
+            .end(ToolbarItem::new(
+                button::standard(fl!("toolbar-cancel"))
+                    .on_press(ViewerMessage::Edit(EditMessage::CropCancel)),
+            ))
+            .end(ToolbarItem::new(
+                button::icon(icon::from_name("object-select-symbolic"))
+                    .tooltip(fl!("toolbar-apply"))
+                    .on_press(ViewerMessage::Edit(EditMessage::CropApply)),
+            ))
             .view(|| ViewerMessage::ToolbarOverflowToggle)
     }
 
@@ -827,11 +831,16 @@ impl CosmicViewer {
 
         toolbar = toolbar.center(ToolbarItem::new(color_picker_popover));
 
-        toolbar = toolbar.end(ToolbarItem::new(icon_btn(
-            "window-close-symbolic",
-            fl!("toolbar-cancel"),
-            ViewerMessage::Edit(EditMessage::AnnotateCancel),
-        )));
+        toolbar = toolbar.end(ToolbarItem::new(
+            button::standard(fl!("toolbar-cancel"))
+                .on_press(ViewerMessage::Edit(EditMessage::AnnotateCancel)),
+        ));
+
+        toolbar = toolbar.end(ToolbarItem::new(
+            button::icon(icon::from_name("object-select-symbolic"))
+                .tooltip(fl!("toolbar-apply"))
+                .on_press(ViewerMessage::Edit(EditMessage::AnnotateApply)),
+        ));
 
         toolbar.view(|| ViewerMessage::ToolbarOverflowToggle)
     }
@@ -2348,9 +2357,10 @@ impl Application for CosmicViewer {
                         }
 
                         if let Some(path) = self.nav.current().cloned()
-                            && self.cache.get_full(&path).is_none() {
-                                tasks.push(self.load_full_image(path));
-                            }
+                            && self.cache.get_full(&path).is_none()
+                        {
+                            tasks.push(self.load_full_image(path));
+                        }
                     }
                 }
             },
@@ -2700,16 +2710,17 @@ impl Application for CosmicViewer {
                         self.viewport.set_preview(None);
                         // Restore working image from cache so rotation etc. still works
                         if let Some(path) = self.nav.current().cloned()
-                            && let Some(cached) = self.cache.get_full(&path) {
-                                self.viewport.set_image(
-                                    Some(CanvasImage {
-                                        handle: cached.handle,
-                                        width: cached.width,
-                                        height: cached.height,
-                                    }),
-                                    Some(cached.image.clone()),
-                                );
-                            }
+                            && let Some(cached) = self.cache.get_full(&path)
+                        {
+                            self.viewport.set_image(
+                                Some(CanvasImage {
+                                    handle: cached.handle,
+                                    width: cached.width,
+                                    height: cached.height,
+                                }),
+                                Some(cached.image.clone()),
+                            );
+                        }
                     }
                     EditMessage::AnnotateStroke(size) => {
                         if self.annotate_tool == AnnotateTool::Highlighter {
@@ -3006,10 +3017,11 @@ impl Application for CosmicViewer {
                             ToggleColorPicker => {
                                 // Closing via toggle — apply the color
                                 if was_active
-                                    && let Some(color) = self.color_picker.get_applied_color() {
-                                        self.annotate_color = AnnotateColor(color);
-                                        self.save_last_color();
-                                    }
+                                    && let Some(color) = self.color_picker.get_applied_color()
+                                {
+                                    self.annotate_color = AnnotateColor(color);
+                                    self.save_last_color();
+                                }
                                 tasks.push(
                                     self.color_picker
                                         .update::<ViewerMessage>(update)
