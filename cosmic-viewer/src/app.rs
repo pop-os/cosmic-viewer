@@ -24,7 +24,9 @@ use cosmic::{
     task::future,
     theme::Button,
     widget::{
-        self, Column, Id, Row, Space, Toast, Toasts, button, container, divider, dropdown, icon,
+        self, Column, Id, Row, Space, Toast, Toasts, button,
+        color_picker::ColorPickerUpdate::{AppliedColor, Cancel, ToggleColorPicker},
+        container, divider, dropdown, icon,
         menu::{KeyBind, menu_button},
         nav_bar, popover,
         space::horizontal,
@@ -797,12 +799,10 @@ impl CosmicViewer {
                 .color_picker
                 .builder(|u| ViewerMessage::Edit(EditMessage::ColorPicker(u)))
                 .reset_label("Reset to default")
-                .save_label("Apply")
-                .cancel_label("Cancel")
                 .build("Recent colors", "Copy", "Copied!");
 
             let popup = container(picker)
-                .padding(4)
+                .padding(12)
                 .max_width(260.0)
                 .style(|theme| {
                     let cosmic = theme.cosmic();
@@ -820,7 +820,10 @@ impl CosmicViewer {
 
             color_picker_popover = color_picker_popover
                 .popup(popup)
-                .position(popover::Position::Point(Point::new(-110.0, 0.0)));
+                .position(popover::Position::Point(Point::new(-110.0, 0.0)))
+                .on_close(ViewerMessage::Edit(EditMessage::ColorPicker(
+                    ToggleColorPicker,
+                )));
         }
 
         toolbar = toolbar.center(ToolbarItem::new(color_picker_popover));
@@ -2973,7 +2976,6 @@ impl Application for CosmicViewer {
                     EditMessage::ShapePopupToggle => self.shape_popup = !self.shape_popup,
                     EditMessage::StrokePopupToggle => self.stroke_popup = !self.stroke_popup,
                     EditMessage::ColorPicker(update) => {
-                        use cosmic::widget::color_picker::ColorPickerUpdate::*;
                         let was_active = self.color_picker.get_is_active();
 
                         match &update {
@@ -3026,7 +3028,8 @@ impl Application for CosmicViewer {
                                         .map(|_| Action::None),
                                 );
                                 // ActionFinished auto-closes the picker in the model;
-                                // reopen it so the user can keep adjusting
+                                // reopen it so the user can keep adjusting until they
+                                // are explcitly done.
                                 if !self.color_picker.get_is_active() {
                                     _ = self
                                         .color_picker
