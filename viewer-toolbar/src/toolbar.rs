@@ -61,10 +61,7 @@ impl<'a, Message: Clone + 'static> ResponsiveToolbar<'a, Message> {
         self
     }
 
-    pub fn view<F>(self, _toggle_overflow: F) -> Element<'a, Message>
-    where
-        F: Fn() -> Message + 'static,
-    {
+    pub fn view(self) -> Element<'a, Message> {
         let spacing = cosmic::theme::active().cosmic().spacing;
 
         let start: Vec<_> = self.start.into_iter().map(|i| i.element).collect();

@@ -56,7 +56,6 @@ pub enum ViewerMessage {
     Cancelled,
     Quit,
     Nav(NavMessage),
-    ToolbarOverflowToggle,
     WindowResized(Size),
     KeyPressed(Key, Modifiers, Option<SmolStr>),
     Image(ImageMessage),

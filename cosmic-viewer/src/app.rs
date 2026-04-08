@@ -22,7 +22,7 @@ use cosmic::{
         stack,
     },
     task::future,
-    theme::{self, Button, Container},
+    theme::{self, Button},
     widget::{
         self, Column, Id, Row, Space, Toast, Toasts, button, canvas,
         color_picker::ColorPickerUpdate::{self, AppliedColor, Cancel, ToggleColorPicker},
@@ -539,7 +539,7 @@ impl CosmicViewer {
                 ))
                 .priority(ItemPriority::Essential),
             )
-            .view(|| ViewerMessage::ToolbarOverflowToggle)
+            .view()
     }
 
     fn build_crop_ratio_selector(&self) -> Element<'_, ViewerMessage> {
@@ -671,7 +671,7 @@ impl CosmicViewer {
                     .tooltip(fl!("toolbar-apply"))
                     .on_press(ViewerMessage::Edit(EditMessage::CropApply)),
             ))
-            .view(|| ViewerMessage::ToolbarOverflowToggle)
+            .view()
     }
 
     fn build_annotate_toolbar(&self) -> Element<'_, ViewerMessage> {
@@ -875,7 +875,7 @@ impl CosmicViewer {
                 .on_press(ViewerMessage::Edit(EditMessage::AnnotateApply)),
         ));
 
-        toolbar.view(|| ViewerMessage::ToolbarOverflowToggle)
+        toolbar.view()
     }
 
     fn build_text_format_popup(&self, popup_below: bool) -> Element<'_, ViewerMessage> {
@@ -1984,7 +1984,6 @@ impl Application for CosmicViewer {
                 }
             }
             ViewerMessage::CloseToast(toast_id) => self.toasts.remove(toast_id),
-            ViewerMessage::ToolbarOverflowToggle => {}
             ViewerMessage::KeyPressed(key, modifiers, text) => {
                 if self.context_menu_position.is_some() && matches!(key, Key::Named(Named::Escape))
                 {

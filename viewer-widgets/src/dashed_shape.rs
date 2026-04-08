@@ -2,7 +2,7 @@ use cosmic::{
     Renderer, Theme,
     iced::{
         Color, Point, Rectangle, Size, border,
-        mouse::{self, Cursor},
+        mouse::Cursor,
     },
     iced_widget::canvas::{self, Frame, Geometry, LineDash, Path, Program, Stroke},
 };
