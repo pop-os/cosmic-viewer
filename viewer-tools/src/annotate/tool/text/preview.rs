@@ -139,7 +139,7 @@ impl TextPreview {
             editor.shape_as_needed(font_sys.raw(), false);
 
             let scale = self.last_scale.get();
-            let content_h: f32 = editor.with_buffer(|buf| content_height(buf)) / scale;
+            let content_h: f32 = editor.with_buffer(content_height) / scale;
             if content_h > self.bounding_box.height {
                 self.bounding_box.height = content_h;
             }
@@ -342,7 +342,7 @@ impl TextPreview {
         if let Some(editor) = &mut self.editor {
             let scale = self.last_scale.get();
             let min_h = self.font_size * LINE_HEIGHT_FACTOR / scale;
-            let content_h: f32 = editor.with_buffer(|buf| content_height(buf)) / scale;
+            let content_h: f32 = editor.with_buffer(content_height) / scale;
             self.bounding_box.height = content_h.max(min_h);
 
             editor.with_buffer_mut(|buf| {
@@ -362,7 +362,7 @@ impl TextPreview {
 
             // Fit box height to content
             let min_h = self.font_size * LINE_HEIGHT_FACTOR / scale;
-            let content_h: f32 = editor.with_buffer(|buf| content_height(buf)) / scale;
+            let content_h: f32 = editor.with_buffer(content_height) / scale;
             self.bounding_box.height = content_h.max(min_h);
 
             editor.with_buffer_mut(|buf| {
@@ -528,7 +528,7 @@ impl TextPreview {
             });
             editor.shape_as_needed(font_sys.raw(), false);
 
-            let content_h: f32 = editor.with_buffer(|buf| content_height(buf)) / scale;
+            let content_h: f32 = editor.with_buffer(content_height) / scale;
 
             let width_only = matches!(
                 self.active_handle,

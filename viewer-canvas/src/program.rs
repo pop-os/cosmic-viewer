@@ -32,9 +32,7 @@ impl<'a> Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'a> {
         bounds: Rectangle,
         cursor: Cursor,
     ) -> Option<Action<CanvasMessage>> {
-        let Some(position) = cursor.position_in(bounds) else {
-            return None;
-        };
+        let position = cursor.position_in(bounds)?;
 
         match event {
             Event::Mouse(mouse_event) => match mouse_event {

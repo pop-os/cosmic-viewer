@@ -220,10 +220,10 @@ impl CosmicViewer {
             .filter(|path| {
                 self.cache.get_thumbnail(path).is_none() && !self.cache.is_thumbnail_pending(path)
             })
-            .cloned()
             .map(|path| {
                 self.cache.set_thumbnail_pending(path.clone());
                 let cache = self.cache.clone();
+                let path = path.clone();
                 future(async move {
                     match load_thumbnail(path.clone(), max_size).await {
                         Ok(loaded) => {
@@ -257,10 +257,10 @@ impl CosmicViewer {
             .filter(|path| {
                 self.cache.get_thumbnail(path).is_none() && !self.cache.is_thumbnail_pending(path)
             })
-            .cloned()
             .map(|path| {
                 self.cache.set_thumbnail_pending(path.clone());
                 let cache = self.cache.clone();
+                let path = path.clone();
                 future(async move {
                     match load_thumbnail(path.clone(), max_size).await {
                         Ok(loaded) => {
@@ -773,7 +773,7 @@ impl CosmicViewer {
             .color_picker
             .get_applied_color()
             .unwrap_or(Color::BLACK);
-        let is_custom_selected = !colors.iter().any(|c| *c == self.annotate_color);
+        let is_custom_selected = !colors.contains(&self.annotate_color);
         let color_picker_btn = button::custom(
             container(Space::new().width(swatch_size).height(swatch_size)).class(
                 cosmic::theme::Container::custom(move |_theme| container::Style {
@@ -1535,10 +1535,10 @@ impl Application for CosmicViewer {
             )
             .on_press(ViewerMessage::CloseWallpaperDialog);
 
-            return toaster(&self.toasts, stack![view, backdrop, dialog]).into();
+            return toaster(&self.toasts, stack![view, backdrop, dialog]);
         }
 
-        toaster(&self.toasts, view).into()
+        toaster(&self.toasts, view)
     }
 
     fn update(&mut self, message: Self::Message) -> Task<Action<Self::Message>> {
@@ -2347,11 +2347,10 @@ impl Application for CosmicViewer {
                             tasks.push(self.load_remaining_thumbnails());
                         }
 
-                        if let Some(path) = self.nav.current().cloned() {
-                            if self.cache.get_full(&path).is_none() {
+                        if let Some(path) = self.nav.current().cloned()
+                            && self.cache.get_full(&path).is_none() {
                                 tasks.push(self.load_full_image(path));
                             }
-                        }
                     }
                 }
             },
@@ -2700,8 +2699,8 @@ impl Application for CosmicViewer {
                         self.viewport.set_active_tool(None);
                         self.viewport.set_preview(None);
                         // Restore working image from cache so rotation etc. still works
-                        if let Some(path) = self.nav.current().cloned() {
-                            if let Some(cached) = self.cache.get_full(&path) {
+                        if let Some(path) = self.nav.current().cloned()
+                            && let Some(cached) = self.cache.get_full(&path) {
                                 self.viewport.set_image(
                                     Some(CanvasImage {
                                         handle: cached.handle,
@@ -2711,7 +2710,6 @@ impl Application for CosmicViewer {
                                     Some(cached.image.clone()),
                                 );
                             }
-                        }
                     }
                     EditMessage::AnnotateStroke(size) => {
                         if self.annotate_tool == AnnotateTool::Highlighter {
@@ -2911,7 +2909,10 @@ impl Application for CosmicViewer {
                         }
                     }
                     EditMessage::RotateLeft => {
-                        self.viewport.cancel_tool();
+                        let is_cropping = self.viewport.active_tool() == Some(ToolKind::Crop);
+                        if !is_cropping {
+                            self.viewport.cancel_tool();
+                        }
                         let direction = RotateDirection::Left;
                         let image_size = self.viewport.image_size().unwrap_or(Size::ZERO);
 
@@ -2926,9 +2927,22 @@ impl Application for CosmicViewer {
                             *img = img.rotate270();
                         }
                         self.viewport.rebuild_display();
+
+                        if is_cropping {
+                            let new_size = self.viewport.image_size().unwrap_or(Size::ZERO);
+                            if let Some(preview) = self.viewport.preview_mut()
+                                && let Some(crop) =
+                                    preview.as_any_mut().downcast_mut::<CropSelection>()
+                            {
+                                crop.activate(self.crop_ratio, new_size);
+                            }
+                        }
                     }
                     EditMessage::RotateRight => {
-                        self.viewport.cancel_tool();
+                        let is_cropping = self.viewport.active_tool() == Some(ToolKind::Crop);
+                        if !is_cropping {
+                            self.viewport.cancel_tool();
+                        }
                         let direction = RotateDirection::Right;
                         let image_size = self.viewport.image_size().unwrap_or(Size::ZERO);
 
@@ -2943,6 +2957,16 @@ impl Application for CosmicViewer {
                             *img = img.rotate90();
                         }
                         self.viewport.rebuild_display();
+
+                        if is_cropping {
+                            let new_size = self.viewport.image_size().unwrap_or(Size::ZERO);
+                            if let Some(preview) = self.viewport.preview_mut()
+                                && let Some(crop) =
+                                    preview.as_any_mut().downcast_mut::<CropSelection>()
+                            {
+                                crop.activate(self.crop_ratio, new_size);
+                            }
+                        }
                     }
                     EditMessage::ShapePopupToggle => self.shape_popup = !self.shape_popup,
                     EditMessage::StrokePopupToggle => self.stroke_popup = !self.stroke_popup,
@@ -2981,12 +3005,11 @@ impl Application for CosmicViewer {
                             }
                             ToggleColorPicker => {
                                 // Closing via toggle — apply the color
-                                if was_active {
-                                    if let Some(color) = self.color_picker.get_applied_color() {
+                                if was_active
+                                    && let Some(color) = self.color_picker.get_applied_color() {
                                         self.annotate_color = AnnotateColor(color);
                                         self.save_last_color();
                                     }
-                                }
                                 tasks.push(
                                     self.color_picker
                                         .update::<ViewerMessage>(update)
