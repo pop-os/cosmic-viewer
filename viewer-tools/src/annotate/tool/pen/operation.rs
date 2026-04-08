@@ -21,7 +21,7 @@ pub struct PenOperation {
 }
 
 impl ToolOperation for PenOperation {
-    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, _scale: f32) {
         if self.points.len() < 2 {
             return;
         }
@@ -37,7 +37,7 @@ impl ToolOperation for PenOperation {
             &path,
             Stroke::default()
                 .with_color(self.color)
-                .with_width(self.width / scale),
+                .with_width(self.width),
         );
     }
 

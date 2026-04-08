@@ -28,7 +28,7 @@ pub(crate) fn draw_shape(
     color: Color,
     width: f32,
     frame: &mut Frame<Renderer>,
-    scale: f32,
+    _scale: f32,
 ) {
     let path = build_path(kind, start, end);
 
@@ -39,17 +39,13 @@ pub(crate) fn draw_shape(
         ShapeKind::Arrow => {
             // Stroke the shaft, fill the arrowhead
             let shaft = Path::line(start, end);
-            let stroke = Stroke::default()
-                .with_color(color)
-                .with_width(width / scale);
+            let stroke = Stroke::default().with_color(color).with_width(width);
             frame.stroke(&shaft, stroke);
             let head = arrow_head_path(start, end);
             frame.fill(&head, Fill::from(color));
         }
         _ => {
-            let stroke = Stroke::default()
-                .with_color(color)
-                .with_width(width / scale);
+            let stroke = Stroke::default().with_color(color).with_width(width);
             frame.stroke(&path, stroke);
         }
     }
