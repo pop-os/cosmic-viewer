@@ -37,7 +37,6 @@ pub enum MenuAction {
     Fullscreen,
     SetWallpaper,
     MoveToTrash,
-    DeletePermanently,
     About,
 }
 
@@ -74,7 +73,6 @@ impl MenuAction {
             MenuAction::RevertAll => ViewerMessage::Edit(EditMessage::RevertAll),
             MenuAction::SetWallpaper => ViewerMessage::SetWallpaper,
             MenuAction::MoveToTrash => ViewerMessage::MoveToTrash,
-            MenuAction::DeletePermanently => ViewerMessage::DeletePermanently,
         }
     }
 }

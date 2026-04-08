@@ -8,7 +8,6 @@ pub mod text;
 pub enum AnnotateTool {
     #[default]
     Pen,
-    Pencil,
     Highlighter,
     Text,
     Rectangle,
@@ -22,7 +21,7 @@ pub enum AnnotateTool {
 impl AnnotateTool {
     /// Presets shown in each dropdown group.
     pub fn draw_tools() -> &'static [AnnotateTool] {
-        &[AnnotateTool::Pen, AnnotateTool::Pencil]
+        &[AnnotateTool::Pen]
     }
 
     pub fn shape_tools() -> &'static [AnnotateTool] {
@@ -38,8 +37,7 @@ impl AnnotateTool {
 
     pub fn icon_name(&self) -> &'static str {
         match self {
-            Self::Pen => "pen-symbolic",
-            Self::Pencil => "pencil-symbolic",
+            Self::Pen => "insert-drawing-symbolic",
             Self::Highlighter => "text-highlight-symbolic",
             Self::Text => "insert-text-symbolic",
             Self::Rectangle => "insert-rectangle-symbolic",
