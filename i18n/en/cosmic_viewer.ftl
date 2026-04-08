@@ -23,10 +23,8 @@ wallpaper-dialog-title = Set as wallpaper
 wallpaper-all-displays = All displays
 wallpaper-cancel = Cancel
 
-# Delete dialog
-delete-dialog-title = Delete permanently?
-delete-confirm = Delete
-delete-cancel = Cancel
+# Toast
+toast-undo = Undo
 
 # Menu - Edit
 menu-edit = Edit

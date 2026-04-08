@@ -5,9 +5,10 @@ use cosmic::{
         keyboard::{Key, Modifiers},
     },
     iced_core::SmolStr,
-    widget::color_picker::ColorPickerUpdate,
+    widget::{ToastId, color_picker::ColorPickerUpdate},
 };
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
+use trash::TrashItem;
 use viewer_canvas::CanvasMessage;
 use viewer_tools::{
     annotate::{AnnotateColor, AnnotateTool},
@@ -47,11 +48,11 @@ pub enum ViewerMessage {
     SetWallpaperOn(PathBuf, WallpaperTarget),
     CloseWallpaperDialog,
     WallpaperResult(Result<(), String>),
+    CloseToast(ToastId),
     MoveToTrash,
-    DeletePermanently,
-    ConfirmDelete(PathBuf),
-    CloseDeleteDialog,
-    DeleteResult(Result<(), String>),
+    UndoTrash(ToastId, Arc<[PathBuf]>),
+    UndoTrashStart(Vec<TrashItem>),
+    TrashResult(Result<(), String>),
     Cancelled,
     Quit,
     Nav(NavMessage),

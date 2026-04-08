@@ -75,11 +75,6 @@ fn build_file_menu(recent_folders: &[String]) -> Vec<menu::Item<MenuAction, Stri
         None,
         MenuAction::MoveToTrash,
     ));
-    items.push(menu::Item::Button(
-        fl!("menu-delete-permanently"),
-        None,
-        MenuAction::DeletePermanently,
-    ));
 
     items.push(menu::Item::Divider);
 
