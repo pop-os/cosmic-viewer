@@ -659,11 +659,6 @@ impl CosmicViewer {
                 divider::vertical::light().height(Length::Fixed(32.0)),
             ))
             .start(ToolbarItem::new(self.build_crop_ratio_selector()))
-            .end(ToolbarItem::new(icon_btn(
-                "window-close-symbolic",
-                fl!("toolbar-cancel"),
-                ViewerMessage::Edit(EditMessage::CropCancel),
-            )))
             .end(ToolbarItem::new(
                 button::standard(fl!("toolbar-cancel"))
                     .on_press(ViewerMessage::Edit(EditMessage::CropCancel)),
