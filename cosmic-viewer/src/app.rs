@@ -103,7 +103,7 @@ pub struct CosmicViewer {
 impl CosmicViewer {
     fn is_narrow(&self) -> bool {
         let nav_width = self.config.thumbnail_size.pixels() as f32 + 36.0;
-        let threshold = nav_width + 360.0;
+        let threshold = nav_width + 200.0;
         self.window_width.map(|w| w < threshold).unwrap_or(false)
     }
 
