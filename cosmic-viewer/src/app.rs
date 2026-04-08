@@ -711,12 +711,12 @@ impl CosmicViewer {
                 ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Text)),
             )))
             .start(ToolbarItem::new(icon_btn(
-                "pen-symbolic",
+                "insert-drawing-symbolic",
                 fl!("drawing-pen"),
                 ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::draw_tools()[0])),
             )))
             .start(ToolbarItem::new(icon_btn(
-                "insert-drawing-symbolic",
+                "text-highlight-symbolic",
                 fl!("drawing-highlighter"),
                 ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Highlighter)),
             )))
@@ -2615,10 +2615,6 @@ impl Application for CosmicViewer {
                                 self.annotate_color.0,
                                 self.highlighter_stroke_size,
                             )),
-                            AnnotateTool::Pencil => Box::new(PencilPreview::new(
-                                self.annotate_color.0,
-                                self.annotate_stroke_size,
-                            )),
                             AnnotateTool::Rectangle
                             | AnnotateTool::Ellipse
                             | AnnotateTool::Line
@@ -2753,12 +2749,6 @@ impl Application for CosmicViewer {
                             }
                             AnnotateTool::Pen => {
                                 self.viewport.set_preview(Some(Box::new(PenPreview::new(
-                                    self.annotate_color.0,
-                                    self.annotate_stroke_size,
-                                ))));
-                            }
-                            AnnotateTool::Pencil => {
-                                self.viewport.set_preview(Some(Box::new(PencilPreview::new(
                                     self.annotate_color.0,
                                     self.annotate_stroke_size,
                                 ))));
