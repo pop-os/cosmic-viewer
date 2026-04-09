@@ -87,6 +87,7 @@ pub struct CosmicViewer {
     text_italic: bool,
     text_underline: bool,
     text_alignment: Horizontal,
+    show_text_format_menu: bool,
     shape_popup: bool,
     stroke_popup: bool,
     color_picker: cosmic::widget::ColorPickerModel,
@@ -740,7 +741,13 @@ impl CosmicViewer {
                     .into();
                 el
             }))
-            .center(ToolbarItem::new(self.build_stroke_selector()));
+            .center(ToolbarItem::new(
+                if matches!(self.annotate_tool, AnnotateTool::Text) {
+                    self.build_text_format_dropdown()
+                } else {
+                    self.build_stroke_selector()
+                },
+            ));
 
         let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
         let swatch_size = 14.0;
@@ -878,190 +885,6 @@ impl CosmicViewer {
         toolbar.view()
     }
 
-    fn build_text_format_popup(&self, popup_below: bool) -> Element<'_, ViewerMessage> {
-        let font_sizes = vec!["12pt", "16pt", "20pt", "24pt", "32pt", "48pt", "64pt"];
-        let font_size_values = [12.0_f32, 16.0, 20.0, 24.0, 32.0, 48.0, 64.0];
-        let font_size_selected = font_size_values
-            .iter()
-            .position(|s| *s == self.text_font_size);
-
-        let font_dropdown = Row::new()
-            .push(icon::from_name("font-symbolic").size(16).icon())
-            .push(dropdown(&self.font_families, self.text_font_index, |idx| {
-                ViewerMessage::Edit(EditMessage::TextFontFamily(idx))
-            }))
-            .push(dropdown(font_sizes, font_size_selected, |idx| {
-                ViewerMessage::Edit(EditMessage::TextFontSize(idx))
-            }))
-            .align_y(Alignment::Center)
-            .spacing(4);
-
-        let bold_btn = button::icon(icon::from_name("format-text-bold-symbolic"))
-            .class(if self.text_bold {
-                cosmic::theme::Button::Suggested
-            } else {
-                cosmic::theme::Button::Icon
-            })
-            .on_press(ViewerMessage::Edit(EditMessage::TextBold));
-
-        let italic_btn = button::icon(icon::from_name("format-text-italic-symbolic"))
-            .class(if self.text_italic {
-                cosmic::theme::Button::Suggested
-            } else {
-                cosmic::theme::Button::Icon
-            })
-            .on_press(ViewerMessage::Edit(EditMessage::TextItalic));
-
-        let underline_btn = button::icon(icon::from_name("format-text-underline-symbolic"))
-            .class(if self.text_underline {
-                cosmic::theme::Button::Suggested
-            } else {
-                cosmic::theme::Button::Icon
-            })
-            .on_press(ViewerMessage::Edit(EditMessage::TextUnderline));
-
-        let align_left = button::icon(icon::from_name("format-justify-left-symbolic"))
-            .class(if self.text_alignment == Horizontal::Left {
-                cosmic::theme::Button::Suggested
-            } else {
-                cosmic::theme::Button::Icon
-            })
-            .on_press(ViewerMessage::Edit(EditMessage::TextAlignment(
-                Horizontal::Left,
-            )));
-        let align_center = button::icon(icon::from_name("format-justify-center-symbolic"))
-            .class(if self.text_alignment == Horizontal::Center {
-                cosmic::theme::Button::Suggested
-            } else {
-                cosmic::theme::Button::Icon
-            })
-            .on_press(ViewerMessage::Edit(EditMessage::TextAlignment(
-                Horizontal::Center,
-            )));
-        let align_right = button::icon(icon::from_name("format-justify-right-symbolic"))
-            .class(if self.text_alignment == Horizontal::Right {
-                cosmic::theme::Button::Suggested
-            } else {
-                cosmic::theme::Button::Icon
-            })
-            .on_press(ViewerMessage::Edit(EditMessage::TextAlignment(
-                Horizontal::Right,
-            )));
-
-        let cancel_btn = button::icon(icon::from_name("window-close-symbolic"))
-            .on_press(ViewerMessage::Edit(EditMessage::TextCancel));
-        let apply_btn = button::icon(icon::from_name("object-select-symbolic"))
-            .on_press(ViewerMessage::Edit(EditMessage::TextApply));
-
-        let swatch_size = 14.0;
-        let swatch_radius = swatch_size / 2.0;
-        let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
-        let colors = AnnotateColor::presets();
-        let mut color_row = Row::new().spacing(2);
-        for color in &colors {
-            let c = *color;
-            let is_selected = c == self.annotate_color;
-            color_row = color_row.push(
-                button::custom(
-                    container(Space::new().width(swatch_size).height(swatch_size)).class(
-                        cosmic::style::Container::custom(move |_theme| container::Style {
-                            background: Some(Background::Color(c.0)),
-                            border: Border {
-                                radius: swatch_radius.into(),
-                                width: if is_selected { 2.0 } else { 1.0 },
-                                color: if is_selected {
-                                    accent
-                                } else {
-                                    Color::from_rgba(0.5, 0.5, 0.5, 0.5)
-                                },
-                            },
-                            ..Default::default()
-                        }),
-                    ),
-                )
-                .padding(2)
-                .class(cosmic::theme::Button::Icon)
-                .on_press(ViewerMessage::Edit(EditMessage::AnnotateColor(c))),
-            );
-        }
-
-        let custom_color = self
-            .color_picker
-            .get_applied_color()
-            .unwrap_or(Color::BLACK);
-        let is_custom = !colors.contains(&self.annotate_color);
-        let picker_btn = button::custom(
-            container(Space::new().width(swatch_size).height(swatch_size)).class(
-                cosmic::style::Container::custom(move |_theme| container::Style {
-                    background: Some(Background::Color(custom_color)),
-                    border: Border {
-                        radius: swatch_radius.into(),
-                        width: if is_custom { 2.0 } else { 0.0 },
-                        color: accent,
-                    },
-                    ..Default::default()
-                }),
-            ),
-        )
-        .padding(2)
-        .class(cosmic::theme::Button::Icon)
-        .on_press(ViewerMessage::Edit(EditMessage::ColorPicker(
-            cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
-        )));
-
-        let mut picker_popover = popover(picker_btn);
-        if self.color_picker.get_is_active() {
-            let picker = self
-                .color_picker
-                .builder(|u| ViewerMessage::Edit(EditMessage::ColorPicker(u)))
-                .reset_label("Reset to default")
-                .save_label("Apply")
-                .cancel_label("Cancel")
-                .build("Recent colors", "Copy", "Copied!");
-
-            let popup = container(picker)
-                .padding(4)
-                .max_width(260.0)
-                .style(Self::popup_style);
-
-            let picker_y = if popup_below { 24.0 } else { -360.0 };
-            picker_popover = picker_popover
-                .popup(popup)
-                .position(popover::Position::Point(Point::new(-110.0, picker_y)));
-        }
-        color_row = color_row.push(picker_popover);
-
-        container(
-            Column::new()
-                .push(
-                    Row::new()
-                        .push(font_dropdown)
-                        .push(color_row)
-                        .align_y(Alignment::Center)
-                        .spacing(8),
-                )
-                .push(
-                    Row::new()
-                        .push(bold_btn)
-                        .push(italic_btn)
-                        .push(underline_btn)
-                        .push(Space::new().width(8))
-                        .push(align_left)
-                        .push(align_center)
-                        .push(align_right)
-                        .push(Space::new().width(8))
-                        .push(apply_btn)
-                        .push(cancel_btn)
-                        .spacing(2),
-                )
-                .spacing(6)
-                .padding(8),
-        )
-        .style(Self::popup_style)
-        .width(Length::Shrink)
-        .into()
-    }
-
     fn flatten_image(&self) -> Option<DynamicImage> {
         let base = if let Some(working) = self.viewport.working_image() {
             working.clone()
@@ -1147,6 +970,119 @@ impl CosmicViewer {
         }
 
         pop.into()
+    }
+
+    fn build_text_format_dropdown(&self) -> Element<'_, ViewerMessage> {
+        let trigger = button::custom(
+            Row::new()
+                .push(text("Aa"))
+                .push(icon::from_name("pan-down-symbolic").size(12).icon())
+                .align_y(Alignment::Center)
+                .spacing(2),
+        )
+        .class(theme::Button::Icon)
+        .on_press(ViewerMessage::Edit(EditMessage::ToggleTextFormatMenu));
+
+        let mut format_popover = popover(trigger);
+
+        if self.show_text_format_menu {
+            let font_sizes = vec!["12pt", "16pt", "20pt", "24pt", "32pt", "48pt", "64pt"];
+            let font_size_values = [12.0_f32, 16.0, 20.0, 24.0, 32.0, 48.0, 64.0];
+            let font_size_selected = font_size_values
+                .iter()
+                .position(|s| *s == self.text_font_size);
+
+            let font_row = Row::new()
+                .push(dropdown(&self.font_families, self.text_font_index, |idx| {
+                    ViewerMessage::Edit(EditMessage::TextFontFamily(idx))
+                }))
+                .push(dropdown(font_sizes, font_size_selected, |idx| {
+                    ViewerMessage::Edit(EditMessage::TextFontSize(idx))
+                }))
+                .align_y(Alignment::Center)
+                .spacing(4);
+
+            let style_row = Row::new()
+                .push(
+                    button::icon(icon::from_name("format-text-bold-symbolic"))
+                        .class(if self.text_bold {
+                            Button::Suggested
+                        } else {
+                            Button::Icon
+                        })
+                        .on_press(ViewerMessage::Edit(EditMessage::TextBold)),
+                )
+                .push(
+                    button::icon(icon::from_name("format-text-italic-symbolic"))
+                        .class(if self.text_italic {
+                            Button::Suggested
+                        } else {
+                            Button::Icon
+                        })
+                        .on_press(ViewerMessage::Edit(EditMessage::TextItalic)),
+                )
+                .push(
+                    button::icon(icon::from_name("format-text-underline-symbolic"))
+                        .class(if self.text_underline {
+                            Button::Suggested
+                        } else {
+                            Button::Icon
+                        })
+                        .on_press(ViewerMessage::Edit(EditMessage::TextUnderline)),
+                )
+                .push(Space::new().width(8))
+                .push(
+                    button::icon(icon::from_name("format-justify-left-symbolic"))
+                        .class(if self.text_alignment == Horizontal::Left {
+                            Button::Suggested
+                        } else {
+                            Button::Icon
+                        })
+                        .on_press(ViewerMessage::Edit(EditMessage::TextAlignment(
+                            Horizontal::Left,
+                        ))),
+                )
+                .push(
+                    button::icon(icon::from_name("format-justify-center-symbolic"))
+                        .class(if self.text_alignment == Horizontal::Center {
+                            Button::Suggested
+                        } else {
+                            Button::Icon
+                        })
+                        .on_press(ViewerMessage::Edit(EditMessage::TextAlignment(
+                            Horizontal::Center,
+                        ))),
+                )
+                .push(
+                    button::icon(icon::from_name("format-justify-right-symbolic"))
+                        .class(if self.text_alignment == Horizontal::Right {
+                            Button::Suggested
+                        } else {
+                            Button::Icon
+                        })
+                        .on_press(ViewerMessage::Edit(EditMessage::TextAlignment(
+                            Horizontal::Right,
+                        ))),
+                )
+                .spacing(2);
+
+            let popup = container(
+                Column::new()
+                    .push(font_row)
+                    .push(style_row)
+                    .spacing(6)
+                    .padding(8),
+            )
+            .style(Self::popup_style)
+            .width(Length::Shrink);
+
+            format_popover = format_popover
+                .popup(popup)
+                .position(popover::Position::Bottom)
+                .on_close(ViewerMessage::Edit(EditMessage::ToggleTextFormatMenu));
+        }
+
+        format_popover.into()
     }
 
     fn build_stroke_selector(&self) -> Element<'_, ViewerMessage> {
@@ -1317,6 +1253,7 @@ impl Application for CosmicViewer {
             text_italic: false,
             text_underline: false,
             text_alignment: Horizontal::Left,
+            show_text_format_menu: false,
             window_width: Some(0.0),
             is_fullscreen: false,
             wallpaper_dialog: None,
@@ -1466,67 +1403,6 @@ impl Application for CosmicViewer {
                 .popup(self.build_context_menu_element())
                 .position(widget::popover::Position::Point(point))
                 .on_close(ViewerMessage::Canvas(CanvasMessage::ContextMenu(None)));
-        } else if self.text_editing {
-            let bounds = self.viewport.last_bounds();
-            if let Some(preview) = self.viewport.preview_ref()
-                && let Some(text) = preview.as_any().downcast_ref::<TextPreview>()
-                && text.bounding_box.width > 1.0
-            {
-                let bb = text.bounding_box;
-                let canvas = bounds.get();
-                let popup_h = 120.0;
-                let margin = 8.0;
-
-                let top = self.viewport.image_to_screen(bb.position(), canvas);
-                let bottom = self
-                    .viewport
-                    .image_to_screen(Point::new(bb.x, bb.y + bb.height), canvas);
-                let right = self
-                    .viewport
-                    .image_to_screen(Point::new(bb.x + bb.width, bb.y), canvas);
-
-                if let (Some(top_pt), Some(bot_pt), Some(right_pt)) = (top, bottom, right) {
-                    let popup_w = 420.0;
-                    let gap = 10.0;
-
-                    let fits_below = bot_pt.y + popup_h + gap < canvas.height - margin;
-                    let fits_above = top_pt.y - popup_h - gap >= margin;
-                    let fits_right = right_pt.x + popup_w + gap < canvas.width - margin;
-                    let fits_left = top_pt.x - popup_w - gap >= margin;
-
-                    let (x, y, popup_below) = if fits_below {
-                        let x = top_pt
-                            .x
-                            .clamp(margin, (canvas.width - popup_w - margin).max(margin));
-                        (x, bot_pt.y + gap, true)
-                    } else if fits_above {
-                        let x = top_pt
-                            .x
-                            .clamp(margin, (canvas.width - popup_w - margin).max(margin));
-                        (x, top_pt.y - popup_h - gap, false)
-                    } else if fits_right {
-                        let y = top_pt
-                            .y
-                            .clamp(margin, (canvas.height - popup_h - margin).max(margin));
-                        (right_pt.x + gap, y, true)
-                    } else if fits_left {
-                        let y = top_pt
-                            .y
-                            .clamp(margin, (canvas.height - popup_h - margin).max(margin));
-                        (top_pt.x - popup_w - gap, y, false)
-                    } else {
-                        (
-                            (canvas.width - popup_w - margin).max(margin),
-                            (canvas.height - popup_h - margin).max(margin),
-                            true,
-                        )
-                    };
-
-                    pop = pop
-                        .popup(self.build_text_format_popup(popup_below))
-                        .position(popover::Position::Point(Point::new(x, y)));
-                }
-            }
         }
 
         let view: Element<'_, Self::Message> = pop.into();
@@ -2792,6 +2668,7 @@ impl Application for CosmicViewer {
                     }
                     EditMessage::AnnotateTool(tool) => {
                         self.annotate_tool = tool;
+                        self.show_text_format_menu = false;
                         match tool {
                             AnnotateTool::Highlighter => {
                                 self.viewport
@@ -3120,6 +2997,9 @@ impl Application for CosmicViewer {
                             }
                         }
                         self.viewport.rebuild_display();
+                    }
+                    EditMessage::ToggleTextFormatMenu => {
+                        self.show_text_format_menu = !self.show_text_format_menu;
                     }
                     EditMessage::TextBold => {
                         use cosmic::iced_widget::graphics::text::cosmic_text as ct;
