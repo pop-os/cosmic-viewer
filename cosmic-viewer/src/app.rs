@@ -688,11 +688,10 @@ impl CosmicViewer {
         let icon_btn = |name: &'static str,
                         tooltip: String,
                         msg: ViewerMessage|
-         -> Element<'_, ViewerMessage> {
+         -> button::IconButton<ViewerMessage> {
             button::icon(icon::from_name(name))
                 .tooltip(tooltip)
                 .on_press(msg)
-                .into()
         };
 
         let can_undo = self.viewport.can_undo();
@@ -713,21 +712,42 @@ impl CosmicViewer {
             .start(ToolbarItem::new(
                 divider::vertical::light().height(Length::Fixed(32.0)),
             ))
-            .start(ToolbarItem::new(icon_btn(
-                "insert-text-symbolic",
-                fl!("text-tool"),
-                ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Text)),
-            )))
-            .start(ToolbarItem::new(icon_btn(
-                "insert-drawing-symbolic",
-                fl!("drawing-pen"),
-                ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::draw_tools()[0])),
-            )))
-            .start(ToolbarItem::new(icon_btn(
-                "text-highlight-symbolic",
-                fl!("drawing-highlighter"),
-                ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Highlighter)),
-            )))
+            .start(ToolbarItem::new(
+                icon_btn(
+                    "insert-text-symbolic",
+                    fl!("text-tool"),
+                    ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Text)),
+                )
+                .class(if self.annotate_tool == AnnotateTool::Text {
+                    theme::Button::Suggested
+                } else {
+                    theme::Button::Icon
+                }),
+            ))
+            .start(ToolbarItem::new(
+                icon_btn(
+                    "insert-drawing-symbolic",
+                    fl!("drawing-pen"),
+                    ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::draw_tools()[0])),
+                )
+                .class(if self.annotate_tool == AnnotateTool::draw_tools()[0] {
+                    theme::Button::Suggested
+                } else {
+                    theme::Button::Icon
+                }),
+            ))
+            .start(ToolbarItem::new(
+                icon_btn(
+                    "text-highlight-symbolic",
+                    fl!("drawing-highlighter"),
+                    ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Highlighter)),
+                )
+                .class(if self.annotate_tool == AnnotateTool::Highlighter {
+                    theme::Button::Suggested
+                } else {
+                    theme::Button::Icon
+                }),
+            ))
             .start(ToolbarItem::new(self.build_shape_selector()))
             .start(ToolbarItem::new({
                 let has_movable =
@@ -735,7 +755,7 @@ impl CosmicViewer {
                 let mut btn = button::icon(icon::from_name("object-move-symbolic"))
                     .tooltip(fl!("toolbar-move"));
                 if self.move_mode {
-                    btn = btn.class(cosmic::theme::Button::Suggested);
+                    btn = btn.class(theme::Button::Suggested);
                 }
                 let el: Element<'_, ViewerMessage> = btn
                     .on_press_maybe(
@@ -907,6 +927,7 @@ impl CosmicViewer {
 
     fn build_shape_selector(&self) -> Element<'_, ViewerMessage> {
         let current_icon = self.selected_shape.icon_name();
+
         let trigger = button::custom(
             Row::new()
                 .push(icon::from_name(current_icon).size(16).icon())
@@ -914,7 +935,11 @@ impl CosmicViewer {
                 .align_y(Alignment::Center)
                 .spacing(2),
         )
-        .class(Button::Icon)
+        .class(if self.annotate_tool.icon_name() == current_icon {
+            theme::Button::Suggested
+        } else {
+            theme::Button::Icon
+        })
         .on_press(ViewerMessage::Edit(EditMessage::ShapePopupToggle));
 
         let mut pop = popover(trigger);
