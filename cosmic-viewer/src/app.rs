@@ -2346,7 +2346,12 @@ impl Application for CosmicViewer {
                 }
                 CanvasMessage::ZoomOut => {
                     let old_zoom = self.viewport.zoom();
-                    let new_zoom = (old_zoom / 1.25).max(0.1);
+                    let floor = if self.viewport.active_tool() == Some(ToolKind::Crop) {
+                        1.0
+                    } else {
+                        0.1
+                    };
+                    let new_zoom = (old_zoom / 1.25).max(floor);
                     if let Some(size) = self.viewport.image_size()
                         && let Some(preview) = self.viewport.preview_mut()
                     {
@@ -2354,10 +2359,28 @@ impl Application for CosmicViewer {
                     }
                     self.viewport.set_zoom(new_zoom);
                 }
-                CanvasMessage::Pan(pan) => self.viewport.set_pan(pan),
+                CanvasMessage::Pan(pan) => {
+                    if self.viewport.active_tool() == Some(ToolKind::Crop) {
+                        let bounds = self.viewport.last_bounds().get();
+                        if let Some(size) = self.viewport.image_size() {
+                            let fit_scale = (bounds.width / size.width)
+                                .min(bounds.height / size.height);
+                            let max_x = (size.width * fit_scale * (self.viewport.zoom() - 1.0)) / 2.0;
+                            let max_y = (size.height * fit_scale * (self.viewport.zoom() - 1.0)) / 2.0;
+                            self.viewport.set_pan(Vector::new(
+                                pan.x.clamp(-max_x, max_x),
+                                pan.y.clamp(-max_y, max_y),
+                            ));
+                        }
+                    } else {
+                        self.viewport.set_pan(pan);
+                    }
+                }
                 CanvasMessage::FitToView => {
-                    self.viewport.set_zoom(1.0);
-                    self.viewport.set_pan(Vector::ZERO);
+                    if self.viewport.active_tool() != Some(ToolKind::Crop) {
+                        self.viewport.set_zoom(1.0);
+                        self.viewport.set_pan(Vector::ZERO);
+                    }
                 }
                 CanvasMessage::Fullscreen => {
                     self.is_fullscreen = !self.is_fullscreen;
@@ -2771,6 +2794,10 @@ impl Application for CosmicViewer {
                     }
                     EditMessage::Crop => {
                         if self.viewport.active_tool() != Some(ToolKind::Crop) {
+                            if self.viewport.zoom() < 1.0 {
+                                self.viewport.set_zoom(1.0);
+                                self.viewport.set_pan(Vector::ZERO);
+                            }
                             self.viewport.set_active_tool(Some(ToolKind::Crop));
                             let mut selection = CropSelection::new();
                             if let Some(size) = self.viewport.image_size() {
@@ -2781,8 +2808,7 @@ impl Application for CosmicViewer {
                         }
                     }
                     EditMessage::CropApply => {
-                        // Grab the crop region from the live preview
-                        let region = self
+                        let fit_region = self
                             .viewport
                             .preview_mut()
                             .and_then(|preview| {
@@ -2790,16 +2816,40 @@ impl Application for CosmicViewer {
                             })
                             .map(|sel| sel.region);
 
-                        if let Some(region) = region {
-                            // Transform all existing operations
+                        if let Some(fit_region) = fit_region
+                            && let Some(size) = self.viewport.image_size()
+                        {
+                            let zoom = self.viewport.zoom();
+                            let pan = self.viewport.pan();
+                            let bounds = self.viewport.last_bounds().get();
+                            let fit_scale = (bounds.width / size.width)
+                                .min(bounds.height / size.height);
+
+                            let region = if zoom == 1.0 && pan == Vector::ZERO {
+                                fit_region
+                            } else {
+                                let cx = size.width / 2.0;
+                                let cy = size.height / 2.0;
+                                Rectangle::new(
+                                    Point::new(
+                                        fit_region.x / zoom + cx * (1.0 - 1.0 / zoom)
+                                            - pan.x / (zoom * fit_scale),
+                                        fit_region.y / zoom + cy * (1.0 - 1.0 / zoom)
+                                            - pan.y / (zoom * fit_scale),
+                                    ),
+                                    Size::new(
+                                        fit_region.width / zoom,
+                                        fit_region.height / zoom,
+                                    ),
+                                )
+                            };
+
                             for op in self.viewport.operations_mut() {
                                 op.transform_crop(region);
                             }
 
-                            // Commit the crop operation to the undo stack
                             self.viewport.apply_tool();
 
-                            // Crop the base image
                             if let Some(img) = self.viewport.working_image_mut() {
                                 *img = img.crop_imm(
                                     region.x as u32,

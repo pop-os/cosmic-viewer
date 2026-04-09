@@ -82,18 +82,12 @@ impl CropSelection {
         }
     }
 
-    /// Change the ratio while preserving the selection center.
+    /// Change the ratio, maximized to the full image size.
     pub fn set_ratio(&mut self, ratio: CropRatio, image_size: Size) {
-        let center = Point::new(
-            self.region.x + self.region.width / 2.0,
-            self.region.y + self.region.height / 2.0,
-        );
-
         self.ratio = ratio;
 
         if let Some(aspect) = ratio.resolve(image_size) {
-            // Recompute from center, constrained image bounds
-            let width = self.region.width;
+            let width = image_size.width;
             let height = width / aspect;
 
             let (width, height) = if height > image_size.height {
@@ -102,13 +96,13 @@ impl CropSelection {
                 (width, height)
             };
 
-            let x = (center.x - width / 2.0).clamp(0.0, image_size.width - width);
-            let y = (center.y - height / 2.0).clamp(0.0, image_size.height - height);
+            let x = (image_size.width - width) / 2.0;
+            let y = (image_size.height - height) / 2.0;
 
             self.region = Rectangle::new(Point::new(x, y), Size::new(width, height));
+        } else {
+            self.region = Rectangle::new(Point::ORIGIN, image_size);
         }
-
-        // Custom keeps the region as is
     }
 
     /// Begin a new selection from scratch at the given image-coordinate point
@@ -260,11 +254,6 @@ impl CropSelection {
             }
         }
 
-        // Interior
-        if region.contains(point) {
-            return DragHandle::Move;
-        }
-
         DragHandle::None
     }
 
@@ -402,11 +391,18 @@ impl ToolOperation for CropSelection {
         let handle = self.hit_test(point);
         if handle != DragHandle::None {
             self.start_handle_drag(handle, point);
-        } else if matches!(self.ratio, CropRatio::Custom) {
-            // Click outside region in Custom mode starts a new selection
+        } else if matches!(self.ratio, CropRatio::Custom) && !self.region.contains(point) {
             self.start_new(point);
         }
         self.active_handle.cursor()
+    }
+
+    fn bounds(&self) -> Option<Rectangle> {
+        if self.visible && self.region.width >= MIN_SIZE {
+            Some(self.region)
+        } else {
+            None
+        }
     }
 
     fn on_drag(&mut self, point: Point, image_size: Size) {

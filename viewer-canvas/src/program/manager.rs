@@ -33,6 +33,7 @@ pub struct ViewportManager {
     // Live preview for the active tool
     active_preview: Option<Box<dyn ToolOperation>>,
     last_bounds: Cell<Rectangle>,
+    crop_pan: Cell<Option<(Point, Vector)>>,
 }
 
 impl Default for ViewportManager {
@@ -54,6 +55,7 @@ impl ViewportManager {
             redo_stack: Vec::new(),
             active_preview: None,
             last_bounds: Cell::new(Rectangle::new(Point::new(0.0, 0.0), Size::ZERO)),
+            crop_pan: Cell::new(None),
         }
     }
 
@@ -263,6 +265,21 @@ impl ViewportManager {
         ))
     }
 
+    pub fn screen_to_image_fit(&self, point: Point, bounds: Rectangle) -> Option<Point> {
+        let image = self.image.as_ref()?;
+        let fit_scale =
+            (bounds.width / image.width as f32).min(bounds.height / image.height as f32);
+        let center_x = bounds.width / 2.0;
+        let center_y = bounds.height / 2.0;
+        let img_x = (point.x - center_x) / fit_scale + image.width as f32 / 2.0;
+        let img_y = (point.y - center_y) / fit_scale + image.height as f32 / 2.0;
+
+        Some(Point::new(
+            img_x.clamp(0.0, image.width as f32),
+            img_y.clamp(0.0, image.height as f32),
+        ))
+    }
+
     /// Convert a image coordinate to a screen space point.
     pub fn image_to_screen(&self, point: Point, bounds: Rectangle) -> Option<Point> {
         let image = self.image.as_ref()?;
@@ -333,12 +350,31 @@ impl<'a> Viewport<'a> {
     /// Overlay only canvas (tool overlays, no image).
     fn overlay_element(&self) -> Element<'_, CanvasMessage> {
         let mgr = self.manager;
+        let is_crop = mgr.active_tool == Some(ToolKind::Crop);
         let canvas = ViewerCanvas {
             image: mgr.image.as_ref(),
             zoom: mgr.zoom,
             pan: mgr.pan,
             active_tool: mgr.active_tool,
             operations: &mgr.operations,
+            preview: if is_crop { None } else { mgr.active_preview.as_deref() },
+            overlay_only: true,
+        };
+
+        widget::canvas(canvas)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    }
+
+    fn crop_overlay_element(&self) -> Element<'_, CanvasMessage> {
+        let mgr = self.manager;
+        let canvas = ViewerCanvas {
+            image: mgr.image.as_ref(),
+            zoom: 1.0,
+            pan: Vector::ZERO,
+            active_tool: mgr.active_tool,
+            operations: &[],
             preview: mgr.active_preview.as_deref(),
             overlay_only: true,
         };
@@ -408,11 +444,30 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
             );
         });
 
-        // Layer 2: Tool overlays
-        if !self.manager.operations.is_empty() || self.manager.active_preview.is_some() {
+        // Layer 2: Tool overlays (operations + non-crop preview)
+        let is_crop = self.manager.active_tool == Some(ToolKind::Crop);
+        if !self.manager.operations.is_empty()
+            || (self.manager.active_preview.is_some() && !is_crop)
+        {
             renderer.with_layer(bounds, |renderer| {
                 let overlay = self.overlay_element();
                 overlay.as_widget().draw(
+                    &tree.children[0],
+                    renderer,
+                    theme,
+                    style,
+                    layout.children().next().unwrap(),
+                    cursor,
+                    viewport,
+                );
+            });
+        }
+
+        // Layer 3: Crop overlay at fit-to-view
+        if is_crop && self.manager.active_preview.is_some() {
+            renderer.with_layer(bounds, |renderer| {
+                let crop_overlay = self.crop_overlay_element();
+                crop_overlay.as_widget().draw(
                     &tree.children[0],
                     renderer,
                     theme,
@@ -437,9 +492,80 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
         viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
+        let is_crop = self.manager.active_tool == Some(ToolKind::Crop);
 
-        // Tool interaction takes priority
+        // Release crop pan even if cursor left the canvas
+        if is_crop
+            && self.manager.crop_pan.get().is_some()
+            && let Event::Mouse(MouseEvent::ButtonReleased(Button::Left)) = event
+        {
+            self.manager.crop_pan.set(None);
+            shell.capture_event();
+            return;
+        }
+
+        // Crop: pan on interior clicks, fit-to-view coords for handles
+        if is_crop
+            && let Event::Mouse(mouse_event) = event
+            && let Some(position) = cursor.position_in(bounds)
+        {
+            if let Some((start, origin)) = self.manager.crop_pan.get() {
+                match mouse_event {
+                    MouseEvent::CursorMoved { .. } => {
+                        let delta = Vector::new(position.x - start.x, position.y - start.y);
+                        shell.publish(CanvasMessage::Pan(origin + delta));
+                        shell.capture_event();
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+
+            match mouse_event {
+                MouseEvent::ButtonPressed(Button::Left) => {
+                    if let Some(pt) = self.manager.screen_to_image_fit(position, bounds)
+                        && let Some(preview) = self.manager.preview_ref()
+                    {
+                        let on_handle =
+                            preview.cursor_at(pt) != mouse::Interaction::Crosshair;
+                        if on_handle {
+                            shell.publish(CanvasMessage::ToolStart(pt));
+                            shell.capture_event();
+                            return;
+                        }
+                        if preview.hit_test(pt) {
+                            self.manager.crop_pan.set(Some((position, self.manager.pan)));
+                            shell.capture_event();
+                            return;
+                        }
+                        shell.publish(CanvasMessage::ToolStart(pt));
+                        shell.capture_event();
+                        return;
+                    }
+                }
+                MouseEvent::CursorMoved { .. } => {
+                    if self.manager.tool_dragging
+                        && let Some(pt) = self.manager.screen_to_image_fit(position, bounds)
+                    {
+                        shell.publish(CanvasMessage::ToolDrag(pt));
+                        shell.capture_event();
+                        return;
+                    }
+                }
+                MouseEvent::ButtonReleased(Button::Left) => {
+                    if self.manager.tool_dragging {
+                        shell.publish(CanvasMessage::ToolEnd);
+                        shell.capture_event();
+                        return;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Tool interaction for non-crop tools
         if self.manager.active_tool.is_some()
+            && !is_crop
             && let Event::Mouse(mouse_event) = event
             && let Some(position) = cursor.position_in(bounds)
         {
