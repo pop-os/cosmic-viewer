@@ -209,7 +209,7 @@ impl CosmicViewer {
                 *img = base;
             }
 
-            self.viewport.rebuild_display();
+            self.viewport.rebuild_display_preserve_view();
         }
     }
 
@@ -475,7 +475,12 @@ impl CosmicViewer {
                 .into()
         };
 
-        let zoom_pct = format!("{}%", (self.viewport.zoom() * 100.0).round() as u32);
+        let bounds = self.viewport.last_bounds().get();
+        let viewport_size = Size::new(bounds.width, bounds.height);
+        let zoom_pct = format!(
+            "{}%",
+            self.viewport.actual_percent(viewport_size).round() as u32
+        );
 
         responsive_toolbar(mode)
             .start(
@@ -524,6 +529,14 @@ impl CosmicViewer {
                     "zoom-in-symbolic",
                     fl!("toolbar-zoom-in"),
                     ViewerMessage::Canvas(CanvasMessage::ZoomIn),
+                ))
+                .priority(ItemPriority::Essential),
+            )
+            .end(
+                ToolbarItem::new(icon_btn(
+                    "zoom-original-symbolic",
+                    fl!("menu-actual-size"),
+                    ViewerMessage::Canvas(CanvasMessage::ActualSize),
                 ))
                 .priority(ItemPriority::Essential),
             )
@@ -2363,16 +2376,32 @@ impl Application for CosmicViewer {
                     }
                 }
                 CanvasMessage::ZoomIn => {
+                    let bounds = self.viewport.last_bounds().get();
+                    let viewport = Size::new(bounds.width, bounds.height);
+                    let before = self.viewport.actual_percent(viewport);
                     let old_zoom = self.viewport.zoom();
                     let new_zoom = (old_zoom * 1.25).min(10.0);
+
                     if let Some(size) = self.viewport.image_size()
                         && let Some(preview) = self.viewport.preview_mut()
                     {
                         preview.on_zoom_changed(old_zoom, new_zoom, size);
                     }
+
                     self.viewport.set_zoom(new_zoom);
+                    if before < 99.9 && self.viewport.actual_percent(viewport) > 100.0 {
+                        self.viewport.set_actual_percent(100.0, viewport);
+                    }
+
+                    // Cap zoom in to 500%
+                    if self.viewport.actual_percent(viewport) > 500.0 {
+                        self.viewport.set_actual_percent(500.0, viewport);
+                    }
                 }
                 CanvasMessage::ZoomOut => {
+                    let bounds = self.viewport.last_bounds().get();
+                    let viewport = Size::new(bounds.width, bounds.height);
+                    let before = self.viewport.actual_percent(viewport);
                     let old_zoom = self.viewport.zoom();
                     let floor = if self.viewport.active_tool() == Some(ToolKind::Crop) {
                         1.0
@@ -2380,12 +2409,17 @@ impl Application for CosmicViewer {
                         0.1
                     };
                     let new_zoom = (old_zoom / 1.25).max(floor);
+
                     if let Some(size) = self.viewport.image_size()
                         && let Some(preview) = self.viewport.preview_mut()
                     {
                         preview.on_zoom_changed(old_zoom, new_zoom, size);
                     }
+
                     self.viewport.set_zoom(new_zoom);
+                    if before > 100.1 && self.viewport.actual_percent(viewport) < 100.0 {
+                        self.viewport.set_actual_percent(100.0, viewport);
+                    }
                 }
                 CanvasMessage::Pan(pan) => {
                     if self.viewport.active_tool() == Some(ToolKind::Crop) {
@@ -2411,6 +2445,11 @@ impl Application for CosmicViewer {
                         self.viewport.set_zoom(1.0);
                         self.viewport.set_pan(Vector::ZERO);
                     }
+                }
+                CanvasMessage::ActualSize => {
+                    let bounds = self.viewport.last_bounds().get();
+                    let viewport_size = Size::new(bounds.width, bounds.height);
+                    self.viewport.zoom_to_actual_size(viewport_size);
                 }
                 CanvasMessage::Fullscreen => {
                     self.is_fullscreen = !self.is_fullscreen;
@@ -2927,7 +2966,7 @@ impl Application for CosmicViewer {
                         if let Some(img) = self.viewport.working_image_mut() {
                             *img = img.rotate270();
                         }
-                        self.viewport.rebuild_display();
+                        self.viewport.rebuild_display_preserve_view();
 
                         if is_cropping {
                             let new_size = self.viewport.image_size().unwrap_or(Size::ZERO);
@@ -2957,7 +2996,7 @@ impl Application for CosmicViewer {
                         if let Some(img) = self.viewport.working_image_mut() {
                             *img = img.rotate90();
                         }
-                        self.viewport.rebuild_display();
+                        self.viewport.rebuild_display_preserve_view();
 
                         if is_cropping {
                             let new_size = self.viewport.image_size().unwrap_or(Size::ZERO);

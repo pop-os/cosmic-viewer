@@ -121,6 +121,7 @@ fn build_view_menu() -> Vec<menu::Item<MenuAction, String>> {
         menu::Item::Button(fl!("menu-zoom-in"), None, MenuAction::ZoomIn),
         menu::Item::Button(fl!("menu-fit-to-view"), None, MenuAction::FitToView),
         menu::Item::Button(fl!("menu-zoom-out"), None, MenuAction::ZoomOut),
+        menu::Item::Button(fl!("menu-actual-size"), None, MenuAction::ActualSize),
         menu::Item::Divider,
         menu::Item::Button(fl!("menu-fullscreen"), None, MenuAction::Fullscreen),
     ]

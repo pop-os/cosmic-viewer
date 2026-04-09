@@ -30,21 +30,14 @@ impl Debug for CanvasImage {
 pub enum CanvasMessage {
     /// Right-click context menu. Some(point) opens at position, None closes.
     ContextMenu(Option<Point>),
-    /// Zoom in
     ZoomIn,
-    /// Zoom out
     ZoomOut,
-    /// New pan offset from mouse drag.
     Pan(Vector),
-    /// Fit to view
+    ActualSize,
     FitToView,
-    /// View fullscreen
     Fullscreen,
-    /// Tool click event
     ToolStart(Point),
-    /// Tool dragging event
     ToolDrag(Point),
-    /// Tool button release
     ToolEnd,
 }
 
