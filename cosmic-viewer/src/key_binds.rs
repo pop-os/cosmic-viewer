@@ -33,6 +33,7 @@ pub enum MenuAction {
     RotateRight,
     ZoomIn,
     ZoomOut,
+    ActualSize,
     FitToView,
     Fullscreen,
     SetWallpaper,
@@ -63,6 +64,7 @@ impl MenuAction {
             // Viewport Actions
             MenuAction::ZoomIn => ViewerMessage::Canvas(CanvasMessage::ZoomIn),
             MenuAction::ZoomOut => ViewerMessage::Canvas(CanvasMessage::ZoomOut),
+            MenuAction::ActualSize => ViewerMessage::Canvas(CanvasMessage::ActualSize),
             MenuAction::FitToView => ViewerMessage::Canvas(CanvasMessage::FitToView),
             MenuAction::Fullscreen => ViewerMessage::Canvas(CanvasMessage::Fullscreen),
             // Edit Messages
@@ -179,6 +181,14 @@ pub fn init_keybinds() -> HashMap<KeyBind, MenuAction> {
 
     binds.insert(
         KeyBind {
+            modifiers: vec![Modifier::Ctrl],
+            key: Key::Character("1".into()),
+        },
+        MenuAction::ActualSize,
+    );
+
+    binds.insert(
+        KeyBind {
             modifiers: vec![],
             key: Key::Named(Named::F11),
         },
@@ -187,7 +197,7 @@ pub fn init_keybinds() -> HashMap<KeyBind, MenuAction> {
 
     binds.insert(
         KeyBind {
-            modifiers: vec![Modifier::Shift],
+            modifiers: vec![Modifier::Ctrl],
             key: Key::Character("=".into()),
         },
         MenuAction::ZoomIn,
@@ -195,7 +205,7 @@ pub fn init_keybinds() -> HashMap<KeyBind, MenuAction> {
 
     binds.insert(
         KeyBind {
-            modifiers: vec![Modifier::Shift],
+            modifiers: vec![Modifier::Ctrl],
             key: Key::Character("-".into()),
         },
         MenuAction::ZoomOut,

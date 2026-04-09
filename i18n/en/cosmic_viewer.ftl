@@ -44,6 +44,7 @@ menu-view = View
 menu-zoom-in = Zoom in
 menu-zoom-out = Zoom out
 menu-fit-to-view = Fit to view
+menu-actual-size = Actual Size
 menu-fullscreen = Fullscreen
 
 # Toolbar

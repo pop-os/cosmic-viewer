@@ -121,6 +121,19 @@ impl ViewportManager {
         }
     }
 
+    pub fn rebuild_display_preserve_view(&mut self) {
+        if let Some(ref working) = self.working_image {
+            let rgba = working.to_rgba8();
+            let (width, height) = rgba.dimensions();
+            let handle = Handle::from_rgba(width, height, rgba.into_raw());
+            self.image = Some(CanvasImage {
+                handle,
+                width,
+                height,
+            });
+        }
+    }
+
     pub fn working_image(&self) -> Option<&DynamicImage> {
         self.working_image.as_ref()
     }
@@ -135,6 +148,35 @@ impl ViewportManager {
 
     pub fn set_zoom(&mut self, zoom: f32) {
         self.zoom = zoom;
+    }
+
+    pub fn actual_percent(&self, viewport_size: Size) -> f32 {
+        let Some(img) = self.image.as_ref() else {
+            return 100.0;
+        };
+
+        let fit_scale =
+            (viewport_size.width / img.width as f32).min(viewport_size.height / img.height as f32);
+
+        self.zoom * fit_scale * 100.0
+    }
+
+    pub fn set_actual_percent(&mut self, percent: f32, viewport_size: Size) {
+        let Some(img) = self.image.as_ref() else {
+            return;
+        };
+
+        let fit_scale =
+            (viewport_size.width / img.width as f32).min(viewport_size.height / img.height as f32);
+
+        if fit_scale > 0.0 {
+            self.zoom = percent / (fit_scale * 100.0);
+        }
+    }
+
+    pub fn zoom_to_actual_size(&mut self, viewport_size: Size) {
+        self.set_actual_percent(100.0, viewport_size);
+        self.pan = Vector::ZERO;
     }
 
     pub fn pan(&self) -> Vector {
@@ -357,7 +399,11 @@ impl<'a> Viewport<'a> {
             pan: mgr.pan,
             active_tool: mgr.active_tool,
             operations: &mgr.operations,
-            preview: if is_crop { None } else { mgr.active_preview.as_deref() },
+            preview: if is_crop {
+                None
+            } else {
+                mgr.active_preview.as_deref()
+            },
             overlay_only: true,
         };
 
@@ -526,15 +572,16 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
                     if let Some(pt) = self.manager.screen_to_image_fit(position, bounds)
                         && let Some(preview) = self.manager.preview_ref()
                     {
-                        let on_handle =
-                            preview.cursor_at(pt) != mouse::Interaction::Crosshair;
+                        let on_handle = preview.cursor_at(pt) != mouse::Interaction::Crosshair;
                         if on_handle {
                             shell.publish(CanvasMessage::ToolStart(pt));
                             shell.capture_event();
                             return;
                         }
                         if preview.hit_test(pt) {
-                            self.manager.crop_pan.set(Some((position, self.manager.pan)));
+                            self.manager
+                                .crop_pan
+                                .set(Some((position, self.manager.pan)));
                             shell.capture_event();
                             return;
                         }
