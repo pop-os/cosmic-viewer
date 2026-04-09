@@ -2394,7 +2394,9 @@ impl Application for CosmicViewer {
                         return Task::none();
                     }
 
-                    if matches!(self.annotate_tool, AnnotateTool::Text) {
+                    if self.viewport.active_tool() == Some(ToolKind::Annotate)
+                        && matches!(self.annotate_tool, AnnotateTool::Text)
+                    {
                         if self.text_editing {
                             let on_box = self
                                 .viewport
@@ -2525,7 +2527,8 @@ impl Application for CosmicViewer {
                     }
 
                     // Set text_editing flag when text preview enters editing mode
-                    if matches!(self.annotate_tool, AnnotateTool::Text)
+                    if self.viewport.active_tool() == Some(ToolKind::Annotate)
+                        && matches!(self.annotate_tool, AnnotateTool::Text)
                         && let Some(preview) = self.viewport.preview_mut()
                         && let Some(text_preview) =
                             preview.as_any_mut().downcast_mut::<TextPreview>()
@@ -2597,8 +2600,12 @@ impl Application for CosmicViewer {
                         }
                     }
                     EditMessage::AnnotateApply => {
+                        self.viewport.apply_tool();
                         self.viewport.set_active_tool(None);
                         self.viewport.set_preview(None);
+                        self.text_editing = false;
+                        self.show_text_format_menu = false;
+                        self.viewport.tool_dragging = false;
                     }
                     EditMessage::AnnotateCancel => {
                         if self.text_editing {
