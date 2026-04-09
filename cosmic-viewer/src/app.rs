@@ -25,7 +25,10 @@ use cosmic::{
     theme::{self, Button},
     widget::{
         self, Column, Id, Row, Space, Toast, Toasts, button, canvas,
-        color_picker::ColorPickerUpdate::{self, AppliedColor, Cancel, ToggleColorPicker},
+        color_picker::{
+            self,
+            ColorPickerUpdate::{self, AppliedColor, Cancel, ToggleColorPicker},
+        },
         container, divider, dropdown, icon,
         menu::{KeyBind, menu_button},
         nav_bar, popover,
@@ -2363,10 +2366,12 @@ impl Application for CosmicViewer {
                     if self.viewport.active_tool() == Some(ToolKind::Crop) {
                         let bounds = self.viewport.last_bounds().get();
                         if let Some(size) = self.viewport.image_size() {
-                            let fit_scale = (bounds.width / size.width)
-                                .min(bounds.height / size.height);
-                            let max_x = (size.width * fit_scale * (self.viewport.zoom() - 1.0)) / 2.0;
-                            let max_y = (size.height * fit_scale * (self.viewport.zoom() - 1.0)) / 2.0;
+                            let fit_scale =
+                                (bounds.width / size.width).min(bounds.height / size.height);
+                            let max_x =
+                                (size.width * fit_scale * (self.viewport.zoom() - 1.0)) / 2.0;
+                            let max_y =
+                                (size.height * fit_scale * (self.viewport.zoom() - 1.0)) / 2.0;
                             self.viewport.set_pan(Vector::new(
                                 pan.x.clamp(-max_x, max_x),
                                 pan.y.clamp(-max_y, max_y),
@@ -2618,7 +2623,7 @@ impl Application for CosmicViewer {
                             self.viewport.set_active_tool(Some(ToolKind::Annotate));
                             self.viewport.set_preview(Some(Box::new(PenPreview::new(
                                 self.annotate_color.0,
-                                2.0,
+                                self.annotate_stroke_size,
                             ))));
                         }
                     }
@@ -2633,9 +2638,9 @@ impl Application for CosmicViewer {
                     EditMessage::AnnotateCancel => {
                         if self.text_editing {
                             if self.color_picker.get_is_active() {
-                                _ = self.color_picker.update::<ViewerMessage>(
-                                    cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
-                                );
+                                _ = self
+                                    .color_picker
+                                    .update::<ViewerMessage>(ColorPickerUpdate::ToggleColorPicker);
                             }
                             self.text_editing = false;
                         }
@@ -2822,8 +2827,8 @@ impl Application for CosmicViewer {
                             let zoom = self.viewport.zoom();
                             let pan = self.viewport.pan();
                             let bounds = self.viewport.last_bounds().get();
-                            let fit_scale = (bounds.width / size.width)
-                                .min(bounds.height / size.height);
+                            let fit_scale =
+                                (bounds.width / size.width).min(bounds.height / size.height);
 
                             let region = if zoom == 1.0 && pan == Vector::ZERO {
                                 fit_region
@@ -2837,10 +2842,7 @@ impl Application for CosmicViewer {
                                         fit_region.y / zoom + cy * (1.0 - 1.0 / zoom)
                                             - pan.y / (zoom * fit_scale),
                                     ),
-                                    Size::new(
-                                        fit_region.width / zoom,
-                                        fit_region.height / zoom,
-                                    ),
+                                    Size::new(fit_region.width / zoom, fit_region.height / zoom),
                                 )
                             };
 
