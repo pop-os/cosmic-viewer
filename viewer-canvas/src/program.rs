@@ -111,23 +111,6 @@ impl<'a> Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'a> {
 
                     frame.draw_image(img_rect, &image.handle);
                 });
-            } else if self.active_tool == Some(ToolKind::Crop) {
-                // Crop overlay -- screen space, no transform
-                if !self.operations.is_empty() {
-                    let center = frame.center();
-                    frame.translate(Vector::new(center.x, center.y));
-                    frame.translate(self.pan);
-                    frame.scale(self.zoom * fit_scale);
-                    frame.translate(Vector::new(
-                        -(image.width as f32) / 2.0,
-                        -(image.height as f32) / 2.0,
-                    ));
-                    let effective_scale = self.zoom * fit_scale;
-                    for op in self.operations {
-                        op.draw(&mut frame, image_size, effective_scale);
-                    }
-                }
-                // Crop preview drawn separately in screen space by the Viewport
             } else {
                 // Overlay layer
                 let center = frame.center();
@@ -151,7 +134,6 @@ impl<'a> Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'a> {
             }
         }
 
-        println!("About to return geometry from ViewerCanvas::draw()");
         vec![frame.into_geometry()]
     }
 

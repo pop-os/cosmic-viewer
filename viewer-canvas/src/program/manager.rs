@@ -452,11 +452,7 @@ impl<'a> Viewport<'a> {
             pan: Vector::ZERO,
             active_tool: mgr.active_tool,
             operations: &[],
-            preview: if is_crop {
-                None
-            } else {
-                mgr.active_preview.as_deref()
-            },
+            preview: mgr.active_preview.as_deref(),
             overlay_only: true,
         };
 
@@ -495,7 +491,6 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
 
     fn diff(&mut self, tree: &mut Tree) {
         if self.manager.dirty.get() {
-            println!("is_dirty: {}", self.manager.dirty.get());
             self.manager.dirty.set(false);
 
             if let Some(child) = tree.children.first_mut() {
@@ -556,13 +551,16 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
         // Layer 3: Crop preview in screen space
         if is_crop && self.manager.active_preview.is_some() {
             renderer.with_layer(bounds, |renderer| {
-                let screen_size = Size::new(bounds.width, bounds.height);
-                let mut frame = Frame::new(renderer, screen_size);
-                if let Some(preview) = self.manager.active_preview.as_deref() {
-                    preview.draw(&mut frame, screen_size, 1.0);
-                }
-                let geometry = frame.into_geometry();
-                renderer.draw_geometry(geometry);
+                let crop_overlay = self.crop_overlay_element();
+                crop_overlay.as_widget().draw(
+                    &tree.children[0],
+                    renderer,
+                    theme,
+                    style,
+                    layout.children().next().unwrap(),
+                    cursor,
+                    viewport,
+                );
             });
         }
     }
@@ -610,11 +608,12 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
 
             match mouse_event {
                 MouseEvent::ButtonPressed(Button::Left) => {
-                    if let Some(preview) = self.manager.preview_ref() {
-                        let on_handle =
-                            preview.cursor_at(position) != mouse::Interaction::Crosshair;
+                    if let Some(pt) = self.manager.screen_to_image_fit(position, bounds)
+                        && let Some(preview) = self.manager.preview_ref()
+                    {
+                        let on_handle = preview.cursor_at(pt) != mouse::Interaction::Crosshair;
                         if on_handle {
-                            shell.publish(CanvasMessage::ToolStart(position));
+                            shell.publish(CanvasMessage::ToolStart(pt));
                             shell.capture_event();
                             return;
                         }

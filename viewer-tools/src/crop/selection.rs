@@ -51,45 +51,43 @@ impl CropSelection {
         }
     }
 
-    /// Activate with a specific ratio. Frame fills the viewport (or is
-    /// ratio-constrained within it). `image_size` is only used for
-    /// portrait detection in ratio resolution.
-    pub fn activate(&mut self, ratio: CropRatio, viewport: Size, image_size: Size) {
+    /// Activate with a specific ratio.
+    pub fn activate(&mut self, ratio: CropRatio, image_size: Size) {
         self.ratio = ratio;
         self.visible = true;
 
         if let Some(aspect) = ratio.resolve(image_size) {
-            let width = viewport.width;
+            let width = image_size.width;
             let height = width / aspect;
 
-            let (width, height) = if height > viewport.height {
-                (viewport.height * aspect, viewport.height)
+            let (width, height) = if height > image_size.height {
+                (image_size.height * aspect, image_size.height)
             } else {
                 (width, height)
             };
 
             self.region = Rectangle::new(
                 Point::new(
-                    (viewport.width - width) / 2.0,
-                    (viewport.height - height) / 2.0,
+                    (image_size.width - width) / 2.0,
+                    (image_size.height - height) / 2.0,
                 ),
                 Size::new(width, height),
             );
         } else {
-            self.region = Rectangle::new(Point::ORIGIN, viewport);
+            self.region = Rectangle::new(Point::ORIGIN, image_size);
         }
     }
 
     /// Change the ratio. Frame fills the viewport for the new ratio.
-    pub fn set_ratio(&mut self, ratio: CropRatio, viewport: Size, image_size: Size) {
+    pub fn set_ratio(&mut self, ratio: CropRatio, image_size: Size) {
         self.ratio = ratio;
 
         if let Some(aspect) = ratio.resolve(image_size) {
-            let width = viewport.width;
+            let width = image_size.width;
             let height = width / aspect;
 
-            let (width, height) = if height > viewport.height {
-                (viewport.height * aspect, viewport.height)
+            let (width, height) = if height > image_size.height {
+                (image_size.height * aspect, image_size.height)
             } else {
                 (width, height)
             };
@@ -487,7 +485,6 @@ impl ToolOperation for CropSelection {
         if handle != DragHandle::None {
             self.start_handle_drag(handle, point);
         } else if matches!(self.ratio, CropRatio::Custom) && !self.region.contains(point) {
-            // Click outside region in Custom mode starts a new selection
             self.start_new(point);
         }
         self.active_handle.cursor()
