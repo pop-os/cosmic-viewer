@@ -591,7 +591,7 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
             return;
         }
 
-        // Crop pan: interior clicks pan the image behind the fixed crop frame
+        // Crop: pan on interior clicks, fit-to-view coords for handles
         if is_crop
             && let Event::Mouse(mouse_event) = event
             && let Some(position) = cursor.position_in(bounds)

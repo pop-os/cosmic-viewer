@@ -94,12 +94,12 @@ impl CropSelection {
                 (width, height)
             };
 
-            let x = (viewport.width - width) / 2.0;
-            let y = (viewport.height - height) / 2.0;
+            let x = (image_size.width - width) / 2.0;
+            let y = (image_size.height - height) / 2.0;
 
             self.region = Rectangle::new(Point::new(x, y), Size::new(width, height));
         } else {
-            self.region = Rectangle::new(Point::ORIGIN, viewport);
+            self.region = Rectangle::new(Point::ORIGIN, image_size);
         }
     }
 
