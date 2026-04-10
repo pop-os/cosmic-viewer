@@ -16,10 +16,12 @@ use cosmic::{
         keyboard::key::{Key, Named},
     },
     iced_core::Border,
+    iced_runtime,
     iced_wgpu::graphics::text::font_system,
     iced_widget::{
+        Grid, grid,
         scrollable::{AbsoluteOffset, scroll_to},
-        stack,
+        sensor, stack,
     },
     task::future,
     theme::{self, Button},
@@ -30,8 +32,9 @@ use cosmic::{
             ColorPickerUpdate::{self, AppliedColor, Cancel, ToggleColorPicker},
         },
         container, divider, dropdown, icon,
+        image::Handle,
         menu::{KeyBind, menu_button},
-        nav_bar, popover,
+        nav_bar, popover, scrollable,
         space::horizontal,
         text, toaster,
     },
@@ -67,7 +70,8 @@ pub struct CosmicViewer {
     nav: NavState,
     nav_bar_model: nav_bar::Model,
     cache: ImageCache,
-    grid: ImageGrid<'static, Action<ViewerMessage>>,
+    //grid: ImageGrid<'static, Action<ViewerMessage>>,
+    nav_handles: Vec<Option<Handle>>,
     scroll_id: Id,
     viewport: ViewportManager,
     context_page: Option<ContextMessage>,
@@ -162,7 +166,11 @@ impl CosmicViewer {
         })
     }
 
-    fn rebuild_grid_items(&mut self) {
+    fn rebuild_nav_handles(&mut self) {
+        self.nav_handles = vec![None; self.nav.images().len()];
+    }
+
+    /*fn rebuild_grid_items(&mut self) {
         let items = self
             .nav
             .images()
@@ -177,7 +185,7 @@ impl CosmicViewer {
         self.grid.set_focused(self.nav.index());
         self.grid
             .set_selected(self.nav.index().into_iter().collect());
-    }
+    }*/
 
     /// Rebuild the working image.
     /// Used after dimension-changing operations like crop and rotate.
@@ -1259,7 +1267,8 @@ impl Application for CosmicViewer {
             nav: NavState::new(),
             nav_bar_model: nav_bar::Model::default(),
             cache: ImageCache::with_defaults(),
-            grid,
+            //grid,
+            nav_handles: Vec::new(),
             scroll_id,
             viewport: ViewportManager::default(),
             context_page: None,
@@ -1339,10 +1348,63 @@ impl Application for CosmicViewer {
         }
 
         let thumbnail_size = self.config.thumbnail_size.pixels();
-        let col_spacing: f32 = 8.0;
-        let panel_width = thumbnail_size as f32 + col_spacing * 2.0 + 36.;
+        //let col_spacing: f32 = 8.0;
+        let space_xxs = theme::active().cosmic().spacing.space_xxs as f32;
+        //let panel_width = thumbnail_size as f32 + col_spacing * 2.0 + 36.;
+        let panel_width = thumbnail_size as f32 + space_xxs * 2.0 + 36.0;
 
-        let grid = image_grid(self.grid.items().to_vec())
+        let active = self.nav.index().unwrap_or(0);
+
+        let items = self
+            .nav
+            .images()
+            .iter()
+            .enumerate()
+            .map(|(img, _)| {
+                let handle = self
+                    .nav_handles
+                    .get(img)
+                    .and_then(|handle| handle.clone())
+                    .unwrap_or_else(|| Handle::from_rgba(1, 1, vec![0, 0, 0, 0]));
+
+                let btn = button::image(handle)
+                    .selected(img == active)
+                    .height(Length::Fixed(thumbnail_size as f32))
+                    .width(Length::Fixed(thumbnail_size as f32))
+                    .on_press(Action::App(ViewerMessage::Nav(NavMessage::GridActivate(
+                        img,
+                    ))));
+
+                sensor(btn)
+                    .on_show(move |_| {
+                        Action::App(ViewerMessage::Nav(NavMessage::NavThumbnailShow(img)))
+                    })
+                    .on_hide(Action::App(ViewerMessage::Nav(
+                        NavMessage::NavThumbnailHide(img),
+                    )))
+                    //.anticipate(thumbnail_size as f32 * 2.0)
+                    .into()
+            })
+            .collect::<Vec<Element<'_, Action<ViewerMessage>>>>();
+
+        let nav_grid = grid(items)
+            .columns(1)
+            .height(Length::Shrink)
+            .spacing(space_xxs);
+
+        let scrollable =
+            scrollable(container(nav_grid).padding([0.0_f32, space_xxs, 0.0, space_xxs]))
+                .id(self.scroll_id.clone());
+
+        Some(
+            container(scrollable)
+                .width(Length::Fixed(panel_width))
+                .height(Length::Fill)
+                .class(theme::Container::custom(nav_bar::nav_bar_style))
+                .into(),
+        )
+
+        /*let grid = image_grid(self.grid.items().to_vec())
             .thumbnail_size(thumbnail_size)
             .focused(self.grid.get_focused())
             .selected(self.grid.get_selected().to_vec())
@@ -1355,13 +1417,14 @@ impl Application for CosmicViewer {
             .padding([4, 8, 0, 8])
             .into_element();
 
+
         Some(
             container(grid)
                 .width(Length::Fixed(panel_width))
                 .height(Length::Fill)
                 .class(cosmic::theme::Container::custom(nav_bar::nav_bar_style))
                 .into(),
-        )
+        )*/
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
@@ -2222,12 +2285,17 @@ impl Application for CosmicViewer {
                         self.nav.select(0);
                     }
 
-                    self.rebuild_grid_items();
+                    //self.rebuild_grid_items();
+                    self.rebuild_nav_handles();
+                    if !self.nav.is_empty() {
+                        let idx = self.nav.index().unwrap_or(0);
+                        tasks.push(self.load_nearby_thumbnails(idx, 10));
+                    }
 
                     // If no image is selected on load, start loading from image 1 (idx = 0)
-                    if !self.nav.is_empty() {
+                    /*if !self.nav.is_empty() {
                         tasks.push(self.load_remaining_thumbnails());
-                    }
+                    }*/
 
                     // Load the selected image and the 40 images around it (20 up and 20 down)
                     if let Some(idx) = self.nav.index() {
@@ -2249,20 +2317,71 @@ impl Application for CosmicViewer {
                         ));
                     }
                 }
+                NavMessage::NavThumbnailShow(img) => {
+                    if self
+                        .nav_handles
+                        .get(img)
+                        .map_or(false, |handle| handle.is_none())
+                    {
+                        if let Some(path) = self.nav.images().get(img).cloned() {
+                            if let Some(handle) = self.cache.get_thumbnail(&path) {
+                                if let Some(slot) = self.nav_handles.get_mut(img) {
+                                    *slot = Some(handle);
+                                }
+                            } else if !self.cache.is_thumbnail_pending(&path) {
+                                self.cache.set_thumbnail_pending(path.clone());
+                                let max_size = self.config.thumbnail_size.pixels();
+                                let cache = self.cache.clone();
+
+                                tasks.push(future(async move {
+                                    match load_thumbnail(path.clone(), max_size).await {
+                                        Ok(loaded) => {
+                                            cache.insert_thumbnail(
+                                                loaded.path.clone(),
+                                                loaded.handle,
+                                            );
+                                            Action::App(ViewerMessage::Image(
+                                                ImageMessage::ThumbnailReady(
+                                                    loaded.path,
+                                                    loaded.width,
+                                                    loaded.height,
+                                                ),
+                                            ))
+                                        }
+                                        Err(_) => Action::App(ViewerMessage::Image(
+                                            ImageMessage::LoadError(path),
+                                        )),
+                                    }
+                                }));
+                            }
+                        }
+                    }
+                }
+                NavMessage::NavThumbnailHide(img) => {
+                    if let Some(slot) = self.nav_handles.get_mut(img) {
+                        *slot = None;
+                    }
+
+                    if Some(img) != self.nav.index() {
+                        if let Some(path) = self.nav.images().get(img) {
+                            self.cache.remove_full(path);
+                        }
+                    }
+                }
                 NavMessage::GridActivate(idx) => {
                     if !self.text_editing
                         && let Some(path) = self.nav.select(idx)
                     {
                         let path = path.clone();
-                        self.grid.set_focused(Some(idx));
-                        self.grid.set_selected(vec![idx]);
+                        // self.grid.set_focused(Some(idx));
+                        //self.grid.set_selected(vec![idx]);
 
                         self.viewport.cancel_tool();
                         self.text_editing = false;
                         if self.color_picker.get_is_active() {
-                            _ = self.color_picker.update::<ViewerMessage>(
-                                cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
-                            );
+                            _ = self
+                                .color_picker
+                                .update::<ViewerMessage>(ColorPickerUpdate::ToggleColorPicker);
                         }
 
                         if let Some(cached) = self.cache.get_full(&path) {
@@ -2280,9 +2399,23 @@ impl Application for CosmicViewer {
                         // visible until the new one loads
 
                         tasks.push(self.load_full_image(path));
+                        let images = self.nav.images().to_vec();
+                        for (idx, adj_path) in images.iter().enumerate() {
+                            let dist = idx.abs_diff(idx);
+                            if dist == 0 {
+                                continue;
+                            } else if dist <= 1
+                                && self.cache.get_full(adj_path).is_none()
+                                && !self.cache.is_pending(adj_path)
+                            {
+                                tasks.push(self.load_full_image(adj_path.clone()));
+                            } else if dist > 2 {
+                                self.cache.remove_full(adj_path);
+                            }
+                        }
                     }
                 }
-                NavMessage::GridFocus(idx) => self.grid.set_focused(Some(idx)),
+                NavMessage::GridFocus(idx) => {} //self.grid.set_focused(Some(idx)),
                 NavMessage::GridScroll(offset) => {
                     tasks.push(scroll_to(
                         self.scroll_id.clone(),
@@ -2297,11 +2430,12 @@ impl Application for CosmicViewer {
                     let dir = self.nav.dir().map(|d| d.to_path_buf());
                     if let Some(dir) = dir {
                         self.nav.set_images(dir, images, selected.as_deref());
-                        self.rebuild_grid_items();
+                        //self.rebuild_grid_items();
+                        self.rebuild_nav_handles();
 
-                        if !self.nav.is_empty() {
+                        /*if !self.nav.is_empty() {
                             tasks.push(self.load_remaining_thumbnails());
-                        }
+                        }*/
 
                         if let Some(path) = self.nav.current().cloned()
                             && self.cache.get_full(&path).is_none()
@@ -2312,20 +2446,26 @@ impl Application for CosmicViewer {
                 }
             },
             ViewerMessage::Image(msg) => match msg {
-                ImageMessage::ThumbnailReady(path, width, height) => {
+                ImageMessage::ThumbnailReady(path, _, _) => {
                     if let Some(handle) = self.cache.get_thumbnail(&path)
-                        && let Some(item) = self
-                            .grid
-                            .items_mut()
-                            .iter_mut()
-                            .find(|item| item.path == path)
+                        && let Some(idx) = self.nav.images().iter().position(|pos| pos == &path)
+                        && let Some(slot) = self.nav_handles.get_mut(idx)
+                    {
+                        *slot = Some(handle);
+                    }
+                    /*if let Some(handle) = self.cache.get_thumbnail(&path)
+                    && let Some(item) = self
+                    .grid
+                    .items_mut()
+                    .iter_mut()
+                    .find(|item| item.path == path)
                     {
                         item.handle = Some(handle);
                         item.width = width;
                         item.height = height;
                     }
 
-                    tasks.push(self.load_remaining_thumbnails());
+                    tasks.push(self.load_remaining_thumbnails());*/
                 }
                 ImageMessage::ImageReady(path) => {
                     if let Some(idx) = self.nav.index() {
@@ -2347,7 +2487,7 @@ impl Application for CosmicViewer {
                                 );
                             }
                         }
-                        tasks.push(self.load_nearby_thumbnails(idx, 20));
+                        tasks.push(self.load_nearby_thumbnails(idx, 5));
                     }
                 }
                 ImageMessage::LoadError(_path) => {}

@@ -8,12 +8,14 @@ use cosmic::{
         mouse::{self, Button, Cursor, Event as MouseEvent},
     },
     iced_widget::canvas::{Action, Event, Frame, Geometry, Program},
+    widget::canvas::Cache,
 };
 use viewer_tools::ToolOperation;
 
 /// Per-frame view of the canvas state, built by ViewportManger.
 pub struct ViewerCanvas<'a> {
     pub image: Option<&'a CanvasImage>,
+    pub cache: &'a Cache,
     pub zoom: f32,
     pub pan: Vector,
     pub active_tool: Option<ToolKind>,
@@ -131,6 +133,8 @@ impl<'a> Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'a> {
                 }
             }
         }
+
+        println!("About to return geometry from ViewerCanvas::draw()");
         vec![frame.into_geometry()]
     }
 

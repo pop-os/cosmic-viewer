@@ -13,7 +13,7 @@ use cosmic::{
         layout::Node,
         widget::{Tree, tree},
     },
-    widget::{self, Operation, Widget, image::Handle},
+    widget::{self, Operation, Widget, canvas::Cache, image::Handle},
 };
 use image::DynamicImage;
 use std::cell::Cell;
@@ -22,6 +22,8 @@ use viewer_tools::ToolOperation;
 /// Orchestrator that owns the canvas state, edit operations, and undo/redo history.
 pub struct ViewportManager {
     image: Option<CanvasImage>,
+    cache: Cache,
+    dirty: Cell<bool>,
     working_image: Option<DynamicImage>,
     zoom: f32,
     pan: Vector,
@@ -46,6 +48,8 @@ impl ViewportManager {
     pub fn new() -> Self {
         Self {
             image: None,
+            cache: Cache::new(),
+            dirty: Cell::new(false),
             working_image: None,
             zoom: 1.0,
             pan: Vector::ZERO,
@@ -78,6 +82,8 @@ impl ViewportManager {
         self.pan = Vector::ZERO;
         self.active_preview = None;
         self.active_tool = None;
+        self.cache.clear();
+        self.dirty.set(true);
     }
 
     pub fn image(&self) -> Option<&CanvasImage> {
@@ -375,6 +381,7 @@ impl<'a> Viewport<'a> {
         let mgr = self.manager;
         let canvas = ViewerCanvas {
             image: mgr.image.as_ref(),
+            cache: &mgr.cache,
             zoom: mgr.zoom,
             pan: mgr.pan,
             active_tool: mgr.active_tool,
@@ -395,6 +402,7 @@ impl<'a> Viewport<'a> {
         let is_crop = mgr.active_tool == Some(ToolKind::Crop);
         let canvas = ViewerCanvas {
             image: mgr.image.as_ref(),
+            cache: &mgr.cache,
             zoom: mgr.zoom,
             pan: mgr.pan,
             active_tool: mgr.active_tool,
@@ -459,8 +467,17 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
     }
 
     fn diff(&mut self, tree: &mut Tree) {
-        let element = self.canvas_element();
-        tree.diff_children(&mut [element]);
+        if self.manager.dirty.get() {
+            println!("is_dirty: {}", self.manager.dirty.get());
+            self.manager.dirty.set(false);
+
+            if let Some(child) = tree.children.first_mut() {
+                *child = Tree::new(self.canvas_element());
+            }
+        } else {
+            let element = self.canvas_element();
+            tree.diff_children(&mut [element]);
+        }
     }
 
     fn draw(

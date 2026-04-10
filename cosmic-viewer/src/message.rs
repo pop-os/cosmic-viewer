@@ -72,6 +72,8 @@ pub enum ViewerMessage {
 pub enum NavMessage {
     ScanComplete(PathBuf, Vec<PathBuf>, Option<PathBuf>),
     DirectoryRefreshed(Vec<PathBuf>),
+    NavThumbnailShow(usize),
+    NavThumbnailHide(usize),
     GridActivate(usize),
     GridFocus(usize),
     GridScroll(f32),
