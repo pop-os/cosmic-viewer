@@ -2544,12 +2544,13 @@ impl Application for CosmicViewer {
                     let before = self.viewport.actual_percent(viewport);
                     let old_zoom = self.viewport.zoom();
                     let floor = if self.viewport.active_tool() == Some(ToolKind::Crop) {
-                        1.0
+                        let bounds = self.viewport.last_bounds().get();
+                        self.viewport
+                            .fill_zoom(Size::new(bounds.width, bounds.height))
                     } else {
                         0.1
                     };
                     let new_zoom = (old_zoom / 1.25).max(floor);
-
                     if let Some(size) = self.viewport.image_size()
                         && let Some(preview) = self.viewport.preview_mut()
                     {
@@ -2719,7 +2720,13 @@ impl Application for CosmicViewer {
                         ))));
                     }
 
-                    if let Some(size) = self.viewport.image_size()
+                    let tool_size = if self.viewport.active_tool() == Some(ToolKind::Crop) {
+                        let b = self.viewport.last_bounds().get();
+                        Some(Size::new(b.width, b.height))
+                    } else {
+                        self.viewport.image_size()
+                    };
+                    if let Some(size) = tool_size
                         && let Some(preview) = self.viewport.preview_mut()
                     {
                         preview.on_press(point, size);
@@ -2738,10 +2745,18 @@ impl Application for CosmicViewer {
                             }
                             self.move_start = Some(point);
                         }
-                    } else if let Some(size) = self.viewport.image_size()
-                        && let Some(preview) = self.viewport.preview_mut()
-                    {
-                        preview.on_drag(point, size);
+                    } else {
+                        let tool_size = if self.viewport.active_tool() == Some(ToolKind::Crop) {
+                            let b = self.viewport.last_bounds().get();
+                            Some(Size::new(b.width, b.height))
+                        } else {
+                            self.viewport.image_size()
+                        };
+                        if let Some(size) = tool_size
+                            && let Some(preview) = self.viewport.preview_mut()
+                        {
+                            preview.on_drag(point, size);
+                        }
                     }
                 }
                 CanvasMessage::ToolEnd => {
@@ -3009,8 +3024,12 @@ impl Application for CosmicViewer {
                             }
                             self.viewport.set_active_tool(Some(ToolKind::Crop));
                             let mut selection = CropSelection::new();
-                            if let Some(size) = self.viewport.image_size() {
-                                selection.activate(CropRatio::Custom, size);
+                            if let Some(img_size) = self.viewport.image_size() {
+                                let viewport = {
+                                    let bounds = self.viewport.last_bounds().get();
+                                    Size::new(bounds.width, bounds.height)
+                                };
+                                selection.activate(CropRatio::Custom, viewport, img_size);
                                 self.crop_ratio = CropRatio::Custom;
                             }
                             self.viewport.set_preview(Some(Box::new(selection)));
@@ -3079,13 +3098,26 @@ impl Application for CosmicViewer {
                         self.crop_ratio_popup = !self.crop_ratio_popup
                     }
                     EditMessage::CropRatio(ratio) => {
-                        let size = self.viewport.image_size();
-                        if let Some(preview) = self.viewport.preview_mut()
-                            && let Some(crop) = preview.as_any_mut().downcast_mut::<CropSelection>()
-                            && let Some(size) = size
-                        {
-                            crop.set_ratio(ratio, size);
-                            self.crop_ratio = ratio;
+                        let bounds = self.viewport.last_bounds().get();
+                        let vp = Size::new(bounds.width, bounds.height);
+                        let img_size = self.viewport.image_size();
+                        let frame_size = {
+                            if let Some(preview) = self.viewport.preview_mut()
+                                && let Some(crop) =
+                                    preview.as_any_mut().downcast_mut::<CropSelection>()
+                                && let Some(img_size) = img_size
+                            {
+                                crop.set_ratio(ratio, vp, img_size);
+                                self.crop_ratio = ratio;
+                                Some(Size::new(crop.region.width, crop.region.height))
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some(frame_size) = frame_size {
+                            let fill = self.viewport.fill_zoom(frame_size);
+                            self.viewport.set_zoom(fill);
+                            self.viewport.set_pan(Vector::ZERO);
                         }
                     }
                     EditMessage::RotateLeft => {
@@ -3109,13 +3141,18 @@ impl Application for CosmicViewer {
                         self.viewport.rebuild_display_preserve_view();
 
                         if is_cropping {
+                            let bounds = self.viewport.last_bounds().get();
+                            let vp = Size::new(bounds.width, bounds.height);
                             let new_size = self.viewport.image_size().unwrap_or(Size::ZERO);
                             if let Some(preview) = self.viewport.preview_mut()
                                 && let Some(crop) =
                                     preview.as_any_mut().downcast_mut::<CropSelection>()
                             {
-                                crop.activate(self.crop_ratio, new_size);
+                                crop.activate(self.crop_ratio, vp, new_size);
                             }
+                            let fill = self.viewport.fill_zoom(vp);
+                            self.viewport.set_zoom(fill);
+                            self.viewport.set_pan(Vector::ZERO);
                         }
                     }
                     EditMessage::RotateRight => {
@@ -3139,13 +3176,18 @@ impl Application for CosmicViewer {
                         self.viewport.rebuild_display_preserve_view();
 
                         if is_cropping {
+                            let bounds = self.viewport.last_bounds().get();
+                            let vp = Size::new(bounds.width, bounds.height);
                             let new_size = self.viewport.image_size().unwrap_or(Size::ZERO);
                             if let Some(preview) = self.viewport.preview_mut()
                                 && let Some(crop) =
                                     preview.as_any_mut().downcast_mut::<CropSelection>()
                             {
-                                crop.activate(self.crop_ratio, new_size);
+                                crop.activate(self.crop_ratio, vp, new_size);
                             }
+                            let fill = self.viewport.fill_zoom(vp);
+                            self.viewport.set_zoom(fill);
+                            self.viewport.set_pan(Vector::ZERO);
                         }
                     }
                     EditMessage::ShapePopupToggle => self.shape_popup = !self.shape_popup,

@@ -13,7 +13,12 @@ use cosmic::{
         layout::Node,
         widget::{Tree, tree},
     },
-    widget::{self, Operation, Widget, canvas::Cache, image::Handle},
+    iced_renderer::geometry::Renderer as GeometryRenderer,
+    widget::{
+        self, Operation, Widget,
+        canvas::{Cache, Frame},
+        image::Handle,
+    },
 };
 use image::DynamicImage;
 use std::cell::Cell;
@@ -150,6 +155,20 @@ impl ViewportManager {
 
     pub fn zoom(&self) -> f32 {
         self.zoom
+    }
+
+    /// Minimum zoom so the image fills the given frame size in both dimensions.
+    pub fn fill_zoom(&self, frame_size: Size) -> f32 {
+        if let Some(image) = &self.image {
+            let bounds = self.last_bounds.get();
+            let fit_scale =
+                (bounds.width / image.width as f32).min(bounds.height / image.height as f32);
+            let zx = frame_size.width / (image.width as f32 * fit_scale);
+            let zy = frame_size.height / (image.height as f32 * fit_scale);
+            zx.max(zy).max(1.0)
+        } else {
+            1.0
+        }
     }
 
     pub fn set_zoom(&mut self, zoom: f32) {
@@ -397,6 +416,7 @@ impl<'a> Viewport<'a> {
     }
 
     /// Overlay only canvas (tool overlays, no image).
+    /// When crop is active, the crop preview is excluded here and drawn separately.
     fn overlay_element(&self) -> Element<'_, CanvasMessage> {
         let mgr = self.manager;
         let is_crop = mgr.active_tool == Some(ToolKind::Crop);
@@ -423,13 +443,20 @@ impl<'a> Viewport<'a> {
 
     fn crop_overlay_element(&self) -> Element<'_, CanvasMessage> {
         let mgr = self.manager;
+        let is_crop = mgr.active_tool() == Some(ToolKind::Crop);
+
         let canvas = ViewerCanvas {
             image: mgr.image.as_ref(),
+            cache: &mgr.cache,
             zoom: 1.0,
             pan: Vector::ZERO,
             active_tool: mgr.active_tool,
             operations: &[],
-            preview: mgr.active_preview.as_deref(),
+            preview: if is_crop {
+                None
+            } else {
+                mgr.active_preview.as_deref()
+            },
             overlay_only: true,
         };
 
@@ -526,19 +553,16 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
             });
         }
 
-        // Layer 3: Crop overlay at fit-to-view
+        // Layer 3: Crop preview in screen space
         if is_crop && self.manager.active_preview.is_some() {
             renderer.with_layer(bounds, |renderer| {
-                let crop_overlay = self.crop_overlay_element();
-                crop_overlay.as_widget().draw(
-                    &tree.children[0],
-                    renderer,
-                    theme,
-                    style,
-                    layout.children().next().unwrap(),
-                    cursor,
-                    viewport,
-                );
+                let screen_size = Size::new(bounds.width, bounds.height);
+                let mut frame = Frame::new(renderer, screen_size);
+                if let Some(preview) = self.manager.active_preview.as_deref() {
+                    preview.draw(&mut frame, screen_size, 1.0);
+                }
+                let geometry = frame.into_geometry();
+                renderer.draw_geometry(geometry);
             });
         }
     }
@@ -567,7 +591,7 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
             return;
         }
 
-        // Crop: pan on interior clicks, fit-to-view coords for handles
+        // Crop pan: interior clicks pan the image behind the fixed crop frame
         if is_crop
             && let Event::Mouse(mouse_event) = event
             && let Some(position) = cursor.position_in(bounds)
@@ -586,23 +610,23 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
 
             match mouse_event {
                 MouseEvent::ButtonPressed(Button::Left) => {
-                    if let Some(pt) = self.manager.screen_to_image_fit(position, bounds)
-                        && let Some(preview) = self.manager.preview_ref()
-                    {
-                        let on_handle = preview.cursor_at(pt) != mouse::Interaction::Crosshair;
+                    if let Some(preview) = self.manager.preview_ref() {
+                        let on_handle =
+                            preview.cursor_at(position) != mouse::Interaction::Crosshair;
                         if on_handle {
-                            shell.publish(CanvasMessage::ToolStart(pt));
+                            shell.publish(CanvasMessage::ToolStart(position));
                             shell.capture_event();
                             return;
                         }
-                        if preview.hit_test(pt) {
+                        if preview.hit_test(position) {
                             self.manager
                                 .crop_pan
                                 .set(Some((position, self.manager.pan)));
                             shell.capture_event();
                             return;
                         }
-                        shell.publish(CanvasMessage::ToolStart(pt));
+                        // Outside region in Custom -- start new selection
+                        shell.publish(CanvasMessage::ToolStart(position));
                         shell.capture_event();
                         return;
                     }

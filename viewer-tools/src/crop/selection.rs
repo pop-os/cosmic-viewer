@@ -19,7 +19,7 @@ const BORDER_WIDTH: f32 = 1.5;
 /// Transparent, which means never committed to undo/redo.
 #[derive(Debug, Clone)]
 pub struct CropSelection {
-    /// Current selection rectangle in image coordinates.
+    /// Current selection rectangle in viewport/screen coordinates.
     pub region: Rectangle,
     /// Active aspect ratio constraint.
     pub ratio: CropRatio,
@@ -51,57 +51,55 @@ impl CropSelection {
         }
     }
 
-    /// Activate with a specific ratio. For constrained ratios, initializes
-    /// a centered crop frame that fills the image width.
-    pub fn activate(&mut self, ratio: CropRatio, image_size: Size) {
+    /// Activate with a specific ratio. Frame fills the viewport (or is
+    /// ratio-constrained within it). `image_size` is only used for
+    /// portrait detection in ratio resolution.
+    pub fn activate(&mut self, ratio: CropRatio, viewport: Size, image_size: Size) {
         self.ratio = ratio;
         self.visible = true;
 
         if let Some(aspect) = ratio.resolve(image_size) {
-            // Constrained: fit frame to image width, center vertically
-            let width = image_size.width;
+            let width = viewport.width;
             let height = width / aspect;
 
-            // If height exceeds image, fit to height instead
-            let (width, height) = if height > image_size.height {
-                (image_size.height * aspect, image_size.height)
+            let (width, height) = if height > viewport.height {
+                (viewport.height * aspect, viewport.height)
             } else {
                 (width, height)
             };
 
             self.region = Rectangle::new(
                 Point::new(
-                    (image_size.width - width) / 2.0,
-                    (image_size.height - height) / 2.0,
+                    (viewport.width - width) / 2.0,
+                    (viewport.height - height) / 2.0,
                 ),
                 Size::new(width, height),
             );
         } else {
-            // Custom: start with full image selected
-            self.region = Rectangle::new(Point::ORIGIN, image_size);
+            self.region = Rectangle::new(Point::ORIGIN, viewport);
         }
     }
 
-    /// Change the ratio, maximized to the full image size.
-    pub fn set_ratio(&mut self, ratio: CropRatio, image_size: Size) {
+    /// Change the ratio. Frame fills the viewport for the new ratio.
+    pub fn set_ratio(&mut self, ratio: CropRatio, viewport: Size, image_size: Size) {
         self.ratio = ratio;
 
         if let Some(aspect) = ratio.resolve(image_size) {
-            let width = image_size.width;
+            let width = viewport.width;
             let height = width / aspect;
 
-            let (width, height) = if height > image_size.height {
-                (image_size.height * aspect, image_size.height)
+            let (width, height) = if height > viewport.height {
+                (viewport.height * aspect, viewport.height)
             } else {
                 (width, height)
             };
 
-            let x = (image_size.width - width) / 2.0;
-            let y = (image_size.height - height) / 2.0;
+            let x = (viewport.width - width) / 2.0;
+            let y = (viewport.height - height) / 2.0;
 
             self.region = Rectangle::new(Point::new(x, y), Size::new(width, height));
         } else {
-            self.region = Rectangle::new(Point::ORIGIN, image_size);
+            self.region = Rectangle::new(Point::ORIGIN, viewport);
         }
     }
 
@@ -161,14 +159,15 @@ impl CropSelection {
 
         // Enforce aspect ratio constraint
         if let Some(aspect) = self.ratio.resolve(image_size)
-            && !matches!(self.active_handle, DragHandle::Move) {
-                // Width-dominant: adjust height to match ratio
-                height = width / aspect;
-                if height > image_size.height {
-                    height = image_size.height;
-                    width = height * aspect;
-                }
+            && !matches!(self.active_handle, DragHandle::Move)
+        {
+            // Width-dominant: adjust height to match ratio
+            height = width / aspect;
+            if height > image_size.height {
+                height = image_size.height;
+                width = height * aspect;
             }
+        }
 
         // Clamp to image bounds
         x = x.clamp(0.0, (image_size.width - width).max(0.0));
@@ -344,27 +343,123 @@ impl ToolOperation for CropSelection {
 
         // Corner handles — two bars each forming an L
         // Top-left
-        Self::draw_handle(frame, Point::new(region.x, region.y), bar_long, bar_short, 0.0, 0.0, accent);
-        Self::draw_handle(frame, Point::new(region.x, region.y), bar_short, bar_long, 0.0, 0.0, accent);
+        Self::draw_handle(
+            frame,
+            Point::new(region.x, region.y),
+            bar_long,
+            bar_short,
+            0.0,
+            0.0,
+            accent,
+        );
+        Self::draw_handle(
+            frame,
+            Point::new(region.x, region.y),
+            bar_short,
+            bar_long,
+            0.0,
+            0.0,
+            accent,
+        );
         // Top-right
-        Self::draw_handle(frame, Point::new(region.x + region.width, region.y), bar_long, bar_short, 1.0, 0.0, accent);
-        Self::draw_handle(frame, Point::new(region.x + region.width, region.y), bar_short, bar_long, 1.0, 0.0, accent);
+        Self::draw_handle(
+            frame,
+            Point::new(region.x + region.width, region.y),
+            bar_long,
+            bar_short,
+            1.0,
+            0.0,
+            accent,
+        );
+        Self::draw_handle(
+            frame,
+            Point::new(region.x + region.width, region.y),
+            bar_short,
+            bar_long,
+            1.0,
+            0.0,
+            accent,
+        );
         // Bottom-left
-        Self::draw_handle(frame, Point::new(region.x, region.y + region.height), bar_long, bar_short, 0.0, 1.0, accent);
-        Self::draw_handle(frame, Point::new(region.x, region.y + region.height), bar_short, bar_long, 0.0, 1.0, accent);
+        Self::draw_handle(
+            frame,
+            Point::new(region.x, region.y + region.height),
+            bar_long,
+            bar_short,
+            0.0,
+            1.0,
+            accent,
+        );
+        Self::draw_handle(
+            frame,
+            Point::new(region.x, region.y + region.height),
+            bar_short,
+            bar_long,
+            0.0,
+            1.0,
+            accent,
+        );
         // Bottom-right
-        Self::draw_handle(frame, Point::new(region.x + region.width, region.y + region.height), bar_long, bar_short, 1.0, 1.0, accent);
-        Self::draw_handle(frame, Point::new(region.x + region.width, region.y + region.height), bar_short, bar_long, 1.0, 1.0, accent);
+        Self::draw_handle(
+            frame,
+            Point::new(region.x + region.width, region.y + region.height),
+            bar_long,
+            bar_short,
+            1.0,
+            1.0,
+            accent,
+        );
+        Self::draw_handle(
+            frame,
+            Point::new(region.x + region.width, region.y + region.height),
+            bar_short,
+            bar_long,
+            1.0,
+            1.0,
+            accent,
+        );
 
         // Edge handles — single bar each
         // Top center
-        Self::draw_handle(frame, Point::new(region.x + region.width / 2.0, region.y), bar_long, bar_short, 0.5, 0.0, accent);
+        Self::draw_handle(
+            frame,
+            Point::new(region.x + region.width / 2.0, region.y),
+            bar_long,
+            bar_short,
+            0.5,
+            0.0,
+            accent,
+        );
         // Bottom center
-        Self::draw_handle(frame, Point::new(region.x + region.width / 2.0, region.y + region.height), bar_long, bar_short, 0.5, 1.0, accent);
+        Self::draw_handle(
+            frame,
+            Point::new(region.x + region.width / 2.0, region.y + region.height),
+            bar_long,
+            bar_short,
+            0.5,
+            1.0,
+            accent,
+        );
         // Left center
-        Self::draw_handle(frame, Point::new(region.x, region.y + region.height / 2.0), bar_short, bar_long, 0.0, 0.5, accent);
+        Self::draw_handle(
+            frame,
+            Point::new(region.x, region.y + region.height / 2.0),
+            bar_short,
+            bar_long,
+            0.0,
+            0.5,
+            accent,
+        );
         // Right center
-        Self::draw_handle(frame, Point::new(region.x + region.width, region.y + region.height / 2.0), bar_short, bar_long, 1.0, 0.5, accent);
+        Self::draw_handle(
+            frame,
+            Point::new(region.x + region.width, region.y + region.height / 2.0),
+            bar_short,
+            bar_long,
+            1.0,
+            0.5,
+            accent,
+        );
     }
 
     fn apply(&self, _image: &mut DynamicImage) {
@@ -392,6 +487,7 @@ impl ToolOperation for CropSelection {
         if handle != DragHandle::None {
             self.start_handle_drag(handle, point);
         } else if matches!(self.ratio, CropRatio::Custom) && !self.region.contains(point) {
+            // Click outside region in Custom mode starts a new selection
             self.start_new(point);
         }
         self.active_handle.cursor()
@@ -418,5 +514,4 @@ impl ToolOperation for CropSelection {
     fn cursor_at(&self, point: Point) -> mouse::Interaction {
         self.hit_test(point).cursor()
     }
-
 }
