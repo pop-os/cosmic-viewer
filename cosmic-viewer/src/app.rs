@@ -16,10 +16,9 @@ use cosmic::{
         keyboard::key::{Key, Named},
     },
     iced_core::Border,
-    iced_runtime,
     iced_wgpu::graphics::text::font_system,
     iced_widget::{
-        Grid, grid,
+        grid,
         scrollable::{AbsoluteOffset, scroll_to},
         sensor, stack,
     },
@@ -27,10 +26,7 @@ use cosmic::{
     theme::{self, Button},
     widget::{
         self, Column, Id, Row, Space, Toast, Toasts, button, canvas,
-        color_picker::{
-            self,
-            ColorPickerUpdate::{self, AppliedColor, Cancel, ToggleColorPicker},
-        },
+        color_picker::ColorPickerUpdate::{self, AppliedColor, Cancel, ToggleColorPicker},
         container, divider, dropdown, icon,
         image::Handle,
         menu::{KeyBind, menu_button},
@@ -61,7 +57,7 @@ use viewer_tools::{
     crop::{CropOperation, CropRatio, CropSelection},
     rotate::{RotateDirection, RotateOperation},
 };
-use viewer_widgets::{GridItem, ImageGrid, dashed_shape::DashedBorder, image_grid::image_grid};
+use viewer_widgets::dashed_shape::DashedBorder;
 
 pub struct CosmicViewer {
     core: Core,
@@ -230,43 +226,6 @@ impl CosmicViewer {
         let end = (center + radius + 1).min(total);
 
         let tasks: Vec<_> = images[start..end]
-            .iter()
-            .filter(|path| {
-                self.cache.get_thumbnail(path).is_none() && !self.cache.is_thumbnail_pending(path)
-            })
-            .map(|path| {
-                self.cache.set_thumbnail_pending(path.clone());
-                let cache = self.cache.clone();
-                let path = path.clone();
-                future(async move {
-                    match load_thumbnail(path.clone(), max_size).await {
-                        Ok(loaded) => {
-                            cache.insert_thumbnail(loaded.path.clone(), loaded.handle);
-                            Action::App(ViewerMessage::Image(ImageMessage::ThumbnailReady(
-                                loaded.path,
-                                loaded.width,
-                                loaded.height,
-                            )))
-                        }
-                        Err(_) => Action::App(ViewerMessage::Image(ImageMessage::LoadError(path))),
-                    }
-                })
-            })
-            .collect();
-
-        if tasks.is_empty() {
-            Task::none()
-        } else {
-            Task::batch(tasks)
-        }
-    }
-
-    fn load_remaining_thumbnails(&self) -> Task<Action<ViewerMessage>> {
-        let max_size = self.config.thumbnail_size.pixels();
-
-        let tasks: Vec<_> = self
-            .nav
-            .images()
             .iter()
             .filter(|path| {
                 self.cache.get_thumbnail(path).is_none() && !self.cache.is_thumbnail_pending(path)
@@ -1238,15 +1197,6 @@ impl Application for CosmicViewer {
             .unwrap_or_default();
 
         let scroll_id = Id::unique();
-
-        let grid = ImageGrid::new(Vec::new())
-            .thumbnail_size(config.thumbnail_size.pixels())
-            .on_activate(|idx| Action::App(ViewerMessage::Nav(NavMessage::GridActivate(idx))))
-            .on_focus(|idx| Action::App(ViewerMessage::Nav(NavMessage::GridFocus(idx))))
-            .on_scroll_request(|req| {
-                Action::App(ViewerMessage::Nav(NavMessage::GridScroll(req.offset_y)))
-            })
-            .scrollable(scroll_id.clone());
 
         let families = load_font_families();
         let default_family = match cosmic::font::default().family {
@@ -2414,7 +2364,9 @@ impl Application for CosmicViewer {
                         }
                     }
                 }
-                NavMessage::GridFocus(idx) => {} //self.grid.set_focused(Some(idx)),
+                NavMessage::GridFocus(idx) => {
+                    self.nav.select(idx);
+                } //self.grid.set_focused(Some(idx)),
                 NavMessage::GridScroll(offset) => {
                     tasks.push(scroll_to(
                         self.scroll_id.clone(),
@@ -2429,12 +2381,7 @@ impl Application for CosmicViewer {
                     let dir = self.nav.dir().map(|d| d.to_path_buf());
                     if let Some(dir) = dir {
                         self.nav.set_images(dir, images, selected.as_deref());
-                        //self.rebuild_grid_items();
                         self.rebuild_nav_handles();
-
-                        /*if !self.nav.is_empty() {
-                            tasks.push(self.load_remaining_thumbnails());
-                        }*/
 
                         if let Some(path) = self.nav.current().cloned()
                             && self.cache.get_full(&path).is_none()
