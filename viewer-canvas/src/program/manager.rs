@@ -13,12 +13,7 @@ use cosmic::{
         layout::Node,
         widget::{Tree, tree},
     },
-    iced_renderer::geometry::Renderer as GeometryRenderer,
-    widget::{
-        self, Operation, Widget,
-        canvas::{Cache, Frame},
-        image::Handle,
-    },
+    widget::{self, Operation, Widget, canvas::Cache, image::Handle},
 };
 use image::DynamicImage;
 use std::cell::Cell;
@@ -443,8 +438,6 @@ impl<'a> Viewport<'a> {
 
     fn crop_overlay_element(&self) -> Element<'_, CanvasMessage> {
         let mgr = self.manager;
-        let is_crop = mgr.active_tool() == Some(ToolKind::Crop);
-
         let canvas = ViewerCanvas {
             image: mgr.image.as_ref(),
             cache: &mgr.cache,
@@ -613,11 +606,12 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
                     {
                         let on_handle = preview.cursor_at(pt) != mouse::Interaction::Crosshair;
                         if on_handle {
+                            self.manager.crop_pan.set(None);
                             shell.publish(CanvasMessage::ToolStart(pt));
                             shell.capture_event();
                             return;
                         }
-                        if preview.hit_test(position) {
+                        if preview.hit_test(pt) {
                             self.manager
                                 .crop_pan
                                 .set(Some((position, self.manager.pan)));

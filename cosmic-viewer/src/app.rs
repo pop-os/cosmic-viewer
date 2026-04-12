@@ -2707,6 +2707,19 @@ impl Application for CosmicViewer {
                         preview.on_release(Point::ORIGIN, size);
                     }
 
+                    if self.viewport.active_tool() == Some(ToolKind::Crop) {
+                        let crop_ratio = self.crop_ratio;
+                        tasks.push(future(async move {
+                            Action::App(ViewerMessage::Edit(EditMessage::CropApply))
+                        }));
+                        tasks.push(future(async move {
+                            Action::App(ViewerMessage::Edit(EditMessage::Crop))
+                        }));
+                        tasks.push(future(async move {
+                            Action::App(ViewerMessage::Edit(EditMessage::CropRatio(crop_ratio)))
+                        }));
+                    }
+
                     // Set text_editing flag when text preview enters editing mode
                     if self.viewport.active_tool() == Some(ToolKind::Annotate)
                         && matches!(self.annotate_tool, AnnotateTool::Text)
@@ -3346,6 +3359,16 @@ impl Application for CosmicViewer {
                                 }
 
                                 self.rebuild_working_image();
+
+                                // Reset the crop preview to the restored image size
+                                if let Some(new_size) = self.viewport.image_size()
+                                    && let Some(preview) = self.viewport.preview_mut()
+                                    && let Some(selection) =
+                                        preview.as_any_mut().downcast_mut::<CropSelection>()
+                                {
+                                    let ratio = selection.ratio;
+                                    selection.activate(ratio, new_size);
+                                }
                             } else {
                                 self.viewport.rebuild_display();
                             }
