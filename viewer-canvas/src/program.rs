@@ -7,6 +7,7 @@ use cosmic::{
         Rectangle, Size, Vector,
         mouse::{self, Button, Cursor, Event as MouseEvent},
     },
+    iced_core::image::Renderer as IcedRenderer,
     iced_widget::canvas::{Action, Event, Frame, Geometry, Program},
     widget::canvas::Cache,
 };
@@ -86,6 +87,8 @@ impl<'a> Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'a> {
             let fit_scale =
                 (bounds.width / image.width as f32).min(bounds.height / image.height as f32);
             let image_size = Size::new(image.width as f32, image.height as f32);
+
+            let _ = renderer.load_image(&image.handle);
 
             if !self.overlay_only {
                 // Image layer
