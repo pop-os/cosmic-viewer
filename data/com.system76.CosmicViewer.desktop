@@ -1,0 +1,17 @@
+[Desktop Entry]
+Name=COSMIC Image Viewer
+GenericName=Image Viewer
+Comment=View and annotate images
+Exec=cosmic-viewer %F
+Icon=com.system76.CosmicViewer
+Terminal=false
+Type=Application
+Categories=Graphics;Viewer;
+StartupNotify=true
+MimeType=image/jpeg;image/png;image/gif;image/webp;image/bmp;image/tiff;image/x-icon;image/avif;image/heif;image/heic;image/jxl;image/svg+xml;image/x-portable-pixmap;image/x-portable-graymap;image/x-portable-bitmap;image/x-portable-anymap;image/x-qoi;image/vnd.radiance;
+Keywords=image;photo;picture;viewer;annotate;markup;
+Actions=Gallery;
+
+[Desktop Action Gallery]
+Name=Open Gallery
+Exec=cosmic-viewer
