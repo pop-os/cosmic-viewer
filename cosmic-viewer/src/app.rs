@@ -38,6 +38,7 @@ use cosmic::{
 use image::DynamicImage;
 use std::{
     collections::{HashMap, HashSet},
+    mem,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -49,7 +50,7 @@ use viewer_core::{
 };
 use viewer_toolbar::{ItemPriority, ToolbarItem, ToolbarMode, responsive_toolbar};
 use viewer_tools::{
-    ToolOperation,
+    FONT_SIZE_PRESETS, ToolOperation,
     annotate::{
         AnnotateColor, AnnotateTool, HighlighterPreview, PenPreview, PencilPreview, ShapeKind,
         ShapePreview, TextDragHandle, TextOperation, TextPreview,
@@ -82,6 +83,7 @@ pub struct CosmicViewer {
     move_mode: bool,
     move_target: Option<usize>,
     move_start: Option<Point>,
+    move_did_drag: bool,
     font_families: Vec<&'static str>,
     text_font_family: &'static str,
     text_font_index: Option<usize>,
@@ -214,6 +216,28 @@ impl CosmicViewer {
             }
 
             self.viewport.rebuild_display_preserve_view();
+        }
+    }
+
+    fn lift_operation_for_edit(&mut self, idx: usize) {
+        let op = self.viewport.operations_mut().remove(idx);
+
+        if let Some(text_op) = op.as_any().downcast_ref::<TextOperation>() {
+            let preview = text_op.to_preview();
+            // Sync toolbar state from last span
+            self.text_bold = preview.bold;
+            self.text_italic = preview.italic;
+            self.text_underline = preview.underline;
+            self.annotate_tool = AnnotateTool::Text;
+            self.text_editing = true;
+            self.viewport.set_active_tool(Some(ToolKind::Annotate));
+            self.viewport.set_preview(Some(Box::new(preview)));
+            self.move_mode = false;
+            self.move_target = None;
+        } else {
+            // Pen/highlighter can't be re-edited, only moved.
+            // Put it back and stay in move mode.
+            self.viewport.operations_mut().insert(idx, op);
         }
     }
 
@@ -994,7 +1018,7 @@ impl CosmicViewer {
 
         if self.show_text_format_menu {
             let font_sizes = vec!["12pt", "16pt", "20pt", "24pt", "32pt", "48pt", "64pt"];
-            let font_size_values = [12.0_f32, 16.0, 20.0, 24.0, 32.0, 48.0, 64.0];
+            let font_size_values = FONT_SIZE_PRESETS;
             let font_size_selected = font_size_values
                 .iter()
                 .position(|s| *s == self.text_font_size);
@@ -1232,6 +1256,7 @@ impl Application for CosmicViewer {
             move_mode: false,
             move_target: None,
             move_start: None,
+            move_did_drag: false,
             font_families: load_font_families(),
             shape_popup: false,
             stroke_popup: false,
@@ -2569,6 +2594,7 @@ impl Application for CosmicViewer {
 
                         self.move_target = hit;
                         self.move_start = Some(point);
+                        self.move_did_drag = false;
                         self.viewport.tool_dragging = true;
                         return Task::none();
                     }
@@ -2675,6 +2701,7 @@ impl Application for CosmicViewer {
                 }
                 CanvasMessage::ToolDrag(point) => {
                     if self.move_mode {
+                        self.move_did_drag = true;
                         if let Some(idx) = self.move_target
                             && let Some(start) = self.move_start
                         {
@@ -2695,9 +2722,17 @@ impl Application for CosmicViewer {
                 }
                 CanvasMessage::ToolEnd => {
                     if self.move_mode {
-                        self.move_target = None;
+                        let target = self.move_target.take();
+                        let did_drag = mem::replace(&mut self.move_did_drag, false);
                         self.move_start = None;
                         self.viewport.tool_dragging = false;
+
+                        if !did_drag {
+                            if let Some(idx) = target {
+                                self.lift_operation_for_edit(idx);
+                            }
+                        }
+
                         return Task::none();
                     }
                     self.viewport.tool_dragging = false;
@@ -2728,6 +2763,7 @@ impl Application for CosmicViewer {
                             preview.as_any_mut().downcast_mut::<TextPreview>()
                     {
                         self.text_editing = text_preview.is_editing();
+                        self.text_font_size = text_preview.font_size;
                     }
 
                     // Auto-commit for annotation, each stroke goes on the undo stack
@@ -2800,6 +2836,9 @@ impl Application for CosmicViewer {
                         self.text_editing = false;
                         self.show_text_format_menu = false;
                         self.viewport.tool_dragging = false;
+                        self.move_mode = false;
+                        self.move_target = None;
+                        self.move_start = None;
                     }
                     EditMessage::AnnotateCancel => {
                         if self.text_editing {
@@ -2814,6 +2853,10 @@ impl Application for CosmicViewer {
                         self.viewport.revert_all();
                         self.viewport.set_active_tool(None);
                         self.viewport.set_preview(None);
+                        self.move_mode = false;
+                        self.move_target = None;
+                        self.move_start = None;
+
                         // Restore working image from cache so rotation etc. still works
                         if let Some(path) = self.nav.current().cloned()
                             && let Some(cached) = self.cache.get_full(&path)

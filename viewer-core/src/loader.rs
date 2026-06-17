@@ -44,6 +44,18 @@ impl Debug for LoadedImage {
     }
 }
 
+// Display texture, downscaled to MAX_TEX. The source image is left full-res.
+fn display_handle(image: &DynamicImage) -> Handle {
+    let rgba = image.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    if (width > MAX_TEX || height > MAX_TEX)
+        && let Ok((tw, th, pixels)) = fast_resize_rgba(rgba.as_raw(), width, height, MAX_TEX)
+    {
+        return Handle::from_rgba(tw, th, pixels);
+    }
+    Handle::from_rgba(width, height, rgba.into_raw())
+}
+
 pub async fn load_image(path: PathBuf) -> Result<LoadedImage, LoadError> {
     let (tx, rx) = tokio::sync::oneshot::channel();
 
@@ -81,19 +93,8 @@ fn load_image_sync(path: &Path) -> Result<LoadedImage, LoadError> {
 
     // Standard image formats via the 'image' crate
     let img = image::open(path)?;
-    let rgba = img.to_rgba8();
-    let (width, height) = rgba.dimensions();
-    let pixels = rgba.into_raw();
-
-    // Temp fix until I can get a patch into upstream
-    // Downscales the image if it dimensions exceed 2048 in either direction
-    let (width, height, pixels) = if width as u32 > MAX_TEX || height as u32 > MAX_TEX {
-        fast_resize_rgba(&pixels, width as u32, height as u32, MAX_TEX)?
-    } else {
-        (width as u32, height as u32, pixels)
-    };
-
-    let handle = Handle::from_rgba(width, height, pixels);
+    let (width, height) = (img.width(), img.height());
+    let handle = display_handle(&img);
 
     Ok(LoadedImage {
         handle,
@@ -135,26 +136,14 @@ fn load_jpeg_full(path: &Path) -> Result<LoadedImage, LoadError> {
         .decompress(&jpeg_data, output.as_deref_mut())
         .map_err(|e| LoadError::UnsupportedFormat(format!("JPEG decode error: {}", e)))?;
 
-    // Temp fix until I can get a patch into upstream
-    // Downscales the image if it dimensions exceed 2048 in either direction
-    let (width, height, pixels) = if width as u32 > MAX_TEX || height as u32 > MAX_TEX {
-        println!("Resizing {width}x{height} -> capped at {MAX_TEX}");
-        fast_resize_rgba(&pixels, width as u32, height as u32, MAX_TEX)?
-    } else {
-        (width as u32, height as u32, pixels)
-    };
-
-    println!("{width}x{height} after possible resize");
-
-    let rgba_image = RgbaImage::from_raw(width as u32, height as u32, pixels.clone())
+    let rgba_image = RgbaImage::from_raw(width as u32, height as u32, pixels)
         .expect("pixel buffer matches dimensions");
-    let dynamic_image = DynamicImage::ImageRgba8(rgba_image);
-
-    let handle = Handle::from_rgba(width as u32, height as u32, pixels);
+    let image = DynamicImage::ImageRgba8(rgba_image);
+    let handle = display_handle(&image);
 
     Ok(LoadedImage {
         handle,
-        image: dynamic_image,
+        image,
         width: width as u32,
         height: height as u32,
         path: path.to_path_buf(),
@@ -196,23 +185,14 @@ fn load_with_zune(path: &Path) -> Result<LoadedImage, LoadError> {
         .next()
         .ok_or_else(|| LoadError::UnsupportedFormat("No pixel data".into()))?;
 
-    let rgba_image = RgbaImage::from_raw(width as u32, height as u32, pixels.clone())
+    let rgba_image = RgbaImage::from_raw(width as u32, height as u32, pixels)
         .expect("pixel buffer matches dimensions");
-    let dynamic_image = DynamicImage::ImageRgba8(rgba_image);
-
-    // Temp fix until I can get a patch into upstream
-    // Downscales the image if it dimensions exceed 2048 in either direction
-    let (width, height, pixels) = if width as u32 > MAX_TEX || height as u32 > MAX_TEX {
-        fast_resize_rgba(&pixels, width as u32, height as u32, MAX_TEX)?
-    } else {
-        (width as u32, height as u32, pixels)
-    };
-
-    let handle = Handle::from_rgba(width as u32, height as u32, pixels);
+    let image = DynamicImage::ImageRgba8(rgba_image);
+    let handle = display_handle(&image);
 
     Ok(LoadedImage {
         handle,
-        image: dynamic_image,
+        image,
         width: width as u32,
         height: height as u32,
         path: path.to_path_buf(),
@@ -221,19 +201,8 @@ fn load_with_zune(path: &Path) -> Result<LoadedImage, LoadError> {
 
 fn load_with_image(path: &Path) -> Result<LoadedImage, LoadError> {
     let img = image::open(path)?;
-    let rgba = img.to_rgba8();
-    let (width, height) = rgba.dimensions();
-    let pixels = rgba.into_raw();
-
-    // Temp fix until I can get a patch into upstream
-    // Downscales the image if it dimensions exceed 2048 in either direction
-    let (width, height, pixels) = if width as u32 > MAX_TEX || height as u32 > MAX_TEX {
-        fast_resize_rgba(&pixels, width as u32, height as u32, MAX_TEX)?
-    } else {
-        (width as u32, height as u32, pixels)
-    };
-
-    let handle = Handle::from_rgba(width, height, pixels);
+    let (width, height) = (img.width(), img.height());
+    let handle = display_handle(&img);
 
     Ok(LoadedImage {
         handle,

@@ -71,6 +71,7 @@ pub(crate) const MIN_BOX_WIDTH: f32 = 40.0;
 pub(crate) const MIN_BOX_HEIGHT: f32 = 20.0;
 pub(crate) const DEFAULT_BOX_WIDTH: f32 = 200.0;
 pub(crate) const LINE_HEIGHT_FACTOR: f32 = 1.2;
+pub const FONT_SIZE_PRESETS: [f32; 7] = [12.0, 16.0, 20.0, 24.0, 32.0, 40.0, 64.0];
 const DRAG_THRESHOLD: f32 = 5.0;
 
 #[derive(Debug, Clone)]
@@ -162,4 +163,12 @@ pub(crate) fn build_buffer_line(
 pub(crate) fn content_height(buf: &cosmic_text::Buffer) -> f32 {
     buf.layout_runs()
         .fold(0.0, |h, run| (run.line_top + run.line_height).max(h))
+}
+
+pub(crate) fn snap_font_size(target: f32) -> f32 {
+    FONT_SIZE_PRESETS
+        .iter()
+        .copied()
+        .min_by(|a, b| (a - target).abs().total_cmp(&(b - target).abs()))
+        .unwrap_or(24.0)
 }

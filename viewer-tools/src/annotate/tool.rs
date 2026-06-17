@@ -4,6 +4,8 @@ pub mod pencil;
 pub mod shapes;
 pub mod text;
 
+pub use text::FONT_SIZE_PRESETS;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AnnotateTool {
     #[default]

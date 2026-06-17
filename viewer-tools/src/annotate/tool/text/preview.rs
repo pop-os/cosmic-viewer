@@ -1,11 +1,7 @@
-use std::cell::Cell;
-use std::time::Instant;
-use std::{any::Any, f32};
-
 use super::{
     BORDER_WIDTH, DEFAULT_BOX_WIDTH, DRAG_THRESHOLD, LINE_HEIGHT_FACTOR, MIN_BOX_HEIGHT,
     MIN_BOX_WIDTH, TextDragHandle, TextOperation, TextSpan, build_buffer_line, content_height,
-    encode_align, group_spans, intern_str, span_attrs,
+    encode_align, group_spans, intern_str, snap_font_size, span_attrs,
 };
 use crate::{ToolOperation, annotate::tool::text::TEXT_INSET};
 use cosmic::{
@@ -23,6 +19,7 @@ use cosmic::{
 };
 use cosmic_text::Edit;
 use image::DynamicImage;
+use std::{any::Any, cell::Cell, f32, time::Instant};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TextEditState {
@@ -1085,6 +1082,11 @@ impl ToolOperation for TextPreview {
         self.mouse_selecting = false;
         match self.state {
             TextEditState::PlacingDrag => {
+                if self.custom_dragged {
+                    // Bigger height drag = bigger font size
+                    let screen_h = self.bounding_box.height * self.last_scale.get();
+                    self.font_size = snap_font_size(screen_h / LINE_HEIGHT_FACTOR);
+                }
                 self.init_editor();
                 self.state = TextEditState::Editing;
             }

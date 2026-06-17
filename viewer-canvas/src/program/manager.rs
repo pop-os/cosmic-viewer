@@ -19,6 +19,21 @@ use image::DynamicImage;
 use std::cell::Cell;
 use viewer_tools::ToolOperation;
 
+const MAX_TEX: u32 = 2048;
+
+// Display texture, downscaled to MAX_TEX. The source image is left full-res.
+fn display_handle(image: &DynamicImage) -> Handle {
+    let rgba = if image.width() > MAX_TEX || image.height() > MAX_TEX {
+        image
+            .resize(MAX_TEX, MAX_TEX, image::imageops::FilterType::Triangle)
+            .to_rgba8()
+    } else {
+        image.to_rgba8()
+    };
+    let (width, height) = rgba.dimensions();
+    Handle::from_rgba(width, height, rgba.into_raw())
+}
+
 /// Orchestrator that owns the canvas state, edit operations, and undo/redo history.
 pub struct ViewportManager {
     image: Option<CanvasImage>,
@@ -76,6 +91,14 @@ impl ViewportManager {
     }
 
     pub fn set_image(&mut self, image: Option<CanvasImage>, base: Option<DynamicImage>) {
+        let image = match (image, base.as_ref()) {
+            (Some(mut img), Some(base)) => {
+                img.width = base.width();
+                img.height = base.height();
+                Some(img)
+            }
+            (img, _) => img,
+        };
         self.image = image;
         self.working_image = base;
         self.zoom = 1.0;
@@ -96,9 +119,8 @@ impl ViewportManager {
             op.apply(&mut working);
         }
 
-        let rgba = working.to_rgba8();
-        let (width, height) = rgba.dimensions();
-        let handle = Handle::from_rgba(width, height, rgba.into_raw());
+        let (width, height) = (working.width(), working.height());
+        let handle = display_handle(&working);
         self.image = Some(CanvasImage {
             handle,
             width,
@@ -114,9 +136,8 @@ impl ViewportManager {
 
     pub fn rebuild_display(&mut self) {
         if let Some(ref working) = self.working_image {
-            let rgba = working.to_rgba8();
-            let (width, height) = rgba.dimensions();
-            let handle = Handle::from_rgba(width, height, rgba.into_raw());
+            let (width, height) = (working.width(), working.height());
+            let handle = display_handle(working);
             self.image = Some(CanvasImage {
                 handle,
                 width,
@@ -129,9 +150,8 @@ impl ViewportManager {
 
     pub fn rebuild_display_preserve_view(&mut self) {
         if let Some(ref working) = self.working_image {
-            let rgba = working.to_rgba8();
-            let (width, height) = rgba.dimensions();
-            let handle = Handle::from_rgba(width, height, rgba.into_raw());
+            let (width, height) = (working.width(), working.height());
+            let handle = display_handle(working);
             self.image = Some(CanvasImage {
                 handle,
                 width,
@@ -704,19 +724,16 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
 
         if self.manager.active_tool.is_some() {
             if let Some(position) = cursor.position_in(bounds)
-                && let (Some(preview), Some(img_point)) = (
-                    self.manager.active_preview.as_deref(),
-                    self.manager.screen_to_image(position, bounds),
-                )
+                && let Some(img_point) = self.manager.screen_to_image(position, bounds)
             {
-                return preview.cursor_at(img_point);
+                if let Some(preview) = self.manager.active_preview.as_deref() {
+                    return preview.cursor_at(img_point);
+                }
+                return mouse::Interaction::Crosshair;
             }
 
-            return if cursor.position_in(bounds).is_some() {
-                mouse::Interaction::Crosshair
-            } else {
-                mouse::Interaction::default()
-            };
+            // Cursor is in the viewport but not over the image
+            return mouse::Interaction::default();
         }
 
         // Delegate to base canvas for non-tool cursors
