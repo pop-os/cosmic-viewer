@@ -7,8 +7,10 @@ use cosmic::{
         key_bind::{KeyBind, Modifier},
     },
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::OnceLock};
 use viewer_canvas::CanvasMessage;
+
+static KEYBINDS: OnceLock<HashMap<KeyBind, MenuAction>> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MenuAction {
@@ -195,10 +197,36 @@ pub fn init_keybinds() -> HashMap<KeyBind, MenuAction> {
         MenuAction::Fullscreen,
     );
 
+    // ZoomIn: canonical Ctrl+= plus aliases for the "+" key and Shift variants,
+    // so Ctrl++ (physically Ctrl+Shift+=) also zooms in.
     binds.insert(
         KeyBind {
             modifiers: vec![Modifier::Ctrl],
             key: Key::Character("=".into()),
+        },
+        MenuAction::ZoomIn,
+    );
+
+    binds.insert(
+        KeyBind {
+            modifiers: vec![Modifier::Ctrl, Modifier::Shift],
+            key: Key::Character("=".into()),
+        },
+        MenuAction::ZoomIn,
+    );
+
+    binds.insert(
+        KeyBind {
+            modifiers: vec![Modifier::Ctrl],
+            key: Key::Character("+".into()),
+        },
+        MenuAction::ZoomIn,
+    );
+
+    binds.insert(
+        KeyBind {
+            modifiers: vec![Modifier::Ctrl, Modifier::Shift],
+            key: Key::Character("+".into()),
         },
         MenuAction::ZoomIn,
     );
@@ -314,7 +342,8 @@ pub fn keyboard_shortcut_handler(
         key: key.clone(),
     };
 
-    init_keybinds()
+    KEYBINDS
+        .get_or_init(init_keybinds)
         .get(&key_bind)
         .map(|action| action.message())
 }
