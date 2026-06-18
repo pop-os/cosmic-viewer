@@ -576,22 +576,24 @@ impl CosmicViewer {
             for ratio in presets {
                 let label = ratio.label(is_portrait).to_string();
                 let is_selected = *ratio == self.crop_ratio;
-
                 let item = Row::new()
-                    .push(text::body(label))
+                    .push(container(text::body(label)).width(Length::Fixed(72.0)))
                     .push(if is_selected {
-                        Element::from(icon::from_name("object-select-symbolic").size(16).icon())
+                        Element::from(icon(
+                            icon::from_name("object-select-symbolic").size(16).into(),
+                        ))
                     } else {
                         Element::from(Space::new().width(16))
                     })
                     .align_y(Alignment::Center)
-                    .width(Length::Shrink)
+                    .width(Length::Fixed(104.0))
                     .spacing(8);
 
                 list = list
                     .push(
                         button::custom(item)
-                            .class(cosmic::theme::Button::Icon)
+                            .class(theme::Button::Icon)
+                            .width(Length::Fixed(104.0))
                             .on_press(ViewerMessage::Edit(EditMessage::CropRatio(*ratio))),
                     )
                     .width(Length::Shrink);
