@@ -684,7 +684,9 @@ impl TextPreview {
 impl ToolOperation for TextPreview {
     fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
         self.last_scale.set(scale);
-        if matches!(self.state, TextEditState::Editing | TextEditState::Resizing) {
+        let show_frame = self.custom_dragged || !self.is_empty();
+
+        if matches!(self.state, TextEditState::Editing | TextEditState::Resizing) && show_frame {
             self.draw_bounding_box(frame, scale);
         }
 
@@ -699,11 +701,9 @@ impl ToolOperation for TextPreview {
         }
 
         if self.state == TextEditState::Editing && self.is_empty() {
-            let text_h = self.font_size * LINE_HEIGHT_FACTOR / scale;
-            let center_y = self.bounding_box.y + self.bounding_box.height / 2.0 - text_h / 2.0;
             let placeholder = canvas::Text {
                 content: "Type here...".to_string(),
-                position: Point::new(origin.x, center_y),
+                position: Point::new(origin.x, origin.y),
                 color: Color {
                     a: 0.4,
                     ..self.color
