@@ -1377,8 +1377,7 @@ impl Application for CosmicViewer {
             .spacing(space_xxs);
 
         let scrollable =
-            scrollable(container(nav_grid).padding([0.0_f32, space_xxs, 0.0, space_xxs]))
-                .id(self.scroll_id.clone());
+            scrollable(container(nav_grid).padding(space_xxs)).id(self.scroll_id.clone());
 
         Some(
             container(scrollable)
@@ -1387,28 +1386,6 @@ impl Application for CosmicViewer {
                 .class(theme::Container::custom(nav_bar::nav_bar_style))
                 .into(),
         )
-
-        /*let grid = image_grid(self.grid.items().to_vec())
-            .thumbnail_size(thumbnail_size)
-            .focused(self.grid.get_focused())
-            .selected(self.grid.get_selected().to_vec())
-            .on_activate(|idx| Action::App(ViewerMessage::Nav(NavMessage::GridActivate(idx))))
-            .on_focus(|idx| Action::App(ViewerMessage::Nav(NavMessage::GridFocus(idx))))
-            .on_scroll_request(|req| {
-                Action::App(ViewerMessage::Nav(NavMessage::GridScroll(req.offset_y)))
-            })
-            .scrollable(self.scroll_id.clone())
-            .padding([4, 8, 0, 8])
-            .into_element();
-
-
-        Some(
-            container(grid)
-                .width(Length::Fixed(panel_width))
-                .height(Length::Fill)
-                .class(cosmic::theme::Container::custom(nav_bar::nav_bar_style))
-                .into(),
-        )*/
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
