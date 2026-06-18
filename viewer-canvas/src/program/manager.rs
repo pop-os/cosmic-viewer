@@ -607,16 +607,13 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
             && let Event::Mouse(mouse_event) = event
             && let Some(position) = cursor.position_in(bounds)
         {
-            if let Some((start, origin)) = self.manager.crop_pan.get() {
-                match mouse_event {
-                    MouseEvent::CursorMoved { .. } => {
-                        let delta = Vector::new(position.x - start.x, position.y - start.y);
-                        shell.publish(CanvasMessage::Pan(origin + delta));
-                        shell.capture_event();
-                        return;
-                    }
-                    _ => {}
-                }
+            if let Some((start, origin)) = self.manager.crop_pan.get()
+                && let MouseEvent::CursorMoved { .. } = mouse_event
+            {
+                let delta = Vector::new(position.x - start.x, position.y - start.y);
+                shell.publish(CanvasMessage::Pan(origin + delta));
+                shell.capture_event();
+                return;
             }
 
             match mouse_event {
@@ -653,12 +650,10 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
                         return;
                     }
                 }
-                MouseEvent::ButtonReleased(Button::Left) => {
-                    if self.manager.tool_dragging {
-                        shell.publish(CanvasMessage::ToolEnd);
-                        shell.capture_event();
-                        return;
-                    }
+                MouseEvent::ButtonReleased(Button::Left) if self.manager.tool_dragging => {
+                    shell.publish(CanvasMessage::ToolEnd);
+                    shell.capture_event();
+                    return;
                 }
                 _ => {}
             }
@@ -687,12 +682,10 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
                         return;
                     }
                 }
-                MouseEvent::ButtonReleased(Button::Left) => {
-                    if self.manager.tool_dragging {
-                        shell.publish(CanvasMessage::ToolEnd);
-                        shell.capture_event();
-                        return;
-                    }
+                MouseEvent::ButtonReleased(Button::Left) if self.manager.tool_dragging => {
+                    shell.publish(CanvasMessage::ToolEnd);
+                    shell.capture_event();
+                    return;
                 }
                 _ => {}
             }

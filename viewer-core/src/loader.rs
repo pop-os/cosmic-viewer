@@ -307,11 +307,7 @@ fn extract_exif_thumbnail(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u
 
     // Get the thumbnail data
     let thumbnail = exif
-        .get_field(exif::Tag::JPEGInterchangeFormat, exif::In::THUMBNAIL)
-        .and_then(|offset_field| {
-            exif.get_field(exif::Tag::JPEGInterchangeFormatLength, exif::In::THUMBNAIL)
-                .map(|length_field| (offset_field, length_field))
-        });
+        .get_field(exif::Tag::JPEGInterchangeFormat, exif::In::THUMBNAIL).zip(exif.get_field(exif::Tag::JPEGInterchangeFormatLength, exif::In::THUMBNAIL));
 
     if thumbnail.is_none() {
         return Err(LoadError::UnsupportedFormat("No EXIF thumbnail".into()));

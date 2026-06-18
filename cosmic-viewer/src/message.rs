@@ -50,7 +50,7 @@ pub enum ViewerMessage {
     WallpaperResult(Result<(), String>),
     CloseToast(ToastId),
     MoveToTrash,
-    UndoTrash(ToastId, Arc<[PathBuf]>),
+    UndoTrash(Arc<[PathBuf]>),
     UndoTrashStart(Vec<TrashItem>),
     TrashResult(Result<(), String>),
     Cancelled,

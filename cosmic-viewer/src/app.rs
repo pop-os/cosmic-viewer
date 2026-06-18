@@ -25,7 +25,7 @@ use cosmic::{
     task::future,
     theme::{self, Button},
     widget::{
-        self, Column, Id, Row, Space, Toast, Toasts, button, canvas,
+        self, Column, Id, Row, Space, Toasts, button, canvas,
         color_picker::ColorPickerUpdate::{self, AppliedColor, Cancel, ToggleColorPicker},
         container, divider, dropdown, icon,
         image::Handle,
@@ -38,7 +38,6 @@ use cosmic::{
 use image::DynamicImage;
 use std::{
     collections::{HashMap, HashSet},
-    mem,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -50,7 +49,7 @@ use viewer_core::{
 };
 use viewer_toolbar::{ItemPriority, ToolbarItem, ToolbarMode, responsive_toolbar};
 use viewer_tools::{
-    FONT_SIZE_PRESETS, ToolOperation,
+    ToolOperation,
     annotate::{
         AnnotateColor, AnnotateTool, HighlighterPreview, PenPreview, PencilPreview, ShapeKind,
         ShapePreview, TextDragHandle, TextOperation, TextPreview,
@@ -83,7 +82,6 @@ pub struct CosmicViewer {
     move_mode: bool,
     move_target: Option<usize>,
     move_start: Option<Point>,
-    move_did_drag: bool,
     font_families: Vec<&'static str>,
     text_font_family: &'static str,
     text_font_index: Option<usize>,
@@ -107,6 +105,7 @@ pub struct CosmicViewer {
     nav_bar_user_pref: bool,
     was_narrow: bool,
     toasts: Toasts<ViewerMessage>,
+    trash_toast: Option<(String, Arc<[PathBuf]>)>,
 }
 
 impl CosmicViewer {
@@ -165,25 +164,13 @@ impl CosmicViewer {
     }
 
     fn rebuild_nav_handles(&mut self) {
-        self.nav_handles = vec![None; self.nav.images().len()];
-    }
-
-    /*fn rebuild_grid_items(&mut self) {
-        let items = self
+        self.nav_handles = self
             .nav
             .images()
             .iter()
-            .map(|path| {
-                let handle = self.cache.get_thumbnail(path);
-                GridItem::new(path.clone(), handle, 0, 0)
-            })
+            .map(|path| self.cache.get_thumbnail(path))
             .collect();
-
-        self.grid.set_items(items);
-        self.grid.set_focused(self.nav.index());
-        self.grid
-            .set_selected(self.nav.index().into_iter().collect());
-    }*/
+    }
 
     /// Rebuild the working image.
     /// Used after dimension-changing operations like crop and rotate.
@@ -216,28 +203,6 @@ impl CosmicViewer {
             }
 
             self.viewport.rebuild_display_preserve_view();
-        }
-    }
-
-    fn lift_operation_for_edit(&mut self, idx: usize) {
-        let op = self.viewport.operations_mut().remove(idx);
-
-        if let Some(text_op) = op.as_any().downcast_ref::<TextOperation>() {
-            let preview = text_op.to_preview();
-            // Sync toolbar state from last span
-            self.text_bold = preview.bold;
-            self.text_italic = preview.italic;
-            self.text_underline = preview.underline;
-            self.annotate_tool = AnnotateTool::Text;
-            self.text_editing = true;
-            self.viewport.set_active_tool(Some(ToolKind::Annotate));
-            self.viewport.set_preview(Some(Box::new(preview)));
-            self.move_mode = false;
-            self.move_target = None;
-        } else {
-            // Pen/highlighter can't be re-edited, only moved.
-            // Put it back and stay in move mode.
-            self.viewport.operations_mut().insert(idx, op);
         }
     }
 
@@ -443,6 +408,49 @@ impl CosmicViewer {
             },
             ..Default::default()
         }
+    }
+
+    fn trash_toast_overlay(&self) -> Element<'_, ViewerMessage> {
+        let Some((label, paths)) = self.trash_toast.as_ref() else {
+            // Nothing to show; zero-size transparent overlay.
+            return Space::new()
+                .width(Length::Fixed(0.0))
+                .height(Length::Fixed(0.0))
+                .into();
+        };
+
+        let spacing = theme::active().cosmic().spacing;
+        let row = Row::new()
+            .push(text::body(label.clone()))
+            .push(horizontal())
+            .push(button::text(fl!("toast-undo")).on_press(ViewerMessage::UndoTrash(paths.clone())))
+            .align_y(Alignment::Center)
+            .spacing(spacing.space_xs);
+
+        let styled = container(row)
+            .padding([spacing.space_xs, spacing.space_s])
+            .style(|theme| {
+                let cosmic = theme.cosmic();
+                container::Style {
+                    text_color: Some(cosmic.primary.on.into()),
+                    background: Some(Background::Color(cosmic.primary.base.into())),
+                    border: Border {
+                        radius: cosmic.radius_s().into(),
+                        width: 1.0,
+                        color: cosmic.primary.divider.into(),
+                    },
+                    ..Default::default()
+                }
+            });
+
+        // Position the toast bottom center like the default toaster.
+        container(styled)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::End)
+            .padding(spacing.space_m)
+            .into()
     }
 
     fn build_toolbar(&self) -> Element<'_, ViewerMessage> {
@@ -1020,7 +1028,7 @@ impl CosmicViewer {
 
         if self.show_text_format_menu {
             let font_sizes = vec!["12pt", "16pt", "20pt", "24pt", "32pt", "48pt", "64pt"];
-            let font_size_values = FONT_SIZE_PRESETS;
+            let font_size_values = [12.0_f32, 16.0, 20.0, 24.0, 32.0, 48.0, 64.0];
             let font_size_selected = font_size_values
                 .iter()
                 .position(|s| *s == self.text_font_size);
@@ -1258,7 +1266,6 @@ impl Application for CosmicViewer {
             move_mode: false,
             move_target: None,
             move_start: None,
-            move_did_drag: false,
             font_families: load_font_families(),
             shape_popup: false,
             stroke_popup: false,
@@ -1289,6 +1296,7 @@ impl Application for CosmicViewer {
             nav_bar_user_pref: true,
             was_narrow: false,
             toasts: Toasts::new(ViewerMessage::CloseToast),
+            trash_toast: None,
         };
 
         if let Some(path) = flags {
@@ -1533,10 +1541,14 @@ impl Application for CosmicViewer {
             )
             .on_press(ViewerMessage::CloseWallpaperDialog);
 
-            return toaster(&self.toasts, stack![view, backdrop, dialog]);
+            return stack![
+                toaster(&self.toasts, stack![view, backdrop, dialog]),
+                self.trash_toast_overlay(),
+            ]
+            .into();
         }
 
-        toaster(&self.toasts, view)
+        stack![toaster(&self.toasts, view), self.trash_toast_overlay()].into()
     }
 
     fn update(&mut self, message: Self::Message) -> Task<Action<Self::Message>> {
@@ -1756,6 +1768,7 @@ impl Application for CosmicViewer {
                     }
                     WatcherEvent::Modified(path) | WatcherEvent::Removed(path) => {
                         self.cache.clear_pending(path);
+                        self.cache.clear_pending_thumbnail(path);
                         self.cache.remove_full(path);
                         self.cache.remove_thumbnail(path);
                         if self.nav.current() == Some(path) {
@@ -1880,21 +1893,12 @@ impl Application for CosmicViewer {
                     }));
 
                     // Show undo toast
-                    let toast_paths = paths.clone();
-                    tasks.push(
-                        self.toasts
-                            .push(Toast::new(format!("Moved {file_name} to trash")).action(
-                                fl!("toast-undo"),
-                                move |trash_id| {
-                                    ViewerMessage::UndoTrash(trash_id, toast_paths.clone())
-                                },
-                            ))
-                            .map(Action::App),
-                    );
+                    let label = format!("Moved {file_name} to trash");
+                    self.trash_toast = Some((label, paths.clone()));
                 }
             }
-            ViewerMessage::UndoTrash(id, recently_trashed) => {
-                self.toasts.remove(id);
+            ViewerMessage::UndoTrash(recently_trashed) => {
+                self.trash_toast = None;
 
                 tasks.push(future(async move {
                     // Rescan trash to find matching TrashItem entries
@@ -1921,17 +1925,17 @@ impl Application for CosmicViewer {
             }
             ViewerMessage::UndoTrashStart(items) => {
                 if !items.is_empty() {
-                    tasks.push(future(async move {
+                    let restore = future(async move {
                         if let Err(e) = trash::os_limited::restore_all(items) {
                             tracing::error!("failed to restore from trash: {e}");
                         }
 
                         // Trigger a directory rescan
                         Action::App(ViewerMessage::Cancelled)
-                    }));
+                    });
 
                     // Rescan the directory to pickup the restored image
-                    tasks.push(self.reload_image_list());
+                    tasks.push(restore.chain(self.reload_image_list()));
                 }
             }
             ViewerMessage::TrashResult(result) => {
@@ -1939,7 +1943,10 @@ impl Application for CosmicViewer {
                     tracing::error!("failed to move to trash: {e}");
                 }
             }
-            ViewerMessage::CloseToast(toast_id) => self.toasts.remove(toast_id),
+            ViewerMessage::CloseToast(toast_id) => {
+                self.trash_toast = None;
+                self.toasts.remove(toast_id)
+            }
             ViewerMessage::KeyPressed(key, modifiers, text) => {
                 if self.context_menu_position.is_some() && matches!(key, Key::Named(Named::Escape))
                 {
@@ -2297,39 +2304,35 @@ impl Application for CosmicViewer {
                     if self
                         .nav_handles
                         .get(img)
-                        .map_or(false, |handle| handle.is_none())
+                        .is_some_and(|handle| handle.is_none())
+                        && let Some(path) = self.nav.images().get(img).cloned()
                     {
-                        if let Some(path) = self.nav.images().get(img).cloned() {
-                            if let Some(handle) = self.cache.get_thumbnail(&path) {
-                                if let Some(slot) = self.nav_handles.get_mut(img) {
-                                    *slot = Some(handle);
-                                }
-                            } else if !self.cache.is_thumbnail_pending(&path) {
-                                self.cache.set_thumbnail_pending(path.clone());
-                                let max_size = self.config.thumbnail_size.pixels();
-                                let cache = self.cache.clone();
-
-                                tasks.push(future(async move {
-                                    match load_thumbnail(path.clone(), max_size).await {
-                                        Ok(loaded) => {
-                                            cache.insert_thumbnail(
-                                                loaded.path.clone(),
-                                                loaded.handle,
-                                            );
-                                            Action::App(ViewerMessage::Image(
-                                                ImageMessage::ThumbnailReady(
-                                                    loaded.path,
-                                                    loaded.width,
-                                                    loaded.height,
-                                                ),
-                                            ))
-                                        }
-                                        Err(_) => Action::App(ViewerMessage::Image(
-                                            ImageMessage::LoadError(path),
-                                        )),
-                                    }
-                                }));
+                        if let Some(handle) = self.cache.get_thumbnail(&path) {
+                            if let Some(slot) = self.nav_handles.get_mut(img) {
+                                *slot = Some(handle);
                             }
+                        } else if !self.cache.is_thumbnail_pending(&path) {
+                            self.cache.set_thumbnail_pending(path.clone());
+                            let max_size = self.config.thumbnail_size.pixels();
+                            let cache = self.cache.clone();
+
+                            tasks.push(future(async move {
+                                match load_thumbnail(path.clone(), max_size).await {
+                                    Ok(loaded) => {
+                                        cache.insert_thumbnail(loaded.path.clone(), loaded.handle);
+                                        Action::App(ViewerMessage::Image(
+                                            ImageMessage::ThumbnailReady(
+                                                loaded.path,
+                                                loaded.width,
+                                                loaded.height,
+                                            ),
+                                        ))
+                                    }
+                                    Err(_) => Action::App(ViewerMessage::Image(
+                                        ImageMessage::LoadError(path),
+                                    )),
+                                }
+                            }));
                         }
                     }
                 }
@@ -2338,10 +2341,10 @@ impl Application for CosmicViewer {
                         *slot = None;
                     }
 
-                    if Some(img) != self.nav.index() {
-                        if let Some(path) = self.nav.images().get(img) {
-                            self.cache.remove_full(path);
-                        }
+                    if Some(img) != self.nav.index()
+                        && let Some(path) = self.nav.images().get(img)
+                    {
+                        self.cache.remove_full(path);
                     }
                 }
                 NavMessage::GridActivate(idx) => {
@@ -2410,6 +2413,11 @@ impl Application for CosmicViewer {
                         self.nav.set_images(dir, images, selected.as_deref());
                         self.rebuild_nav_handles();
 
+                        if !self.nav.is_empty() {
+                            let idx = self.nav.index().unwrap_or(0);
+                            tasks.push(self.load_nearby_thumbnails(idx, 10));
+                        }
+
                         if let Some(path) = self.nav.current().cloned()
                             && self.cache.get_full(&path).is_none()
                         {
@@ -2463,7 +2471,10 @@ impl Application for CosmicViewer {
                         tasks.push(self.load_nearby_thumbnails(idx, 5));
                     }
                 }
-                ImageMessage::LoadError(_path) => {}
+                ImageMessage::LoadError(path) => {
+                    self.cache.clear_pending(&path);
+                    self.cache.clear_pending_thumbnail(&path);
+                }
             },
             ViewerMessage::Context(page) => {
                 self.context_menu_position = None;
@@ -2596,7 +2607,6 @@ impl Application for CosmicViewer {
 
                         self.move_target = hit;
                         self.move_start = Some(point);
-                        self.move_did_drag = false;
                         self.viewport.tool_dragging = true;
                         return Task::none();
                     }
@@ -2703,7 +2713,6 @@ impl Application for CosmicViewer {
                 }
                 CanvasMessage::ToolDrag(point) => {
                     if self.move_mode {
-                        self.move_did_drag = true;
                         if let Some(idx) = self.move_target
                             && let Some(start) = self.move_start
                         {
@@ -2724,17 +2733,9 @@ impl Application for CosmicViewer {
                 }
                 CanvasMessage::ToolEnd => {
                     if self.move_mode {
-                        let target = self.move_target.take();
-                        let did_drag = mem::replace(&mut self.move_did_drag, false);
+                        self.move_target = None;
                         self.move_start = None;
                         self.viewport.tool_dragging = false;
-
-                        if !did_drag {
-                            if let Some(idx) = target {
-                                self.lift_operation_for_edit(idx);
-                            }
-                        }
-
                         return Task::none();
                     }
                     self.viewport.tool_dragging = false;
@@ -2765,7 +2766,6 @@ impl Application for CosmicViewer {
                             preview.as_any_mut().downcast_mut::<TextPreview>()
                     {
                         self.text_editing = text_preview.is_editing();
-                        self.text_font_size = text_preview.font_size;
                     }
 
                     // Auto-commit for annotation, each stroke goes on the undo stack
@@ -2838,9 +2838,6 @@ impl Application for CosmicViewer {
                         self.text_editing = false;
                         self.show_text_format_menu = false;
                         self.viewport.tool_dragging = false;
-                        self.move_mode = false;
-                        self.move_target = None;
-                        self.move_start = None;
                     }
                     EditMessage::AnnotateCancel => {
                         if self.text_editing {
@@ -2855,10 +2852,6 @@ impl Application for CosmicViewer {
                         self.viewport.revert_all();
                         self.viewport.set_active_tool(None);
                         self.viewport.set_preview(None);
-                        self.move_mode = false;
-                        self.move_target = None;
-                        self.move_start = None;
-
                         // Restore working image from cache so rotation etc. still works
                         if let Some(path) = self.nav.current().cloned()
                             && let Some(cached) = self.cache.get_full(&path)
