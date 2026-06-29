@@ -284,33 +284,6 @@ impl CropSelection {
         frame.fill_rectangle(rect.position(), rect.size(), Fill::from(color));
     }
 
-    fn draw_overlay(&self, frame: &mut Frame<Renderer>, frame_size: Size) {
-        let region = self.region;
-        let overlay_color = Color::from_rgba(0.0, 0.0, 0.0, 0.5);
-
-        let bands = [
-            (Point::ORIGIN, Size::new(frame_size.width, region.y)),
-            (
-                Point::new(0.0, region.y + region.height),
-                Size::new(
-                    frame_size.width,
-                    frame_size.height - region.y - region.height,
-                ),
-            ),
-            (
-                Point::new(0.0, region.y),
-                Size::new(region.x, region.height),
-            ),
-            (
-                Point::new(region.x + region.width, region.y),
-                Size::new(frame_size.width - region.x - region.width, region.height),
-            ),
-        ];
-        for (position, size) in bands {
-            frame.fill_rectangle(position, size, Fill::from(overlay_color));
-        }
-    }
-
     fn draw_border(&self, frame: &mut Frame<Renderer>, border_width: f32, accent: Color) {
         let region = self.region;
         let inset = border_width / 2.0;
@@ -360,13 +333,12 @@ impl CropSelection {
 }
 
 impl ToolOperation for CropSelection {
-    fn draw(&self, frame: &mut Frame<Renderer>, image_size: Size, scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
         if !self.visible || self.region.width < MIN_SIZE {
             return;
         }
 
         let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
-        self.draw_overlay(frame, image_size);
         self.draw_border(frame, BORDER_WIDTH / scale, accent);
         self.draw_handles(frame, HANDLE_SIZE / scale, accent);
     }

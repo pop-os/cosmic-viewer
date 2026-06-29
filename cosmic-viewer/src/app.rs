@@ -626,6 +626,15 @@ impl CosmicViewer {
             .tooltip(fl!("menu-redo"))
             .on_press_maybe(can_redo.then(|| ViewerMessage::Edit(EditMessage::Redo)));
 
+        let zoom_pct = {
+            let bounds = self.viewport.last_bounds().get();
+            format!(
+                "{:.0}%",
+                self.viewport
+                    .actual_percent(Size::new(bounds.width, bounds.height))
+            )
+        };
+
         responsive_toolbar(mode)
             .start(ToolbarItem::new(undo_btn))
             .start(ToolbarItem::new(redo_btn))
@@ -646,6 +655,23 @@ impl CosmicViewer {
                 divider::vertical::light().height(Length::Fixed(32.0)),
             ))
             .start(ToolbarItem::new(self.build_crop_ratio_selector()))
+            .center(
+                ToolbarItem::new(icon_btn(
+                    "zoom-out-symbolic",
+                    fl!("toolbar-zoom-out"),
+                    ViewerMessage::Canvas(CanvasMessage::ZoomOut),
+                ))
+                .priority(ItemPriority::Essential),
+            )
+            .center(ToolbarItem::new(text::body(zoom_pct)).priority(ItemPriority::Essential))
+            .center(
+                ToolbarItem::new(icon_btn(
+                    "zoom-in-symbolic",
+                    fl!("toolbar-zoom-in"),
+                    ViewerMessage::Canvas(CanvasMessage::ZoomIn),
+                ))
+                .priority(ItemPriority::Essential),
+            )
             .end(ToolbarItem::new(
                 button::standard(fl!("toolbar-cancel"))
                     .on_press(ViewerMessage::Edit(EditMessage::CropCancel)),
@@ -921,10 +947,10 @@ impl CosmicViewer {
             self.annotate_tool.icon_name() == current_icon,
         ));
 
-        if !self.shape_popup {
-            trigger = trigger.on_press(ViewerMessage::Edit(EditMessage::ShapePopupOpen));
-        } else {
+        if self.shape_popup {
             trigger = trigger.on_press(ViewerMessage::Edit(EditMessage::ShapePopupClose));
+        } else {
+            trigger = trigger.on_press(ViewerMessage::Edit(EditMessage::ShapePopupOpen));
         }
 
         let mut pop = popover(trigger);
@@ -1839,8 +1865,7 @@ impl Application for CosmicViewer {
                     }));
 
                     let label = format!("Moved {file_name} to trash");
-                    // `Toasts::push` returns a Task that auto-dismisses after `duration` (emits
-                    // CloseToast); this relies on libcosmic's "tokio" feature being enabled.
+                    // Auto-dismiss (the Task `push` returns) needs libcosmic's "tokio" feature.
                     let toast = toaster::Toast::new(label)
                         .action(fl!("toast-undo"), move |id| {
                             ViewerMessage::UndoTrash(id, paths.clone())
@@ -2475,9 +2500,8 @@ impl Application for CosmicViewer {
                     let before = self.viewport.actual_percent(viewport);
                     let old_zoom = self.viewport.zoom();
                     let floor = if self.viewport.active_tool() == Some(ToolKind::Crop) {
-                        let bounds = self.viewport.last_bounds().get();
-                        self.viewport
-                            .fill_zoom(Size::new(bounds.width, bounds.height))
+                        // Crop floor = fit-to-screen, so the whole image stays visible.
+                        1.0
                     } else {
                         0.1
                     };
@@ -2496,13 +2520,20 @@ impl Application for CosmicViewer {
                 CanvasMessage::Pan(pan) => {
                     if self.viewport.active_tool() == Some(ToolKind::Crop) {
                         let bounds = self.viewport.last_bounds().get();
+                        let crop_region = self
+                            .viewport
+                            .preview_ref()
+                            .and_then(|p| p.as_any().downcast_ref::<CropSelection>())
+                            .map(|c| c.region);
                         if let Some(size) = self.viewport.image_size() {
                             let fit_scale =
                                 (bounds.width / size.width).min(bounds.height / size.height);
-                            let max_x =
-                                (size.width * fit_scale * (self.viewport.zoom() - 1.0)) / 2.0;
-                            let max_y =
-                                (size.height * fit_scale * (self.viewport.zoom() - 1.0)) / 2.0;
+                            let zoom = self.viewport.zoom();
+                            // Pan limit = how far the zoomed image extends past the static crop frame.
+                            let (rw, rh) = crop_region
+                                .map_or((size.width, size.height), |r| (r.width, r.height));
+                            let max_x = fit_scale * size.width.mul_add(zoom, -rw).max(0.0) / 2.0;
+                            let max_y = fit_scale * size.height.mul_add(zoom, -rh).max(0.0) / 2.0;
                             self.viewport.set_pan(Vector::new(
                                 pan.x.clamp(-max_x, max_x),
                                 pan.y.clamp(-max_y, max_y),
@@ -2986,6 +3017,13 @@ impl Application for CosmicViewer {
                                     Size::new(fit_region.width / zoom, fit_region.height / zoom),
                                 )
                             };
+
+                            // crop_to_region casts to u32 unclamped; clamp the off-image case.
+                            let x = region.x.clamp(0.0, size.width);
+                            let y = region.y.clamp(0.0, size.height);
+                            let w = region.width.min(size.width - x).max(1.0);
+                            let h = region.height.min(size.height - y).max(1.0);
+                            let region = Rectangle::new(Point::new(x, y), Size::new(w, h));
 
                             for op in self.viewport.operations_mut() {
                                 op.transform_crop(region);
@@ -3772,7 +3810,7 @@ fn update_source_in_config(existing: &str, new_path: &str) -> String {
 }
 
 /// Override the base Icon appearance with the COSMIC selected-icon-button look when selected:
-/// @selected_color backgournd + @accent_text_color glyph/label. Non-selected = untouched Icon style.
+/// `@selected_color` background + `@accent_text_color` glyph/label. Non-selected = untouched Icon style.
 fn apply_selected(mut base: button::Style, selected: bool, t: &Theme) -> button::Style {
     if selected {
         let cosmic = t.cosmic();
@@ -3786,7 +3824,7 @@ fn apply_selected(mut base: button::Style, selected: bool, t: &Theme) -> button:
     base
 }
 
-/// Class for a toggle icon button. Delegates to the base Button::Icon Catalog for each state
+/// Class for a toggle icon button. Delegates to the base `Button::Icon` Catalog for each state
 /// so hover/press/focus behave normally and layers the selected look on top.
 fn tool_toggle_class(selected: bool) -> theme::Button {
     theme::Button::Custom {

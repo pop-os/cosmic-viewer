@@ -373,24 +373,6 @@ impl ViewportManager {
         ))
     }
 
-    /// Convert a image coordinate to a screen space point.
-    // reason: image dimensions are pixel counts used for rendering geometry; f32 precision is ample.
-    #[allow(clippy::cast_precision_loss)]
-    pub fn image_to_screen(&self, point: Point, bounds: Rectangle) -> Option<Point> {
-        let image = self.image.as_ref()?;
-        let fit_scale =
-            (bounds.width / image.width as f32).min(bounds.height / image.height as f32);
-        let effective_scale = self.zoom * fit_scale;
-        let center_x = bounds.width / 2.0;
-        let center_y = bounds.width / 2.0;
-        let screen_x =
-            (point.x - image.width as f32 / 2.0).mul_add(effective_scale, center_x) + self.pan.x;
-        let screen_y =
-            (point.y - image.height as f32 / 2.0).mul_add(effective_scale, center_y) + self.pan.y;
-
-        Some(Point::new(screen_x, screen_y))
-    }
-
     /// Get the image dimensions as a Size.
     // reason: image dimensions are pixel counts used for rendering geometry; f32 precision is ample.
     #[allow(clippy::cast_precision_loss)]
