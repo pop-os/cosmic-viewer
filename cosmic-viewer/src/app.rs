@@ -110,7 +110,6 @@ pub struct CosmicViewer {
     nav_bar_user_pref: bool,
     was_narrow: bool,
     toasts: Toasts<ViewerMessage>,
-    trash_toast: Option<(String, Arc<[PathBuf]>)>,
 }
 
 impl CosmicViewer {
@@ -419,49 +418,6 @@ impl CosmicViewer {
             },
             ..Default::default()
         }
-    }
-
-    fn trash_toast_overlay(&self) -> Element<'_, ViewerMessage> {
-        let Some((label, paths)) = self.trash_toast.as_ref() else {
-            // Nothing to show; zero-size transparent overlay.
-            return Space::new()
-                .width(Length::Fixed(0.0))
-                .height(Length::Fixed(0.0))
-                .into();
-        };
-
-        let spacing = theme::active().cosmic().spacing;
-        let row = Row::new()
-            .push(text::body(label.clone()))
-            .push(horizontal())
-            .push(button::text(fl!("toast-undo")).on_press(ViewerMessage::UndoTrash(paths.clone())))
-            .align_y(Alignment::Center)
-            .spacing(spacing.space_xs);
-
-        let styled = container(row)
-            .padding([spacing.space_xs, spacing.space_s])
-            .style(|theme| {
-                let cosmic = theme.cosmic();
-                container::Style {
-                    text_color: Some(cosmic.primary.on.into()),
-                    background: Some(Background::Color(cosmic.primary.base.into())),
-                    border: Border {
-                        radius: cosmic.radius_s().into(),
-                        width: 1.0,
-                        color: cosmic.primary.divider.into(),
-                    },
-                    ..Default::default()
-                }
-            });
-
-        // Position the toast bottom center like the default toaster.
-        container(styled)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::End)
-            .padding(spacing.space_m)
-            .into()
     }
 
     fn build_toolbar(&self) -> Element<'_, ViewerMessage> {
@@ -953,7 +909,7 @@ impl CosmicViewer {
     fn build_shape_selector(&self) -> Element<'_, ViewerMessage> {
         let current_icon = self.selected_shape.icon_name();
 
-        let trigger = button::custom(
+        let mut trigger = button::custom(
             Row::new()
                 .push(icon::from_name(current_icon).size(16).icon())
                 .push(icon::from_name("pan-down-symbolic").size(12).icon())
@@ -963,14 +919,19 @@ impl CosmicViewer {
         .selected(self.annotate_tool.icon_name() == current_icon)
         .class(tool_toggle_class(
             self.annotate_tool.icon_name() == current_icon,
-        ))
-        .on_press(ViewerMessage::Edit(EditMessage::ShapePopupToggle));
+        ));
+
+        if !self.shape_popup {
+            trigger = trigger.on_press(ViewerMessage::Edit(EditMessage::ShapePopupOpen));
+        } else {
+            trigger = trigger.on_press(ViewerMessage::Edit(EditMessage::ShapePopupClose));
+        }
 
         let mut pop = popover(trigger);
 
         if self.shape_popup {
             let make_btn = |tool: AnnotateTool, label: String| -> Element<'_, ViewerMessage> {
-                let is_selected = tool == self.annotate_tool;
+                let is_selected = tool == self.selected_shape;
                 let item = Row::new()
                     .push((icon::from_name(tool.icon_name())).size(16).icon())
                     .push(text::body(label))
@@ -1018,7 +979,7 @@ impl CosmicViewer {
             pop = pop
                 .popup(popup)
                 .position(popover::Position::Center)
-                .on_close(ViewerMessage::Edit(EditMessage::ShapePopupToggle));
+                .on_close(ViewerMessage::Edit(EditMessage::ShapePopupClose));
         }
 
         pop.into()
@@ -1297,7 +1258,6 @@ impl Application for CosmicViewer {
             nav_bar_user_pref: true,
             was_narrow: false,
             toasts: Toasts::new(ViewerMessage::CloseToast),
-            trash_toast: None,
         };
 
         if let Some(path) = flags {
@@ -1538,14 +1498,10 @@ impl Application for CosmicViewer {
             )
             .on_press(ViewerMessage::CloseWallpaperDialog);
 
-            return stack![
-                toaster(&self.toasts, stack![view, backdrop, dialog]),
-                self.trash_toast_overlay(),
-            ]
-            .into();
+            return toaster(&self.toasts, stack![view, backdrop, dialog]);
         }
 
-        stack![toaster(&self.toasts, view), self.trash_toast_overlay()].into()
+        toaster(&self.toasts, view)
     }
 
     // reason: central message dispatch; one match arm per variant, kept colocated.
@@ -1882,13 +1838,19 @@ impl Application for CosmicViewer {
                         Action::App(ViewerMessage::TrashResult(result))
                     }));
 
-                    // Show undo toast
                     let label = format!("Moved {file_name} to trash");
-                    self.trash_toast = Some((label, paths));
+                    // `Toasts::push` returns a Task that auto-dismisses after `duration` (emits
+                    // CloseToast); this relies on libcosmic's "tokio" feature being enabled.
+                    let toast = toaster::Toast::new(label)
+                        .action(fl!("toast-undo"), move |id| {
+                            ViewerMessage::UndoTrash(id, paths.clone())
+                        })
+                        .duration(toaster::Duration::Long);
+                    tasks.push(self.toasts.push(toast).map(Action::App));
                 }
             }
-            ViewerMessage::UndoTrash(recently_trashed) => {
-                self.trash_toast = None;
+            ViewerMessage::UndoTrash(toast_id, recently_trashed) => {
+                self.toasts.remove(toast_id);
 
                 tasks.push(future(async move {
                     // Rescan trash to find matching TrashItem entries
@@ -1934,7 +1896,6 @@ impl Application for CosmicViewer {
                 }
             }
             ViewerMessage::CloseToast(toast_id) => {
-                self.trash_toast = None;
                 self.toasts.remove(toast_id);
             }
             ViewerMessage::KeyPressed(key, modifiers, text) => {
@@ -3119,7 +3080,8 @@ impl Application for CosmicViewer {
                             }
                         }
                     }
-                    EditMessage::ShapePopupToggle => self.shape_popup = !self.shape_popup,
+                    EditMessage::ShapePopupOpen => self.shape_popup = true,
+                    EditMessage::ShapePopupClose => self.shape_popup = false,
                     EditMessage::StrokePopupToggle => self.stroke_popup = !self.stroke_popup,
                     EditMessage::ColorPicker(update) => {
                         let was_active = self.color_picker.get_is_active();
