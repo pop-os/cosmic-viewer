@@ -20,9 +20,9 @@ impl WallpaperBehavior {
 impl fmt::Display for WallpaperBehavior {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            WallpaperBehavior::Ask => write!(f, "Always Ask"),
-            WallpaperBehavior::AllDisplays => write!(f, "All Displays"),
-            WallpaperBehavior::CurrentDisplay => write!(f, "Current Display"),
+            Self::Ask => write!(f, "Always Ask"),
+            Self::AllDisplays => write!(f, "All Displays"),
+            Self::CurrentDisplay => write!(f, "Current Display"),
         }
     }
 }
@@ -42,9 +42,9 @@ impl SortMode {
 impl fmt::Display for SortMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SortMode::Name => write!(f, "Name"),
-            SortMode::Date => write!(f, "Date"),
-            SortMode::Size => write!(f, "Size"),
+            Self::Name => write!(f, "Name"),
+            Self::Date => write!(f, "Date"),
+            Self::Size => write!(f, "Size"),
         }
     }
 }
@@ -59,10 +59,11 @@ pub enum SortOrder {
 impl SortOrder {
     pub const ALL: &'static [Self] = &[Self::Ascending, Self::Descending];
 
-    pub fn toggle(self) -> Self {
+    #[must_use]
+    pub const fn toggle(self) -> Self {
         match self {
-            SortOrder::Ascending => SortOrder::Descending,
-            SortOrder::Descending => SortOrder::Ascending,
+            Self::Ascending => Self::Descending,
+            Self::Descending => Self::Ascending,
         }
     }
 }
@@ -70,8 +71,8 @@ impl SortOrder {
 impl fmt::Display for SortOrder {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SortOrder::Ascending => write!(f, "Ascending"),
-            SortOrder::Descending => write!(f, "Descending"),
+            Self::Ascending => write!(f, "Ascending"),
+            Self::Descending => write!(f, "Descending"),
         }
     }
 }
@@ -86,12 +87,13 @@ pub enum ThumbnailSize {
 }
 
 impl ThumbnailSize {
-    pub fn pixels(self) -> u32 {
+    #[must_use]
+    pub const fn pixels(self) -> u32 {
         match self {
-            ThumbnailSize::Small => 64,
-            ThumbnailSize::Medium => 128,
-            ThumbnailSize::Large => 192,
-            ThumbnailSize::XLarge => 256,
+            Self::Small => 64,
+            Self::Medium => 128,
+            Self::Large => 192,
+            Self::XLarge => 256,
         }
     }
 }
@@ -101,6 +103,9 @@ pub const MAX_RECENT_FOLDERS: usize = 10;
 /// Maximum number of recent colors to remember
 pub const MAX_RECENT_COLORS: usize = 20;
 
+// reason: each bool is an independent persisted user toggle, not state that
+// forms a machine; collapsing them into enums would distort the config schema.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ViewerConfig {
     pub default_zoom: f32,
@@ -143,11 +148,8 @@ impl ViewerConfig {
     /// The most recent folder is at index 0.
     /// Duplicates are moved to the front.
     pub fn add_recent_folder(&mut self, folder: String) {
-        // Remove if already exists (we'll add it to front)
         self.recent_folders.retain(|f| f != &folder);
-        // Add to front
         self.recent_folders.insert(0, folder);
-        // Trim to max size
         self.recent_folders.truncate(MAX_RECENT_FOLDERS);
     }
 }
@@ -176,7 +178,7 @@ impl CosmicConfigEntry for ViewerConfig {
         config: &cosmic_config::Config,
     ) -> Result<Self, (Vec<cosmic_config::Error>, Self)> {
         let mut errors = Vec::new();
-        let mut cfg = ViewerConfig::default();
+        let mut cfg = Self::default();
 
         macro_rules! get_field {
             ($name:literal, $field:ident, $type:ty) => {
@@ -261,6 +263,12 @@ impl CosmicConfigEntry for ViewerConfig {
     }
 }
 
+/// Open the application's `cosmic-config` handle.
+///
+/// # Errors
+///
+/// Returns a [`cosmic_config::Error`] if the configuration context cannot be
+/// created (for example, when the config directory is inaccessible).
 pub fn config() -> Result<Config, cosmic_config::Error> {
     Config::new(APP_ID, CONFIG_VERSION)
 }

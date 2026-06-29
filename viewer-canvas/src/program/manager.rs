@@ -8,7 +8,7 @@ use cosmic::{
         mouse::{self, Button, Cursor, Event as MouseEvent},
         overlay,
     },
-    iced_core::{
+    iced::advanced::{
         Clipboard, Layout, Renderer as CoreRenderer, Shell,
         layout::Node,
         widget::{Tree, tree},
@@ -60,6 +60,7 @@ impl Default for ViewportManager {
 }
 
 impl ViewportManager {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             image: None,
@@ -78,7 +79,7 @@ impl ViewportManager {
         }
     }
 
-    pub fn last_bounds(&self) -> &Cell<Rectangle> {
+    pub const fn last_bounds(&self) -> &Cell<Rectangle> {
         &self.last_bounds
     }
 
@@ -109,7 +110,7 @@ impl ViewportManager {
         self.dirty.set(true);
     }
 
-    pub fn image(&self) -> Option<&CanvasImage> {
+    pub const fn image(&self) -> Option<&CanvasImage> {
         self.image.as_ref()
     }
 
@@ -160,36 +161,38 @@ impl ViewportManager {
         }
     }
 
-    pub fn working_image(&self) -> Option<&DynamicImage> {
+    pub const fn working_image(&self) -> Option<&DynamicImage> {
         self.working_image.as_ref()
     }
 
-    pub fn working_image_mut(&mut self) -> Option<&mut DynamicImage> {
+    pub const fn working_image_mut(&mut self) -> Option<&mut DynamicImage> {
         self.working_image.as_mut()
     }
 
-    pub fn zoom(&self) -> f32 {
+    pub const fn zoom(&self) -> f32 {
         self.zoom
     }
 
     /// Minimum zoom so the image fills the given frame size in both dimensions.
+    // reason: image dimensions are pixel counts used for rendering geometry; f32 precision is ample.
+    #[allow(clippy::cast_precision_loss)]
     pub fn fill_zoom(&self, frame_size: Size) -> f32 {
-        if let Some(image) = &self.image {
+        self.image.as_ref().map_or(1.0, |image| {
             let bounds = self.last_bounds.get();
             let fit_scale =
                 (bounds.width / image.width as f32).min(bounds.height / image.height as f32);
             let zx = frame_size.width / (image.width as f32 * fit_scale);
             let zy = frame_size.height / (image.height as f32 * fit_scale);
             zx.max(zy).max(1.0)
-        } else {
-            1.0
-        }
+        })
     }
 
-    pub fn set_zoom(&mut self, zoom: f32) {
+    pub const fn set_zoom(&mut self, zoom: f32) {
         self.zoom = zoom;
     }
 
+    // reason: image dimensions are pixel counts used for rendering geometry; f32 precision is ample.
+    #[allow(clippy::cast_precision_loss)]
     pub fn actual_percent(&self, viewport_size: Size) -> f32 {
         let Some(img) = self.image.as_ref() else {
             return 100.0;
@@ -201,6 +204,8 @@ impl ViewportManager {
         self.zoom * fit_scale * 100.0
     }
 
+    // reason: image dimensions are pixel counts used for rendering geometry; f32 precision is ample.
+    #[allow(clippy::cast_precision_loss)]
     pub fn set_actual_percent(&mut self, percent: f32, viewport_size: Size) {
         let Some(img) = self.image.as_ref() else {
             return;
@@ -219,19 +224,19 @@ impl ViewportManager {
         self.pan = Vector::ZERO;
     }
 
-    pub fn pan(&self) -> Vector {
+    pub const fn pan(&self) -> Vector {
         self.pan
     }
 
-    pub fn set_pan(&mut self, pan: Vector) {
+    pub const fn set_pan(&mut self, pan: Vector) {
         self.pan = pan;
     }
 
-    pub fn active_tool(&self) -> Option<ToolKind> {
+    pub const fn active_tool(&self) -> Option<ToolKind> {
         self.active_tool
     }
 
-    pub fn set_active_tool(&mut self, tool: Option<ToolKind>) {
+    pub const fn set_active_tool(&mut self, tool: Option<ToolKind>) {
         self.active_tool = tool;
     }
 
@@ -275,7 +280,7 @@ impl ViewportManager {
     pub fn undo(&mut self) -> Option<&dyn ToolOperation> {
         if let Some(op) = self.operations.pop() {
             self.redo_stack.push(op);
-            self.redo_stack.last().map(|op| op.as_ref())
+            self.redo_stack.last().map(std::convert::AsRef::as_ref)
         } else {
             None
         }
@@ -285,7 +290,7 @@ impl ViewportManager {
     pub fn redo(&mut self) -> Option<&dyn ToolOperation> {
         if let Some(op) = self.redo_stack.pop() {
             self.operations.push(op);
-            self.operations.last().map(|op| op.as_ref())
+            self.operations.last().map(std::convert::AsRef::as_ref)
         } else {
             None
         }
@@ -309,6 +314,8 @@ impl ViewportManager {
     }
 
     /// Convert a screen space point to image coordinates.
+    // reason: image dimensions are pixel counts used for rendering geometry; f32 precision is ample.
+    #[allow(clippy::cast_precision_loss)]
     pub fn screen_to_image(&self, point: Point, bounds: Rectangle) -> Option<Point> {
         let image = self.image.as_ref()?;
         let fit_scale =
@@ -331,6 +338,8 @@ impl ViewportManager {
     }
 
     // For ToolDrag - clamp to image bounds so strokes end at the edge
+    // reason: image dimensions are pixel counts used for rendering geometry; f32 precision is ample.
+    #[allow(clippy::cast_precision_loss)]
     pub fn screen_to_image_clamped(&self, point: Point, bounds: Rectangle) -> Option<Point> {
         let image = self.image.as_ref()?;
         let fit_scale =
@@ -347,6 +356,8 @@ impl ViewportManager {
         ))
     }
 
+    // reason: image dimensions are pixel counts used for rendering geometry; f32 precision is ample.
+    #[allow(clippy::cast_precision_loss)]
     pub fn screen_to_image_fit(&self, point: Point, bounds: Rectangle) -> Option<Point> {
         let image = self.image.as_ref()?;
         let fit_scale =
@@ -363,6 +374,8 @@ impl ViewportManager {
     }
 
     /// Convert a image coordinate to a screen space point.
+    // reason: image dimensions are pixel counts used for rendering geometry; f32 precision is ample.
+    #[allow(clippy::cast_precision_loss)]
     pub fn image_to_screen(&self, point: Point, bounds: Rectangle) -> Option<Point> {
         let image = self.image.as_ref()?;
         let fit_scale =
@@ -371,14 +384,16 @@ impl ViewportManager {
         let center_x = bounds.width / 2.0;
         let center_y = bounds.width / 2.0;
         let screen_x =
-            (point.x - image.width as f32 / 2.0) * effective_scale + center_x + self.pan.x;
+            (point.x - image.width as f32 / 2.0).mul_add(effective_scale, center_x) + self.pan.x;
         let screen_y =
-            (point.y - image.height as f32 / 2.0) * effective_scale + center_y + self.pan.y;
+            (point.y - image.height as f32 / 2.0).mul_add(effective_scale, center_y) + self.pan.y;
 
         Some(Point::new(screen_x, screen_y))
     }
 
     /// Get the image dimensions as a Size.
+    // reason: image dimensions are pixel counts used for rendering geometry; f32 precision is ample.
+    #[allow(clippy::cast_precision_loss)]
     pub fn image_size(&self) -> Option<Size> {
         self.image
             .as_ref()
@@ -393,7 +408,7 @@ impl ViewportManager {
         !self.redo_stack.is_empty()
     }
 
-    pub fn tool_dragging(&self) -> bool {
+    pub const fn tool_dragging(&self) -> bool {
         self.tool_dragging
     }
 
@@ -409,7 +424,7 @@ struct Viewport<'a> {
     manager: &'a ViewportManager,
 }
 
-impl<'a> Viewport<'a> {
+impl Viewport<'_> {
     /// Image only canvas (no tool overlays).
     fn canvas_element(&self) -> Element<'_, CanvasMessage> {
         let mgr = self.manager;
@@ -474,9 +489,132 @@ impl<'a> Viewport<'a> {
             .height(Length::Fill)
             .into()
     }
+
+    /// Crop interaction: pan on interior clicks, fit-to-view coords for handles.
+    /// Returns true when the event was captured and base-canvas handling should be skipped.
+    fn handle_crop_event(
+        &self,
+        event: &Event,
+        bounds: Rectangle,
+        cursor: Cursor,
+        shell: &mut Shell<'_, CanvasMessage>,
+    ) -> bool {
+        let mgr = self.manager;
+
+        // Release crop pan even if cursor left the canvas
+        if mgr.crop_pan.get().is_some()
+            && matches!(event, Event::Mouse(MouseEvent::ButtonReleased(Button::Left)))
+        {
+            mgr.crop_pan.set(None);
+            shell.capture_event();
+            return true;
+        }
+
+        let (Event::Mouse(mouse_event), Some(position)) = (event, cursor.position_in(bounds))
+        else {
+            return false;
+        };
+
+        if let Some((start, origin)) = mgr.crop_pan.get()
+            && let MouseEvent::CursorMoved { .. } = mouse_event
+        {
+            let delta = Vector::new(position.x - start.x, position.y - start.y);
+            shell.publish(CanvasMessage::Pan(origin + delta));
+            shell.capture_event();
+            return true;
+        }
+
+        match mouse_event {
+            MouseEvent::ButtonPressed(Button::Left) => {
+                if let Some(pt) = mgr.screen_to_image_fit(position, bounds)
+                    && let Some(preview) = mgr.preview_ref()
+                {
+                    let on_handle = preview.cursor_at(pt) != mouse::Interaction::Crosshair;
+                    if on_handle {
+                        mgr.crop_pan.set(None);
+                        shell.publish(CanvasMessage::ToolStart(pt));
+                        shell.capture_event();
+                        return true;
+                    }
+                    if preview.hit_test(pt) {
+                        mgr.crop_pan.set(Some((position, mgr.pan)));
+                        shell.capture_event();
+                        return true;
+                    }
+                    // Outside region in Custom -- start new selection.
+                    // Anchor in image-fit space (matches the on-handle ToolStart and all
+                    // ToolDrags); publishing raw `position` here mismatched coordinate spaces
+                    // and made a new selection jump on the first drag.
+                    shell.publish(CanvasMessage::ToolStart(pt));
+                    shell.capture_event();
+                    return true;
+                }
+            }
+            MouseEvent::CursorMoved { .. } => {
+                if mgr.tool_dragging
+                    && let Some(pt) = mgr.screen_to_image_fit(position, bounds)
+                {
+                    shell.publish(CanvasMessage::ToolDrag(pt));
+                    shell.capture_event();
+                    return true;
+                }
+            }
+            MouseEvent::ButtonReleased(Button::Left) if mgr.tool_dragging => {
+                shell.publish(CanvasMessage::ToolEnd);
+                shell.capture_event();
+                return true;
+            }
+            _ => {}
+        }
+
+        false
+    }
+
+    /// Non-crop tool interaction (clamped image-space coords).
+    /// Returns true when the event was captured and base-canvas handling should be skipped.
+    fn handle_tool_event(
+        &self,
+        event: &Event,
+        bounds: Rectangle,
+        cursor: Cursor,
+        shell: &mut Shell<'_, CanvasMessage>,
+    ) -> bool {
+        let mgr = self.manager;
+        let (Event::Mouse(mouse_event), Some(position)) = (event, cursor.position_in(bounds))
+        else {
+            return false;
+        };
+
+        match mouse_event {
+            MouseEvent::ButtonPressed(Button::Left) => {
+                if let Some(pt) = mgr.screen_to_image(position, bounds) {
+                    shell.publish(CanvasMessage::ToolStart(pt));
+                    shell.capture_event();
+                    return true;
+                }
+            }
+            MouseEvent::CursorMoved { .. } => {
+                if mgr.tool_dragging
+                    && let Some(pt) = mgr.screen_to_image_clamped(position, bounds)
+                {
+                    shell.publish(CanvasMessage::ToolDrag(pt));
+                    shell.capture_event();
+                    return true;
+                }
+            }
+            MouseEvent::ButtonReleased(Button::Left) if mgr.tool_dragging => {
+                shell.publish(CanvasMessage::ToolEnd);
+                shell.capture_event();
+                return true;
+            }
+            _ => {}
+        }
+
+        false
+    }
 }
 
-impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
+impl Widget<CanvasMessage, Theme, Renderer> for Viewport<'_> {
     fn size(&self) -> Size<Length> {
         Size::new(Length::Fill, Length::Fill)
     }
@@ -536,7 +674,7 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
                 renderer,
                 theme,
                 style,
-                layout.children().next().unwrap(),
+                layout.children().next().expect("layout() always builds one child node"),
                 cursor,
                 viewport,
             );
@@ -554,7 +692,7 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
                     renderer,
                     theme,
                     style,
-                    layout.children().next().unwrap(),
+                    layout.children().next().expect("layout() always builds one child node"),
                     cursor,
                     viewport,
                 );
@@ -570,7 +708,7 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
                     renderer,
                     theme,
                     style,
-                    layout.children().next().unwrap(),
+                    layout.children().next().expect("layout() always builds one child node"),
                     cursor,
                     viewport,
                 );
@@ -592,103 +730,14 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
         let bounds = layout.bounds();
         let is_crop = self.manager.active_tool == Some(ToolKind::Crop);
 
-        // Release crop pan even if cursor left the canvas
-        if is_crop
-            && self.manager.crop_pan.get().is_some()
-            && let Event::Mouse(MouseEvent::ButtonReleased(Button::Left)) = event
-        {
-            self.manager.crop_pan.set(None);
-            shell.capture_event();
-            return;
-        }
-
-        // Crop: pan on interior clicks, fit-to-view coords for handles
-        if is_crop
-            && let Event::Mouse(mouse_event) = event
-            && let Some(position) = cursor.position_in(bounds)
-        {
-            if let Some((start, origin)) = self.manager.crop_pan.get()
-                && let MouseEvent::CursorMoved { .. } = mouse_event
-            {
-                let delta = Vector::new(position.x - start.x, position.y - start.y);
-                shell.publish(CanvasMessage::Pan(origin + delta));
-                shell.capture_event();
+        if is_crop {
+            if self.handle_crop_event(event, bounds, cursor, shell) {
                 return;
             }
-
-            match mouse_event {
-                MouseEvent::ButtonPressed(Button::Left) => {
-                    if let Some(pt) = self.manager.screen_to_image_fit(position, bounds)
-                        && let Some(preview) = self.manager.preview_ref()
-                    {
-                        let on_handle = preview.cursor_at(pt) != mouse::Interaction::Crosshair;
-                        if on_handle {
-                            self.manager.crop_pan.set(None);
-                            shell.publish(CanvasMessage::ToolStart(pt));
-                            shell.capture_event();
-                            return;
-                        }
-                        if preview.hit_test(pt) {
-                            self.manager
-                                .crop_pan
-                                .set(Some((position, self.manager.pan)));
-                            shell.capture_event();
-                            return;
-                        }
-                        // Outside region in Custom -- start new selection
-                        shell.publish(CanvasMessage::ToolStart(position));
-                        shell.capture_event();
-                        return;
-                    }
-                }
-                MouseEvent::CursorMoved { .. } => {
-                    if self.manager.tool_dragging
-                        && let Some(pt) = self.manager.screen_to_image_fit(position, bounds)
-                    {
-                        shell.publish(CanvasMessage::ToolDrag(pt));
-                        shell.capture_event();
-                        return;
-                    }
-                }
-                MouseEvent::ButtonReleased(Button::Left) if self.manager.tool_dragging => {
-                    shell.publish(CanvasMessage::ToolEnd);
-                    shell.capture_event();
-                    return;
-                }
-                _ => {}
-            }
-        }
-
-        // Tool interaction for non-crop tools
-        if self.manager.active_tool.is_some()
-            && !is_crop
-            && let Event::Mouse(mouse_event) = event
-            && let Some(position) = cursor.position_in(bounds)
+        } else if self.manager.active_tool.is_some()
+            && self.handle_tool_event(event, bounds, cursor, shell)
         {
-            match mouse_event {
-                MouseEvent::ButtonPressed(Button::Left) => {
-                    if let Some(pt) = self.manager.screen_to_image(position, bounds) {
-                        shell.publish(CanvasMessage::ToolStart(pt));
-                        shell.capture_event();
-                        return;
-                    }
-                }
-                MouseEvent::CursorMoved { .. } => {
-                    if self.manager.tool_dragging
-                        && let Some(pt) = self.manager.screen_to_image_clamped(position, bounds)
-                    {
-                        shell.publish(CanvasMessage::ToolDrag(pt));
-                        shell.capture_event();
-                        return;
-                    }
-                }
-                MouseEvent::ButtonReleased(Button::Left) if self.manager.tool_dragging => {
-                    shell.publish(CanvasMessage::ToolEnd);
-                    shell.capture_event();
-                    return;
-                }
-                _ => {}
-            }
+            return;
         }
 
         // Fall through to base canvas for zoom, context menu, etc.
@@ -696,7 +745,7 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
         element.as_widget_mut().update(
             &mut tree.children[0],
             event,
-            layout.children().next().unwrap(),
+            layout.children().next().expect("layout() always builds one child node"),
             cursor,
             renderer,
             clipboard,
@@ -733,7 +782,7 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
         let element = self.canvas_element();
         element.as_widget().mouse_interaction(
             &tree.children[0],
-            layout.children().next().unwrap(),
+            layout.children().next().expect("layout() always builds one child node"),
             cursor,
             viewport,
             renderer,
@@ -750,7 +799,7 @@ impl<'a> Widget<CanvasMessage, Theme, Renderer> for Viewport<'a> {
         let mut element = self.canvas_element();
         element.as_widget_mut().operate(
             &mut tree.children[0],
-            layout.children().next().unwrap(),
+            layout.children().next().expect("layout() always builds one child node"),
             renderer,
             operation,
         );

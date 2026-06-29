@@ -24,7 +24,7 @@ fn compare_images(actual: &DynamicImage, expected: &DynamicImage) -> f64 {
         }
     }
 
-    diff_count as f64 / total_pixels as f64
+    f64::from(diff_count) / f64::from(total_pixels)
 }
 
 #[test]

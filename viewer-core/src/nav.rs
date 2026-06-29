@@ -19,34 +19,42 @@ pub struct NavState {
 }
 
 impl NavState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn current(&self) -> Option<&PathBuf> {
         self.cur_idx.and_then(|idx| self.images.get(idx))
     }
 
-    pub fn index(&self) -> Option<usize> {
+    #[must_use]
+    pub const fn index(&self) -> Option<usize> {
         self.cur_idx
     }
 
-    pub fn is_selected(&self) -> bool {
+    #[must_use]
+    pub const fn is_selected(&self) -> bool {
         self.cur_idx.is_some()
     }
 
-    pub fn total(&self) -> usize {
+    #[must_use]
+    pub const fn total(&self) -> usize {
         self.images.len()
     }
 
+    #[must_use]
     pub fn dir(&self) -> Option<&Path> {
         self.dir.as_deref()
     }
 
-    pub fn is_empty(&self) -> bool {
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
         self.images.is_empty()
     }
 
+    #[must_use]
     pub fn images(&self) -> &[PathBuf] {
         &self.images
     }
@@ -66,7 +74,7 @@ impl NavState {
         }
     }
 
-    pub fn deselect(&mut self) {
+    pub const fn deselect(&mut self) {
         self.cur_idx = None;
     }
 
@@ -112,9 +120,10 @@ impl NavState {
     }
 }
 
+#[must_use]
 pub fn get_image_dir(path: &Path) -> Option<PathBuf> {
     if path.is_file() {
-        path.parent().map(|parent| parent.to_path_buf())
+        path.parent().map(std::path::Path::to_path_buf)
     } else if path.is_dir() {
         Some(path.to_path_buf())
     } else {
@@ -143,7 +152,7 @@ fn scan_dir_sync(
     let mut images: Vec<PathBuf> = fs::read_dir(dir)
         .into_iter()
         .flatten()
-        .filter_map(|entry| entry.ok())
+        .filter_map(std::result::Result::ok)
         .map(|entry| entry.path())
         .filter(|path| {
             if !include_hidden
@@ -173,8 +182,8 @@ fn scan_dir_sync(
                 a_time.cmp(&b_time)
             }
             SortMode::Size => {
-                let a_size = fs::metadata(a).map(|meta| meta.len()).unwrap_or(0);
-                let b_size = fs::metadata(b).map(|meta| meta.len()).unwrap_or(0);
+                let a_size = fs::metadata(a).map_or(0, |meta| meta.len());
+                let b_size = fs::metadata(b).map_or(0, |meta| meta.len());
                 a_size.cmp(&b_size)
             }
         };
@@ -188,11 +197,11 @@ fn scan_dir_sync(
     images
 }
 
+#[must_use]
 pub fn is_supported_image(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| EXTENSIONS.contains(&ext.to_lowercase().as_str()))
-        .unwrap_or(false)
+        .is_some_and(|ext| EXTENSIONS.contains(&ext.to_lowercase().as_str()))
 }
 
 fn natural_cmp(a: &str, b: &str) -> Ordering {
@@ -206,15 +215,16 @@ fn natural_cmp(a: &str, b: &str) -> Ordering {
             (Some(_), None) => return Ordering::Greater,
             (Some(ac), Some(bc)) if ac.is_ascii_digit() && bc.is_ascii_digit() => {
                 match collect_number(&mut a_chars).cmp(&collect_number(&mut b_chars)) {
-                    Ordering::Equal => continue,
+                    Ordering::Equal => {}
                     other => return other,
                 }
             }
             (Some(_), Some(_)) => {
-                let ac = a_chars.next().unwrap().to_ascii_lowercase();
-                let bc = b_chars.next().unwrap().to_ascii_lowercase();
+                // `peek()` above returned `Some`, so `next()` cannot be `None`.
+                let ac = a_chars.next().expect("peeked char present").to_ascii_lowercase();
+                let bc = b_chars.next().expect("peeked char present").to_ascii_lowercase();
                 match ac.cmp(&bc) {
-                    Ordering::Equal => continue,
+                    Ordering::Equal => {}
                     other => return other,
                 }
             }

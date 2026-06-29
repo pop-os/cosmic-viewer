@@ -34,42 +34,44 @@ pub struct ImageCache {
 }
 
 impl ImageCache {
+    #[must_use]
     pub fn new(full_capacity: usize, thumbnail_capacity: usize) -> Self {
+        // `max(1)` guarantees a non-zero capacity; the `unwrap_or` branch is
+        // therefore unreachable and avoids a panicking path entirely.
+        let full = NonZeroUsize::new(full_capacity.max(1)).unwrap_or(NonZeroUsize::MIN);
+        let thumbnail = NonZeroUsize::new(thumbnail_capacity.max(1)).unwrap_or(NonZeroUsize::MIN);
         Self {
-            full_images: Arc::new(Mutex::new(LruCache::new(
-                NonZeroUsize::new(full_capacity.max(1)).unwrap(),
-            ))),
-            thumbnails: Arc::new(Mutex::new(LruCache::new(
-                NonZeroUsize::new(thumbnail_capacity.max(1)).unwrap(),
-            ))),
+            full_images: Arc::new(Mutex::new(LruCache::new(full))),
+            thumbnails: Arc::new(Mutex::new(LruCache::new(thumbnail))),
             pending: Arc::new(Mutex::new(HashSet::new())),
             pending_thumbnails: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
+    #[must_use]
     pub fn with_defaults() -> Self {
         Self::new(20, 1000)
     }
 
     pub fn resize(&self, new_capacity: usize) {
+        // `max(1)` guarantees a non-zero capacity; the `unwrap_or` branch is
+        // therefore unreachable and avoids a panicking path entirely.
+        let capacity = NonZeroUsize::new(new_capacity.max(1)).unwrap_or(NonZeroUsize::MIN);
         if let Ok(mut cache) = self.full_images.lock() {
-            cache.resize(
-                NonZeroUsize::new(new_capacity.max(1))
-                    .expect("max(1) guarantees non-zero capacity"),
-            )
+            cache.resize(capacity);
         }
     }
 
+    #[must_use]
     pub fn get_full(&self, path: &PathBuf) -> Option<CachedImage> {
         self.full_images.lock().ok()?.get(path).cloned()
     }
 
     pub fn insert_full(&self, path: PathBuf, image: CachedImage) {
-        if let Ok(mut cache) = self.full_images.lock() {
-            cache.put(path.clone(), image);
-        }
-
         self.clear_pending(&path);
+        if let Ok(mut cache) = self.full_images.lock() {
+            cache.put(path, image);
+        }
     }
 
     pub fn remove_full(&self, path: &PathBuf) {
@@ -78,15 +80,16 @@ impl ImageCache {
         }
     }
 
+    #[must_use]
     pub fn get_thumbnail(&self, path: &PathBuf) -> Option<Handle> {
         self.thumbnails.lock().ok()?.get(path).cloned()
     }
 
     pub fn insert_thumbnail(&self, path: PathBuf, handle: Handle) {
-        if let Ok(mut cache) = self.thumbnails.lock() {
-            cache.put(path.clone(), handle);
-        }
         self.clear_pending_thumbnail(&path);
+        if let Ok(mut cache) = self.thumbnails.lock() {
+            cache.put(path, handle);
+        }
     }
 
     pub fn remove_thumbnail(&self, path: &PathBuf) {
@@ -95,18 +98,18 @@ impl ImageCache {
         }
     }
 
+    #[must_use]
     pub fn pending_thumbnail_count(&self) -> usize {
         self.pending_thumbnails
             .lock()
-            .map(|set| set.len())
-            .unwrap_or(0)
+            .map_or(0, |set| set.len())
     }
 
+    #[must_use]
     pub fn is_thumbnail_pending(&self, path: &PathBuf) -> bool {
         self.pending_thumbnails
             .lock()
-            .map(|set| set.contains(path))
-            .unwrap_or(false)
+            .is_ok_and(|set| set.contains(path))
     }
 
     pub fn set_thumbnail_pending(&self, path: PathBuf) {
@@ -121,11 +124,11 @@ impl ImageCache {
         }
     }
 
+    #[must_use]
     pub fn is_pending(&self, path: &PathBuf) -> bool {
         self.pending
             .lock()
-            .map(|set| set.contains(path))
-            .unwrap_or(false)
+            .is_ok_and(|set| set.contains(path))
     }
 
     pub fn set_pending(&self, path: PathBuf) {

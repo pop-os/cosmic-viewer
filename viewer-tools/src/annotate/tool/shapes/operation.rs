@@ -11,7 +11,7 @@ use crate::{
 use cosmic::{
     Renderer,
     iced::{Color, Point, Rectangle, Size},
-    iced_widget::canvas::Frame,
+    iced::widget::canvas::Frame,
 };
 use image::DynamicImage;
 use tiny_skia::{LineCap as SkiaLineCap, Rect};
@@ -26,7 +26,8 @@ pub struct ShapeOperation {
 }
 
 impl ShapeOperation {
-    pub fn new(kind: ShapeKind, start: Point, end: Point, color: Color, width: f32) -> Self {
+    #[must_use]
+    pub const fn new(kind: ShapeKind, start: Point, end: Point, color: Color, width: f32) -> Self {
         Self {
             kind,
             start,
@@ -38,10 +39,12 @@ impl ShapeOperation {
 }
 
 impl ShapeOperation {
+    #[must_use]
     pub fn bounds(&self) -> Rectangle {
         normalize_rect(self.start, self.end)
     }
 
+    #[must_use]
     pub fn hit_test(&self, point: Point) -> bool {
         let b = self.bounds();
         let pad = self.width.max(4.0);
@@ -74,6 +77,7 @@ impl ToolOperation for ShapeOperation {
                     let verts = match self.kind {
                         ShapeKind::Star => star_vertices(self.start, self.end),
                         ShapeKind::Polygon => polygon_vertices(self.start, self.end, 6),
+                        // outer arm already narrowed to Star | Polygon
                         _ => unreachable!(),
                     };
                     if let Some(first) = verts.first() {
@@ -124,13 +128,17 @@ impl ToolOperation for ShapeOperation {
                         let rect = normalize_rect(self.start, self.end);
                         pb.push_oval(
                             Rect::from_xywh(rect.x, rect.y, rect.width, rect.height)
-                                .unwrap_or(Rect::from_xywh(0.0, 0.0, 1.0, 1.0).unwrap()),
+                                .unwrap_or_else(|| {
+                                    Rect::from_xywh(0.0, 0.0, 1.0, 1.0)
+                                        .expect("unit rect is always valid")
+                                }),
                         );
                     }
                     ShapeKind::Line => {
                         pb.move_to(self.start.x, self.start.y);
                         pb.line_to(self.end.x, self.end.y);
                     }
+                    // Star/Polygon/Arrow handled by the outer match arms
                     _ => unreachable!(),
                 }) else {
                     return;
@@ -176,14 +184,14 @@ impl ToolOperation for ShapeOperation {
     }
 
     fn hit_test(&self, point: Point) -> bool {
-        ShapeOperation::hit_test(self, point)
+        Self::hit_test(self, point)
     }
 
     fn translate(&mut self, dx: f32, dy: f32) {
-        ShapeOperation::translate(self, dx, dy);
+        Self::translate(self, dx, dy);
     }
 
     fn bounds(&self) -> Option<Rectangle> {
-        Some(ShapeOperation::bounds(self))
+        Some(Self::bounds(self))
     }
 }

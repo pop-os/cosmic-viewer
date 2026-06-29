@@ -4,9 +4,9 @@ use cosmic::{
         alignment::Horizontal,
         keyboard::{Key, Modifiers},
     },
-    iced_core::SmolStr,
     widget::{ToastId, color_picker::ColorPickerUpdate},
 };
+use smol_str::SmolStr;
 use std::{path::PathBuf, sync::Arc};
 use trash::TrashItem;
 use viewer_canvas::CanvasMessage;

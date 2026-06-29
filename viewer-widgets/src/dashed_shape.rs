@@ -4,7 +4,7 @@ use cosmic::{
         Color, Point, Rectangle, Size, border,
         mouse::Cursor,
     },
-    iced_widget::canvas::{self, Frame, Geometry, LineDash, Path, Program, Stroke},
+    iced::widget::canvas::{self, Frame, Geometry, LineDash, Path, Program, Stroke},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -22,13 +22,13 @@ impl DashedShape {
     fn to_radius(self, bounds: Size) -> border::Radius {
         let max_rad = bounds.width.min(bounds.height) / 2.0;
         match self {
-            DashedShape::Circle => max_rad.into(),
-            DashedShape::Pill => max_rad.min(160.0).into(),
-            DashedShape::Square => 0.0_f32.into(),
-            DashedShape::RoundedS => max_rad.min(8.0).into(),
-            DashedShape::RoundedM => max_rad.min(16.0).into(),
-            DashedShape::RoundedL => max_rad.min(32.0).into(),
-            DashedShape::Custom(rad) => [
+            Self::Circle => max_rad.into(),
+            Self::Pill => max_rad.min(160.0).into(),
+            Self::Square => 0.0_f32.into(),
+            Self::RoundedS => max_rad.min(8.0).into(),
+            Self::RoundedM => max_rad.min(16.0).into(),
+            Self::RoundedL => max_rad.min(32.0).into(),
+            Self::Custom(rad) => [
                 rad[0].min(max_rad),
                 rad[1].min(max_rad),
                 rad[2].min(max_rad),
@@ -48,7 +48,8 @@ pub struct DashedBorder {
 }
 
 impl DashedBorder {
-    pub fn circle(color: Color, stroke_width: f32) -> Self {
+    #[must_use]
+    pub const fn circle(color: Color, stroke_width: f32) -> Self {
         Self {
             color,
             stroke_width,
@@ -58,7 +59,8 @@ impl DashedBorder {
         }
     }
 
-    pub fn pill(color: Color, stroke_width: f32) -> Self {
+    #[must_use]
+    pub const fn pill(color: Color, stroke_width: f32) -> Self {
         Self {
             color,
             stroke_width,
@@ -68,7 +70,8 @@ impl DashedBorder {
         }
     }
 
-    pub fn square(color: Color, stroke_width: f32) -> Self {
+    #[must_use]
+    pub const fn square(color: Color, stroke_width: f32) -> Self {
         Self {
             color,
             stroke_width,
@@ -78,7 +81,8 @@ impl DashedBorder {
         }
     }
 
-    pub fn rounded(color: Color, stroke_width: f32, shape: DashedShape) -> Self {
+    #[must_use]
+    pub const fn rounded(color: Color, stroke_width: f32, shape: DashedShape) -> Self {
         Self {
             color,
             stroke_width,
@@ -95,18 +99,21 @@ impl DashedBorder {
         }
     }
 
-    pub fn dash_pattern(mut self, dash: f32, gap: f32) -> Self {
+    #[must_use]
+    pub const fn dash_pattern(mut self, dash: f32, gap: f32) -> Self {
         self.dash = dash;
         self.gap = gap;
         self
     }
 
-    pub fn dash(mut self, dash: f32) -> Self {
+    #[must_use]
+    pub const fn dash(mut self, dash: f32) -> Self {
         self.dash = dash;
         self
     }
 
-    pub fn gap(mut self, gap: f32) -> Self {
+    #[must_use]
+    pub const fn gap(mut self, gap: f32) -> Self {
         self.gap = gap;
         self
     }
@@ -139,16 +146,13 @@ impl<M> Program<M, Theme, Renderer> for DashedBorder {
             },
             ..Stroke::default()
         };
-        let path = match self.shape {
-            DashedShape::Circle => {
-                let center = Point::new(bounds.width / 2.0, bounds.height / 2.0);
-                let radius = inner_bounds.width.min(inner_bounds.height) / 2.0;
-                Path::circle(center, radius)
-            }
-            _ => {
-                let radius = self.shape.to_radius(inner_bounds);
-                Path::rounded_rectangle(Point::new(inset, inset), inner_bounds, radius)
-            }
+        let path = if matches!(self.shape, DashedShape::Circle) {
+            let center = Point::new(bounds.width / 2.0, bounds.height / 2.0);
+            let radius = inner_bounds.width.min(inner_bounds.height) / 2.0;
+            Path::circle(center, radius)
+        } else {
+            let radius = self.shape.to_radius(inner_bounds);
+            Path::rounded_rectangle(Point::new(inset, inset), inner_bounds, radius)
         };
 
         frame.stroke(&path, stroke);

@@ -1,7 +1,7 @@
 use super::{
     BORDER_WIDTH, DEFAULT_BOX_WIDTH, DRAG_THRESHOLD, LINE_HEIGHT_FACTOR, MIN_BOX_HEIGHT,
-    MIN_BOX_WIDTH, TextDragHandle, TextOperation, TextSpan, build_buffer_line, content_height,
-    encode_align, group_spans, intern_str, snap_font_size, span_attrs,
+    MIN_BOX_WIDTH, TextDragHandle, TextOperation, TextSpan, build_buffer_line, color_channel_u8,
+    content_height, encode_align, group_spans, intern_str, snap_font_size, span_attrs,
 };
 use crate::{ToolOperation, annotate::tool::text::TEXT_INSET};
 use cosmic::{
@@ -11,17 +11,15 @@ use cosmic::{
         alignment::{Horizontal, Vertical},
         font, mouse,
     },
-    iced_core::text::{LineHeight, Shaping},
-    iced_widget::{
-        canvas::{self, Fill, Frame, Path, Stroke},
-        graphics::text::{cosmic_text, font_system},
-    },
+    iced::advanced::text::{LineHeight, Shaping},
+    iced::widget::canvas::{self, Fill, Frame, Path, Stroke},
+    iced::advanced::graphics::text::{cosmic_text, font_system},
 };
 use cosmic_text::Edit;
 use image::DynamicImage;
 use std::{any::Any, cell::Cell, f32, time::Instant};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TextEditState {
     Placing,
     PlacingDrag,
@@ -29,6 +27,9 @@ pub enum TextEditState {
     Resizing,
 }
 
+// reason: bold/italic/underline are independent rich-text attributes and the two
+// interaction flags track orthogonal drag state; they are not a single enum state.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
 pub struct TextPreview {
     pub color: Color,
@@ -54,6 +55,7 @@ pub struct TextPreview {
 }
 
 impl TextPreview {
+    #[must_use]
     pub fn new(
         color: Color,
         font_size: f32,
@@ -90,10 +92,12 @@ impl TextPreview {
         let scale = self.last_scale.get();
         let metrics =
             cosmic_text::Metrics::new(self.font_size, self.font_size * LINE_HEIGHT_FACTOR);
-        let mut font_sys = font_system().write().expect("Write font system");
-        let mut buffer = cosmic_text::Buffer::new(font_sys.raw(), metrics);
+        let mut buffer = {
+            let mut font_sys = font_system().write().expect("Write font system");
+            cosmic_text::Buffer::new(font_sys.raw(), metrics)
+        };
         buffer.set_size(
-            Some((self.bounding_box.width - TEXT_INSET * 2.0) * scale),
+            Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width) * scale),
             None,
         );
         buffer.set_wrap(cosmic_text::Wrap::WordOrGlyph);
@@ -111,12 +115,15 @@ impl TextPreview {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the shared font-system lock is poisoned.
     pub fn sync_buffer_size(&mut self, scale: f32) {
         if let Some(editor) = &mut self.editor {
             let mut font_sys = font_system().write().expect("Write font system");
             editor.with_buffer_mut(|buf| {
                 buf.set_size(
-                    Some((self.bounding_box.width - TEXT_INSET * 2.0) * scale),
+                    Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width) * scale),
                     None,
                 );
                 buf.set_scroll(cosmic_text::Scroll::default());
@@ -125,6 +132,9 @@ impl TextPreview {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the shared font-system lock is poisoned.
     pub fn init_editor_with_text(&mut self, text: &str) {
         self.init_editor();
         let attrs = self.current_attrs();
@@ -134,6 +144,7 @@ impl TextPreview {
                 buf.set_text(text, &attrs, cosmic_text::Shaping::Advanced, None);
             });
             editor.shape_as_needed(font_sys.raw(), false);
+            drop(font_sys);
 
             let scale = self.last_scale.get();
             let content_h: f32 = editor.with_buffer(content_height) / scale;
@@ -143,6 +154,9 @@ impl TextPreview {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the shared font-system lock is poisoned.
     pub fn init_editor_from_spans(&mut self, spans: &[TextSpan]) {
         self.init_editor();
         if let Some(editor) = &mut self.editor {
@@ -182,6 +196,9 @@ impl TextPreview {
             .is_some_and(|ed| ed.selection_bounds().is_some())
     }
 
+    /// # Panics
+    ///
+    /// Panics if the shared font-system lock is poisoned.
     pub fn apply_attr_to_selection<F>(&mut self, modify: F)
     where
         F: Fn(cosmic_text::Attrs) -> cosmic_text::Attrs,
@@ -250,10 +267,14 @@ impl TextPreview {
         }
     }
 
+    #[must_use]
     pub fn copy_selection(&self) -> Option<String> {
-        self.editor.as_ref().and_then(|ed| ed.copy_selection())
+        self.editor.as_ref().and_then(Edit::copy_selection)
     }
 
+    /// # Panics
+    ///
+    /// Panics if the shared font-system lock is poisoned.
     pub fn delete_selection(&mut self) {
         if let Some(editor) = &mut self.editor
             && editor.selection_bounds().is_some()
@@ -263,6 +284,9 @@ impl TextPreview {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the shared font-system lock is poisoned.
     pub fn insert_with_attrs(&mut self, data: &str) {
         self.blink_start.set(Instant::now());
         let attrs = self.current_attrs();
@@ -291,10 +315,10 @@ impl TextPreview {
                     self.underline = a.metadata == 1;
                     if let Some(c) = a.color_opt {
                         self.color = Color::from_rgba(
-                            c.r() as f32 / 255.0,
-                            c.g() as f32 / 255.0,
-                            c.b() as f32 / 255.0,
-                            c.a() as f32 / 255.0,
+                            f32::from(c.r()) / 255.0,
+                            f32::from(c.g()) / 255.0,
+                            f32::from(c.b()) / 255.0,
+                            f32::from(c.a()) / 255.0,
                         );
                     }
                     if let Some(m) = a.metrics_opt {
@@ -322,12 +346,12 @@ impl TextPreview {
             } else {
                 cosmic_text::Style::Normal
             })
-            .metadata(if self.underline { 1 } else { 0 })
+            .metadata(usize::from(self.underline))
             .color(cosmic_text::Color::rgba(
-                (self.color.r * 255.0) as u8,
-                (self.color.g * 255.0) as u8,
-                (self.color.b * 255.0) as u8,
-                (self.color.a * 255.0) as u8,
+                color_channel_u8(self.color.r),
+                color_channel_u8(self.color.g),
+                color_channel_u8(self.color.b),
+                color_channel_u8(self.color.a),
             ))
             .metrics(cosmic_text::Metrics::new(
                 self.font_size,
@@ -349,6 +373,9 @@ impl TextPreview {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the shared font-system lock is poisoned.
     pub fn editor_action(&mut self, action: cosmic_text::Action) {
         self.blink_start.set(Instant::now());
         if let Some(editor) = &mut self.editor {
@@ -356,6 +383,7 @@ impl TextPreview {
             let mut font_sys = font_system().write().expect("Write font system");
             editor.action(font_sys.raw(), action);
             editor.shape_as_needed(font_sys.raw(), false);
+            drop(font_sys);
 
             // Fit box height to content
             let min_h = self.font_size * LINE_HEIGHT_FACTOR / scale;
@@ -375,6 +403,9 @@ impl TextPreview {
             .is_none_or(|ed| ed.with_buffer(|buf| buf.lines.iter().all(|l| l.text().is_empty())))
     }
 
+    /// # Panics
+    ///
+    /// Panics if the shared font-system lock is poisoned.
     pub fn set_line_alignment(&mut self, align: Horizontal) {
         self.alignment = align;
         if let Some(editor) = &mut self.editor {
@@ -524,6 +555,7 @@ impl TextPreview {
                 buf.set_scroll(cosmic_text::Scroll::default());
             });
             editor.shape_as_needed(font_sys.raw(), false);
+            drop(font_sys);
 
             let content_h: f32 = editor.with_buffer(content_height) / scale;
 
@@ -563,121 +595,187 @@ impl TextPreview {
             Stroke::default().with_color(accent).with_width(border_w),
         );
 
-        // Corner handles
-        // Top-left
-        draw_handle(
-            frame,
-            Point::new(r.x, r.y),
-            bar_long,
-            bar_short,
-            0.0,
-            0.0,
-            accent,
-        );
-        draw_handle(
-            frame,
-            Point::new(r.x, r.y),
-            bar_short,
-            bar_long,
-            0.0,
-            0.0,
-            accent,
-        );
-        // Top-right
-        draw_handle(
-            frame,
-            Point::new(r.x + r.width, r.y),
-            bar_long,
-            bar_short,
-            1.0,
-            0.0,
-            accent,
-        );
-        draw_handle(
-            frame,
-            Point::new(r.x + r.width, r.y),
-            bar_short,
-            bar_long,
-            1.0,
-            0.0,
-            accent,
-        );
-        // Bottom-left
-        draw_handle(
-            frame,
-            Point::new(r.x, r.y + r.height),
-            bar_long,
-            bar_short,
-            0.0,
-            1.0,
-            accent,
-        );
-        draw_handle(
-            frame,
-            Point::new(r.x, r.y + r.height),
-            bar_short,
-            bar_long,
-            0.0,
-            1.0,
-            accent,
-        );
-        // Bottom-right
-        draw_handle(
-            frame,
-            Point::new(r.x + r.width, r.y + r.height),
-            bar_long,
-            bar_short,
-            1.0,
-            1.0,
-            accent,
-        );
-        draw_handle(
-            frame,
-            Point::new(r.x + r.width, r.y + r.height),
-            bar_short,
-            bar_long,
-            1.0,
-            1.0,
-            accent,
-        );
+        let left = r.x;
+        let right = r.x + r.width;
+        let top = r.y;
+        let bottom = r.y + r.height;
+        let mid_x = r.x + r.width / 2.0;
+        let mid_y = r.y + r.height / 2.0;
 
-        // Edge handles
-        draw_handle(
-            frame,
-            Point::new(r.x + r.width / 2.0, r.y),
-            bar_long,
-            bar_short,
-            0.5,
-            0.0,
-            accent,
-        );
-        draw_handle(
-            frame,
-            Point::new(r.x + r.width / 2.0, r.y + r.height),
-            bar_long,
-            bar_short,
-            0.5,
-            1.0,
-            accent,
-        );
-        draw_handle(
-            frame,
-            Point::new(r.x, r.y + r.height / 2.0),
-            bar_short,
-            bar_long,
-            0.0,
-            0.5,
-            accent,
-        );
-        draw_handle(
-            frame,
-            Point::new(r.x + r.width, r.y + r.height / 2.0),
-            bar_short,
-            bar_long,
-            1.0,
-            0.5,
-            accent,
-        );
+        // Corner handles are L-shaped (two bars); edge handles are a single bar.
+        // Each entry: (center, bar_w, bar_h, anchor_x, anchor_y).
+        let handles = [
+            (Point::new(left, top), bar_long, bar_short, 0.0, 0.0),
+            (Point::new(left, top), bar_short, bar_long, 0.0, 0.0),
+            (Point::new(right, top), bar_long, bar_short, 1.0, 0.0),
+            (Point::new(right, top), bar_short, bar_long, 1.0, 0.0),
+            (Point::new(left, bottom), bar_long, bar_short, 0.0, 1.0),
+            (Point::new(left, bottom), bar_short, bar_long, 0.0, 1.0),
+            (Point::new(right, bottom), bar_long, bar_short, 1.0, 1.0),
+            (Point::new(right, bottom), bar_short, bar_long, 1.0, 1.0),
+            (Point::new(mid_x, top), bar_long, bar_short, 0.5, 0.0),
+            (Point::new(mid_x, bottom), bar_long, bar_short, 0.5, 1.0),
+            (Point::new(left, mid_y), bar_short, bar_long, 0.0, 0.5),
+            (Point::new(right, mid_y), bar_short, bar_long, 1.0, 0.5),
+        ];
+        for (center, w, h, anchor_x, anchor_y) in handles {
+            draw_handle(frame, center, w, h, anchor_x, anchor_y, accent);
+        }
+    }
+
+    fn draw_glyphs(
+        &self,
+        frame: &mut Frame<Renderer>,
+        editor: &cosmic_text::Editor<'static>,
+        origin: Point,
+        scale: f32,
+    ) {
+        let inv = 1.0 / scale;
+        editor.with_buffer(|buffer| {
+            for run in buffer.layout_runs() {
+                if run.glyphs.is_empty() {
+                    continue;
+                }
+
+                // Group adjacent glyphs that share attrs into a single text draw.
+                let line = &buffer.lines[run.line_i];
+                let attrs_list = line.attrs_list();
+                let mut span_start = 0usize;
+
+                while span_start < run.glyphs.len() {
+                    let first = &run.glyphs[span_start];
+                    let span_attrs = attrs_list.get_span(first.start);
+                    let mut span_end = span_start + 1;
+
+                    while span_end < run.glyphs.len() {
+                        let g = &run.glyphs[span_end];
+                        if attrs_list.get_span(g.start) != span_attrs {
+                            break;
+                        }
+                        span_end += 1;
+                    }
+
+                    let last = &run.glyphs[span_end - 1];
+                    let span_text = &run.text[first.start..last.end];
+                    let bold = span_attrs.weight >= cosmic_text::Weight::BOLD;
+                    let italic = span_attrs.style == cosmic_text::Style::Italic;
+                    let underline = span_attrs.metadata == 1;
+                    let span_color = span_attrs.color_opt.map_or(self.color, |c| {
+                        Color::from_rgba(
+                            f32::from(c.r()) / 255.0,
+                            f32::from(c.g()) / 255.0,
+                            f32::from(c.b()) / 255.0,
+                            f32::from(c.a()) / 255.0,
+                        )
+                    });
+                    let span_font_size = span_attrs.metrics_opt.map_or(self.font_size, |m| {
+                        let metrics: cosmic_text::Metrics = m.into();
+                        metrics.font_size
+                    });
+                    let span_family: &'static str = match span_attrs.family {
+                        cosmic_text::Family::Name(n) if n != self.font_family => intern_str(n),
+                        _ => self.font_family,
+                    };
+
+                    let baseline_offset =
+                        span_font_size.mul_add(-LINE_HEIGHT_FACTOR, run.line_height);
+                    let text = canvas::Text {
+                        content: span_text.to_string(),
+                        position: Point::new(
+                            first.x.mul_add(inv, origin.x),
+                            (run.line_top + baseline_offset).mul_add(inv, origin.y),
+                        ),
+                        color: span_color,
+                        size: (span_font_size / scale).into(),
+                        font: Font {
+                            family: font::Family::Name(span_family),
+                            weight: if bold {
+                                font::Weight::Bold
+                            } else {
+                                font::Weight::Normal
+                            },
+                            style: if italic {
+                                font::Style::Italic
+                            } else {
+                                font::Style::Normal
+                            },
+                            stretch: font::Stretch::Normal,
+                        },
+                        max_width: f32::INFINITY,
+                        line_height: LineHeight::default(),
+                        align_x: Horizontal::Left.into(),
+                        align_y: Vertical::Top,
+                        shaping: Shaping::Advanced,
+                    };
+                    frame.fill_text(text);
+
+                    if underline {
+                        let uy = span_font_size
+                            .mul_add(LINE_HEIGHT_FACTOR, run.line_top + baseline_offset)
+                            .mul_add(inv, origin.y)
+                            - 1.0 / scale;
+                        let ux = first.x.mul_add(inv, origin.x);
+                        let uw = (last.x + last.w - first.x) * inv;
+                        frame.stroke(
+                            &Path::line(Point::new(ux, uy), Point::new(ux + uw, uy)),
+                            Stroke::default()
+                                .with_color(span_color)
+                                .with_width(1.0 / scale),
+                        );
+                    }
+
+                    span_start = span_end;
+                }
+            }
+        });
+    }
+
+    // reason: cursor pixel coordinates from cosmic-text are far below f32's exact-integer range.
+    #[allow(clippy::cast_precision_loss)]
+    fn draw_cursor(
+        &self,
+        frame: &mut Frame<Renderer>,
+        editor: &cosmic_text::Editor<'static>,
+        origin: Point,
+        scale: f32,
+    ) {
+        let inv = 1.0 / scale;
+        let elapsed = self.blink_start.get().elapsed().as_millis();
+        let cursor_visible = elapsed < 500 || (elapsed / 500).is_multiple_of(2);
+        if self.state == TextEditState::Editing
+            && cursor_visible
+            && let Some((cx, cy)) = editor.cursor_position()
+        {
+            let cursor = editor.cursor();
+            let (line_h, cursor_fs) = editor.with_buffer(|buf| {
+                let mut lh = self.font_size * LINE_HEIGHT_FACTOR;
+                let mut fs = self.font_size;
+                for run in buf.layout_runs() {
+                    if run.line_i == cursor.line {
+                        lh = run.line_height;
+                        if let Some(line) = buf.lines.get(run.line_i) {
+                            let idx = if cursor.index > 0 { cursor.index - 1 } else { 0 };
+                            let a = line.attrs_list().get_span(idx);
+                            if let Some(m) = a.metrics_opt {
+                                let metrics: cosmic_text::Metrics = m.into();
+                                fs = metrics.font_size;
+                            }
+                        }
+                        break;
+                    }
+                }
+                (lh, fs)
+            });
+            let offset = cursor_fs.mul_add(-LINE_HEIGHT_FACTOR, line_h).max(0.0);
+            let cursor_x = (cx as f32).mul_add(inv, origin.x);
+            let cursor_y = (cy as f32 + offset).mul_add(inv, origin.y);
+            let cursor_h = cursor_fs * LINE_HEIGHT_FACTOR * inv;
+            frame.fill_rectangle(
+                Point::new(cursor_x, cursor_y),
+                Size::new(1.0 / scale, cursor_h),
+                Fill::from(self.color),
+            );
+        }
     }
 }
 
@@ -737,7 +835,7 @@ impl ToolOperation for TextPreview {
                 for run in buffer.layout_runs() {
                     for (x_start, x_width) in run.highlight(start, end) {
                         frame.fill_rectangle(
-                            Point::new(origin.x + x_start * inv, origin.y + run.line_top * inv),
+                            Point::new(x_start.mul_add(inv, origin.x), run.line_top.mul_add(inv, origin.y)),
                             Size::new(x_width * inv, run.line_height * inv),
                             Fill::from(sel_color),
                         );
@@ -746,146 +844,8 @@ impl ToolOperation for TextPreview {
             });
         }
 
-        editor.with_buffer(|buffer| {
-            for run in buffer.layout_runs() {
-                if run.glyphs.is_empty() {
-                    continue;
-                }
-
-                // Group glyphs by attrs
-                let line = &buffer.lines[run.line_i];
-                let attrs_list = line.attrs_list();
-                let mut span_start = 0usize;
-
-                while span_start < run.glyphs.len() {
-                    let first = &run.glyphs[span_start];
-                    let span_attrs = attrs_list.get_span(first.start);
-                    let mut span_end = span_start + 1;
-
-                    while span_end < run.glyphs.len() {
-                        let g = &run.glyphs[span_end];
-                        if attrs_list.get_span(g.start) != span_attrs {
-                            break;
-                        }
-                        span_end += 1;
-                    }
-
-                    let last = &run.glyphs[span_end - 1];
-                    let span_text = &run.text[first.start..last.end];
-                    let bold = span_attrs.weight >= cosmic_text::Weight::BOLD;
-                    let italic = span_attrs.style == cosmic_text::Style::Italic;
-                    let underline = span_attrs.metadata == 1;
-                    let span_color = span_attrs.color_opt.map_or(self.color, |c| {
-                        Color::from_rgba(
-                            c.r() as f32 / 255.0,
-                            c.g() as f32 / 255.0,
-                            c.b() as f32 / 255.0,
-                            c.a() as f32 / 255.0,
-                        )
-                    });
-                    let span_font_size = span_attrs.metrics_opt.map_or(self.font_size, |m| {
-                        let metrics: cosmic_text::Metrics = m.into();
-                        metrics.font_size
-                    });
-                    let span_family: &'static str = match span_attrs.family {
-                        cosmic_text::Family::Name(n) if n != self.font_family => intern_str(n),
-                        _ => self.font_family,
-                    };
-
-                    let baseline_offset = run.line_height - span_font_size * LINE_HEIGHT_FACTOR;
-                    let text = canvas::Text {
-                        content: span_text.to_string(),
-                        position: Point::new(
-                            origin.x + first.x * inv,
-                            origin.y + (run.line_top + baseline_offset) * inv,
-                        ),
-                        color: span_color,
-                        size: (span_font_size / scale).into(),
-                        font: Font {
-                            family: font::Family::Name(span_family),
-                            weight: if bold {
-                                font::Weight::Bold
-                            } else {
-                                font::Weight::Normal
-                            },
-                            style: if italic {
-                                font::Style::Italic
-                            } else {
-                                font::Style::Normal
-                            },
-                            stretch: font::Stretch::Normal,
-                        },
-                        max_width: f32::INFINITY,
-                        line_height: LineHeight::default(),
-                        align_x: Horizontal::Left.into(),
-                        align_y: Vertical::Top,
-                        shaping: Shaping::Advanced,
-                    };
-                    frame.fill_text(text);
-
-                    if underline {
-                        let uy = origin.y
-                            + (run.line_top
-                                + baseline_offset
-                                + span_font_size * LINE_HEIGHT_FACTOR)
-                                * inv
-                            - 1.0 / scale;
-                        let ux = origin.x + first.x * inv;
-                        let uw = (last.x + last.w - first.x) * inv;
-                        frame.stroke(
-                            &Path::line(Point::new(ux, uy), Point::new(ux + uw, uy)),
-                            Stroke::default()
-                                .with_color(span_color)
-                                .with_width(1.0 / scale),
-                        );
-                    }
-
-                    span_start = span_end;
-                }
-            }
-        });
-
-        // Cursor
-        let elapsed = self.blink_start.get().elapsed().as_millis();
-        let cursor_visible = elapsed < 500 || (elapsed / 500).is_multiple_of(2);
-        if self.state == TextEditState::Editing
-            && cursor_visible
-            && let Some((cx, cy)) = editor.cursor_position()
-        {
-            let cursor = editor.cursor();
-            let (line_h, cursor_fs) = editor.with_buffer(|buf| {
-                let mut lh = self.font_size * LINE_HEIGHT_FACTOR;
-                let mut fs = self.font_size;
-                for run in buf.layout_runs() {
-                    if run.line_i == cursor.line {
-                        lh = run.line_height;
-                        if let Some(line) = buf.lines.get(run.line_i) {
-                            let idx = if cursor.index > 0 {
-                                cursor.index - 1
-                            } else {
-                                0
-                            };
-                            let a = line.attrs_list().get_span(idx);
-                            if let Some(m) = a.metrics_opt {
-                                let metrics: cosmic_text::Metrics = m.into();
-                                fs = metrics.font_size;
-                            }
-                        }
-                        break;
-                    }
-                }
-                (lh, fs)
-            });
-            let offset = (line_h - cursor_fs * LINE_HEIGHT_FACTOR).max(0.0);
-            let cursor_x = origin.x + cx as f32 * inv;
-            let cursor_y = origin.y + (cy as f32 + offset) * inv;
-            let cursor_h = cursor_fs * LINE_HEIGHT_FACTOR * inv;
-            frame.fill_rectangle(
-                Point::new(cursor_x, cursor_y),
-                Size::new(1.0 / scale, cursor_h),
-                Fill::from(self.color),
-            );
-        }
+        self.draw_glyphs(frame, editor, origin, scale);
+        self.draw_cursor(frame, editor, origin, scale);
     }
 
     fn apply(&self, _image: &mut DynamicImage) {}
@@ -939,10 +899,10 @@ impl ToolOperation for TextPreview {
                             underline: a.metadata == 1,
                             color: a.color_opt.map(|c| {
                                 [
-                                    c.r() as f32 / 255.0,
-                                    c.g() as f32 / 255.0,
-                                    c.b() as f32 / 255.0,
-                                    c.a() as f32 / 255.0,
+                                    f32::from(c.r()) / 255.0,
+                                    f32::from(c.g()) / 255.0,
+                                    f32::from(c.b()) / 255.0,
+                                    f32::from(c.a()) / 255.0,
                                 ]
                             }),
                             font_size: a.metrics_opt.map(|m| {
@@ -990,10 +950,12 @@ impl ToolOperation for TextPreview {
         self
     }
 
+    // reason: scaled hit-test coordinates are bounded by canvas size; truncation toward zero is the intended pixel quantization.
+    #[allow(clippy::cast_possible_truncation)]
     fn on_press(&mut self, point: Point, _image_size: Size) -> mouse::Interaction {
         match self.state {
             TextEditState::Placing => {
-                let h = self.font_size * LINE_HEIGHT_FACTOR + TEXT_INSET * 2.0;
+                let h = TEXT_INSET.mul_add(2.0, self.font_size * LINE_HEIGHT_FACTOR);
                 self.bounding_box = Rectangle::new(point, Size::new(DEFAULT_BOX_WIDTH, h));
                 self.drag_origin = point;
                 self.drag_start_box = self.bounding_box;
@@ -1050,6 +1012,8 @@ impl ToolOperation for TextPreview {
         }
     }
 
+    // reason: scaled drag coordinates are bounded by canvas size; truncation toward zero is the intended pixel quantization.
+    #[allow(clippy::cast_possible_truncation)]
     fn on_drag(&mut self, point: Point, image_size: Size) {
         match self.state {
             TextEditState::PlacingDrag => {
@@ -1103,10 +1067,10 @@ impl ToolOperation for TextPreview {
             TextEditState::Placing | TextEditState::PlacingDrag => mouse::Interaction::Crosshair,
             TextEditState::Editing => {
                 let handle = self.hit_test_handle(point);
-                if handle != TextDragHandle::None {
-                    handle.cursor()
-                } else {
+                if handle == TextDragHandle::None {
                     mouse::Interaction::Text
+                } else {
+                    handle.cursor()
                 }
             }
             TextEditState::Resizing => self.active_handle.cursor(),
@@ -1136,7 +1100,7 @@ fn draw_handle(
     color: Color,
 ) {
     let rect = Rectangle::new(
-        Point::new(center.x - w * anchor_x, center.y - h * anchor_y),
+        Point::new(w.mul_add(-anchor_x, center.x), h.mul_add(-anchor_y, center.y)),
         Size::new(w, h),
     );
     frame.fill_rectangle(rect.position(), rect.size(), Fill::from(color));

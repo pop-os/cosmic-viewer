@@ -33,9 +33,8 @@ async fn scan_name_ascending_is_sorted() {
     assert!(images.len() > 1);
 
     // Verify ascending and descending produce inverse orderings
-    let desc = scan_dir(&dir, false, SortMode::Name, SortOrder::Descending).await;
-    assert_eq!(images.len(), desc.len());
-    let mut rev = desc.clone();
+    let mut rev = scan_dir(&dir, false, SortMode::Name, SortOrder::Descending).await;
+    assert_eq!(images.len(), rev.len());
     rev.reverse();
     assert_eq!(images, rev);
 }
@@ -44,10 +43,9 @@ async fn scan_name_ascending_is_sorted() {
 async fn scan_name_descending_is_reverse_sorted() {
     let dir = test_images_dir();
     let asc = scan_dir(&dir, false, SortMode::Name, SortOrder::Ascending).await;
-    let desc = scan_dir(&dir, false, SortMode::Name, SortOrder::Descending).await;
-    assert_eq!(asc.len(), desc.len());
+    let mut rev = scan_dir(&dir, false, SortMode::Name, SortOrder::Descending).await;
+    assert_eq!(asc.len(), rev.len());
 
-    let mut rev = desc.clone();
     rev.reverse();
     assert_eq!(asc, rev);
 }

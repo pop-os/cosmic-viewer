@@ -22,6 +22,7 @@ impl AsMimeTypes for ClipboardImage {
     }
 }
 
+#[must_use]
 pub fn image_mime_type(ext: &str) -> Option<&'static str> {
     match ext.to_lowercase().as_str() {
         "jpg" | "jpeg" => Some("image/jpeg"),

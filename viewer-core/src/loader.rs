@@ -4,11 +4,13 @@ use image::{DynamicImage, RgbaImage};
 use std::{
     fmt::{self, Debug, Formatter},
     fs::File,
-    io::{BufReader as IoBufReader, Read},
+    io::{BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 use thiserror::Error;
-use turbojpeg::{Decompressor, Image, PixelFormat};
+use turbojpeg::{Decompressor, Image, PixelFormat, ScalingFactor};
+use zune_image::codecs::bmp::zune_core::colorspace::ColorSpace;
+use zune_image::image::Image as ZuneImage;
 
 // Temporary fix until I can get a patch into upstream
 const MAX_TEX: u32 = 2048;
@@ -36,11 +38,12 @@ pub struct LoadedImage {
 
 impl Debug for LoadedImage {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        // `handle` and `image` hold opaque pixel buffers; omit them from Debug.
         f.debug_struct("LoadedImage")
             .field("width", &self.width)
             .field("height", &self.height)
             .field("path", &self.path)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -56,6 +59,12 @@ fn display_handle(image: &DynamicImage) -> Handle {
     Handle::from_rgba(width, height, rgba.into_raw())
 }
 
+/// Decode the image at `path` on a background thread.
+///
+/// # Errors
+///
+/// Returns [`LoadError`] if the file cannot be read, the format is unsupported
+/// or fails to decode, or the decode task is cancelled before completion.
 pub async fn load_image(path: PathBuf) -> Result<LoadedImage, LoadError> {
     let (tx, rx) = tokio::sync::oneshot::channel();
 
@@ -71,7 +80,7 @@ fn load_image_sync(path: &Path) -> Result<LoadedImage, LoadError> {
     let extension = path
         .extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| ext.to_lowercase())
+        .map(str::to_lowercase)
         .unwrap_or_default();
 
     // Use turbojpeg for JPEGs (faster than zune/image crate)
@@ -106,17 +115,20 @@ fn load_image_sync(path: &Path) -> Result<LoadedImage, LoadError> {
 }
 
 /// Load full JPEG using turbojpeg (faster than zune/image crate)
+// JPEG header dimensions are far below u32::MAX, so the usize -> u32 casts
+// cannot truncate.
+#[allow(clippy::cast_possible_truncation)]
 fn load_jpeg_full(path: &Path) -> Result<LoadedImage, LoadError> {
     let mut file = File::open(path)?;
     let mut jpeg_data = Vec::new();
     file.read_to_end(&mut jpeg_data)?;
 
     let mut decompressor = Decompressor::new()
-        .map_err(|e| LoadError::UnsupportedFormat(format!("TurboJPEG init failed: {}", e)))?;
+        .map_err(|e| LoadError::UnsupportedFormat(format!("TurboJPEG init failed: {e}")))?;
 
     let header = decompressor
         .read_header(&jpeg_data)
-        .map_err(|e| LoadError::UnsupportedFormat(format!("JPEG header error: {}", e)))?;
+        .map_err(|e| LoadError::UnsupportedFormat(format!("JPEG header error: {e}")))?;
 
     let width = header.width;
     let height = header.height;
@@ -134,7 +146,7 @@ fn load_jpeg_full(path: &Path) -> Result<LoadedImage, LoadError> {
 
     decompressor
         .decompress(&jpeg_data, output.as_deref_mut())
-        .map_err(|e| LoadError::UnsupportedFormat(format!("JPEG decode error: {}", e)))?;
+        .map_err(|e| LoadError::UnsupportedFormat(format!("JPEG decode error: {e}")))?;
 
     let rgba_image = RgbaImage::from_raw(width as u32, height as u32, pixels)
         .expect("pixel buffer matches dimensions");
@@ -169,12 +181,13 @@ fn is_zune_supported(extension: &str) -> bool {
     )
 }
 
+// Image dimensions originate from a decoded image header and are far below
+// u32::MAX, so the usize -> u32 casts cannot truncate.
+#[allow(clippy::cast_possible_truncation)]
 fn load_with_zune(path: &Path) -> Result<LoadedImage, LoadError> {
-    use zune_image::image::Image;
+    let mut img = ZuneImage::open(path).map_err(|e| LoadError::UnsupportedFormat(e.to_string()))?;
 
-    let mut img = Image::open(path).map_err(|e| LoadError::UnsupportedFormat(e.to_string()))?;
-
-    img.convert_color(zune_image::codecs::bmp::zune_core::colorspace::ColorSpace::RGBA)
+    img.convert_color(ColorSpace::RGBA)
         .map_err(|e| LoadError::UnsupportedFormat(e.to_string()))?;
 
     let (width, height) = img.dimensions();
@@ -213,6 +226,13 @@ fn load_with_image(path: &Path) -> Result<LoadedImage, LoadError> {
     })
 }
 
+/// Decode the image at `path` and downscale it to fit `max_size` on its longest
+/// edge, on a background thread.
+///
+/// # Errors
+///
+/// Returns [`LoadError`] if the file cannot be read, the format is unsupported
+/// or fails to decode, or the decode task is cancelled before completion.
 pub async fn load_thumbnail(path: PathBuf, max_size: u32) -> Result<LoadedImage, LoadError> {
     let (tx, rx) = tokio::sync::oneshot::channel();
 
@@ -228,7 +248,7 @@ fn load_thumbnail_sync(path: &Path, max_size: u32) -> Result<LoadedImage, LoadEr
     let extension = path
         .extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| ext.to_lowercase())
+        .map(str::to_lowercase)
         .unwrap_or_default();
 
     // 1. For JPEGs, try EXIF thumbnail extraction (very fast, no full decode)
@@ -295,15 +315,12 @@ fn load_thumbnail_sync(path: &Path, max_size: u32) -> Result<LoadedImage, LoadEr
 /// Extract embedded EXIF thumbnail from JPEG files
 /// This is extremely fast as it only reads a small portion of the file
 fn extract_exif_thumbnail(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u8>), LoadError> {
-    use std::fs::File;
-    use std::io::BufReader;
-
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
 
     let exif = exif::Reader::new()
         .read_from_container(&mut reader)
-        .map_err(|e| LoadError::UnsupportedFormat(format!("No EXIF data: {}", e)))?;
+        .map_err(|e| LoadError::UnsupportedFormat(format!("No EXIF data: {e}")))?;
 
     // Get the thumbnail data
     let thumbnail = exif
@@ -336,9 +353,6 @@ fn extract_exif_thumbnail(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u
 
 /// Extract raw thumbnail bytes from JPEG using EXIF offset/length
 fn extract_thumbnail_bytes(path: &Path, exif: &exif::Exif) -> Result<Vec<u8>, LoadError> {
-    use std::fs::File;
-    use std::io::{Read, Seek, SeekFrom};
-
     let offset = exif
         .get_field(exif::Tag::JPEGInterchangeFormat, exif::In::THUMBNAIL)
         .and_then(|f| f.value.get_uint(0))
@@ -377,7 +391,7 @@ fn extract_thumbnail_bytes(path: &Path, exif: &exif::Exif) -> Result<Vec<u8>, Lo
     };
 
     // Seek to thumbnail position (TIFF header offset + thumbnail offset in EXIF)
-    file.seek(SeekFrom::Start(tiff_offset + offset as u64))?;
+    file.seek(SeekFrom::Start(tiff_offset + u64::from(offset)))?;
 
     let mut thumb_data = vec![0u8; length as usize];
     file.read_exact(&mut thumb_data)?;
@@ -387,8 +401,6 @@ fn extract_thumbnail_bytes(path: &Path, exif: &exif::Exif) -> Result<Vec<u8>, Lo
 
 /// Scan JPEG file to find the TIFF header offset within APP1
 fn find_tiff_header_offset(file: &mut File) -> Result<u64, LoadError> {
-    use std::io::{Read, Seek, SeekFrom};
-
     file.seek(SeekFrom::Start(0))?;
 
     let mut marker = [0u8; 2];
@@ -413,7 +425,7 @@ fn find_tiff_header_offset(file: &mut File) -> Result<u64, LoadError> {
         // Read segment length
         let mut len_bytes = [0u8; 2];
         file.read_exact(&mut len_bytes)?;
-        let segment_len = u16::from_be_bytes(len_bytes) as u64;
+        let segment_len = u64::from(u16::from_be_bytes(len_bytes));
 
         if marker[1] == 0xE1 {
             // APP1 segment - check for EXIF
@@ -449,9 +461,10 @@ fn find_tiff_header_offset(file: &mut File) -> Result<u64, LoadError> {
 
 /// Decode JPEG with DCT scaling using turbojpeg (4-8x faster than full decode)
 /// This decodes directly to a smaller resolution, skipping most IDCT computation
+// JPEG header/scaled dimensions are far below u32::MAX, so the usize -> u32
+// casts cannot truncate.
+#[allow(clippy::cast_possible_truncation)]
 fn decode_jpeg_scaled(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u8>), LoadError> {
-    use std::io::Read;
-    use turbojpeg::{Decompressor, Image, PixelFormat};
 
     // Read the JPEG file
     let mut file = File::open(path)?;
@@ -460,12 +473,12 @@ fn decode_jpeg_scaled(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u8>),
 
     // Create decompressor
     let mut decompressor = Decompressor::new()
-        .map_err(|e| LoadError::UnsupportedFormat(format!("TurboJPEG init failed: {}", e)))?;
+        .map_err(|e| LoadError::UnsupportedFormat(format!("TurboJPEG init failed: {e}")))?;
 
     // Read header to get original dimensions
     let header = decompressor
         .read_header(&jpeg_data)
-        .map_err(|e| LoadError::UnsupportedFormat(format!("JPEG header error: {}", e)))?;
+        .map_err(|e| LoadError::UnsupportedFormat(format!("JPEG header error: {e}")))?;
 
     let (orig_width, orig_height) = (header.width as u32, header.height as u32);
 
@@ -474,7 +487,7 @@ fn decode_jpeg_scaled(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u8>),
 
     decompressor
         .set_scaling_factor(scaling)
-        .map_err(|e| LoadError::UnsupportedFormat(format!("Scale factor error: {}", e)))?;
+        .map_err(|e| LoadError::UnsupportedFormat(format!("Scale factor error: {e}")))?;
 
     let scaled = header.scaled(scaling);
     let width = scaled.width;
@@ -494,7 +507,7 @@ fn decode_jpeg_scaled(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u8>),
     // Decompress with scaling directly to RGBA
     decompressor
         .decompress(&jpeg_data, output.as_deref_mut())
-        .map_err(|e| LoadError::UnsupportedFormat(format!("JPEG decode error: {}", e)))?;
+        .map_err(|e| LoadError::UnsupportedFormat(format!("JPEG decode error: {e}")))?;
 
     let width = width as u32;
     let height = height as u32;
@@ -508,14 +521,20 @@ fn decode_jpeg_scaled(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u8>),
 }
 
 /// Calculate the best JPEG scaling factor to get close to target size
-fn calculate_jpeg_scale(width: u32, height: u32, target: u32) -> turbojpeg::ScalingFactor {
-    use turbojpeg::ScalingFactor;
-
+// max_dim is a JPEG dimension (<= u32::MAX) and the DCT ratios are 1/1..1/8, so
+// the f32 round-trip is exact for realistic image sizes and the result is
+// non-negative and in u32 range.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+fn calculate_jpeg_scale(width: u32, height: u32, target: u32) -> ScalingFactor {
     let max_dim = width.max(height);
 
     // Available scaling factors in turbojpeg (sorted largest to smallest)
     // These are the standard DCT scaling factors
-    let scales: [(usize, usize); 4] = [
+    let ratios: [(usize, usize); 4] = [
         (1, 1), // 100%
         (1, 2), // 50%
         (1, 4), // 25%
@@ -524,7 +543,7 @@ fn calculate_jpeg_scale(width: u32, height: u32, target: u32) -> turbojpeg::Scal
 
     // Find the smallest scale that produces an image >= target size
     // (we want to decode slightly larger, then resize down for quality)
-    for &(num, denom) in &scales {
+    for &(num, denom) in &ratios {
         let scaled = (max_dim as f32 * num as f32 / denom as f32) as u32;
         if scaled >= target {
             return ScalingFactor::new(num, denom);
@@ -535,13 +554,14 @@ fn calculate_jpeg_scale(width: u32, height: u32, target: u32) -> turbojpeg::Scal
     ScalingFactor::ONE_EIGHTH
 }
 
-/// Decode and resize using zune, returns (width, height, rgba_pixels)
+/// Decode and resize using zune, returns (width, height, `rgba_pixels`)
+// Image dimensions originate from a decoded image header and are far below
+// u32::MAX, so the usize -> u32 casts cannot truncate.
+#[allow(clippy::cast_possible_truncation)]
 fn decode_and_resize_zune(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u8>), LoadError> {
-    use zune_image::image::Image;
+    let mut img = ZuneImage::open(path).map_err(|e| LoadError::UnsupportedFormat(e.to_string()))?;
 
-    let mut img = Image::open(path).map_err(|e| LoadError::UnsupportedFormat(e.to_string()))?;
-
-    img.convert_color(zune_image::codecs::bmp::zune_core::colorspace::ColorSpace::RGBA)
+    img.convert_color(ColorSpace::RGBA)
         .map_err(|e| LoadError::UnsupportedFormat(e.to_string()))?;
 
     let (width, height) = img.dimensions();
@@ -560,7 +580,7 @@ fn decode_and_resize_zune(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u
     fast_resize_rgba(&pixels, width as u32, height as u32, max_size)
 }
 
-/// Decode and resize using image crate, returns (width, height, rgba_pixels)
+/// Decode and resize using image crate, returns (width, height, `rgba_pixels`)
 fn decode_and_resize_image(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u8>), LoadError> {
     let img = image::open(path)?;
     let rgba = img.to_rgba8();
@@ -575,7 +595,15 @@ fn decode_and_resize_image(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<
     fast_resize_rgba(&pixels, width, height, max_size)
 }
 
-/// Fast RGBA image resize using SIMD-optimized fast_image_resize crate
+/// Fast RGBA image resize using SIMD-optimized `fast_image_resize` crate
+// Source dimensions are positive image sizes and `ratio` is in (0, 1], so the
+// scaled product is non-negative and within u32 range after rounding; the f32
+// round-trip is exact for realistic image sizes.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
 fn fast_resize_rgba(
     pixels: &[u8],
     src_width: u32,
@@ -617,13 +645,21 @@ fn fast_resize_rgba(
 }
 
 /// Read DPI from EXIF data (JPEG/TIFF only)
+// The DPI value is rounded and clamped into [0, u32::MAX] before the cast, so
+// it cannot truncate or lose a sign.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[must_use]
 pub fn read_dpi(path: &Path) -> Option<u32> {
-    let mut file = IoBufReader::new(File::open(path).ok()?);
+    let mut file = BufReader::new(File::open(path).ok()?);
     let exif = exif::Reader::new().read_from_container(&mut file).ok()?;
     let x_res = exif.get_field(exif::Tag::XResolution, exif::In::PRIMARY)?;
 
     match x_res.value {
-        exif::Value::Rational(ref v) if !v.is_empty() => Some(v[0].to_f64() as u32),
+        // A malformed EXIF rational could be negative or absurdly large; round
+        // and clamp into u32 range rather than letting `as` wrap silently.
+        exif::Value::Rational(ref v) if !v.is_empty() => {
+            Some(v[0].to_f64().round().clamp(0.0, f64::from(u32::MAX)) as u32)
+        }
         _ => None,
     }
 }

@@ -1,21 +1,28 @@
+# viewer-core — image IO and data layer: decoding, EXIF, resizing, the
+# thumbnail/full-image cache, and directory scanning. Owns everything between
+# the filesystem and an in-memory decoded image; no widgets or app state.
 [package]
-version = "0.1.0"
+version.workspace = true
 name = "viewer-core"
 description.workspace = true
 edition.workspace = true
 authors.workspace = true
 
 [dependencies]
-viewer-config = { path = "../viewer-config" }
-
 libcosmic.workspace = true
 fast_image_resize.workspace = true
 image.workspace = true
 kamadak-exif.workspace = true
 lru.workspace = true
 rayon.workspace = true
+turbojpeg.workspace = true
+zune-image.workspace = true
+
+viewer-config = { path = "../viewer-config" }
+
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-turbojpeg.workspace = true
-zune-image.workspace = true
+
+[lints]
+workspace = true

@@ -10,7 +10,7 @@ use crate::rotate::RotateDirection;
 use cosmic::{
     Renderer,
     iced::{Point, Rectangle, Size, mouse},
-    iced_widget::canvas::Frame,
+    iced::widget::canvas::Frame,
 };
 use image::DynamicImage;
 use std::{any::Any, fmt::Debug};
@@ -18,7 +18,7 @@ use std::{any::Any, fmt::Debug};
 /// A tool operation that can be draw as an overlay and applied to an image.
 ///
 /// Committed operations live in the undo/redo stack.
-/// Active tool previews (like CropSelection during drag) implement this
+/// Active tool previews (like `CropSelection` during drag) implement this
 /// trait for rendering but are never committed to the stack; they are "transparent"
 /// operations.
 pub trait ToolOperation: Debug {

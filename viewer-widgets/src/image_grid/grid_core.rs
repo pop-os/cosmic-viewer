@@ -22,6 +22,8 @@ pub(crate) struct GridMetrics {
 }
 
 /// Calculate number of columns that fit in available width
+// reason: positive divisor and early return guarantee a non-negative, in-range column count.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 pub(crate) fn calculate_columns(
     available_width: f32,
     item_width: f32,
@@ -43,6 +45,9 @@ pub(crate) fn calculate_columns(
 }
 
 /// Calculate the scroll offset needed to bring an item into view
+// reason: row index -> f32 for pixel layout; precision loss only at astronomically large counts.
+#[allow(clippy::cast_precision_loss)]
+#[must_use]
 pub fn calculate_scroll_offset(
     target_idx: usize,
     cols: usize,
@@ -57,7 +62,7 @@ pub fn calculate_scroll_offset(
     }
 
     let row = target_idx / cols;
-    let item_top = padding_top + (row as f32 * (row_height + row_spacing));
+    let item_top = (row as f32).mul_add(row_height + row_spacing, padding_top);
     let item_bottom = item_top + row_height;
 
     let viewport_bottom = viewport_top + viewport_height;
@@ -78,7 +83,13 @@ pub fn calculate_scroll_offset(
 }
 
 /// Calculate the index of an item at a given position
-#[allow(clippy::too_many_arguments)]
+// reason: x/y are guarded non-negative before the f32->usize floor; col/row->f32 is pixel layout.
+#[allow(
+    clippy::too_many_arguments,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss
+)]
 pub(crate) fn item_at_position(
     position: (f32, f32),
     cols: usize,
@@ -112,8 +123,8 @@ pub(crate) fn item_at_position(
     }
 
     // Check if position is within the item (not in spacing)
-    let x_in_cell = x - (col as f32 * cell_width);
-    let y_in_cell = y - (row as f32 * cell_height);
+    let x_in_cell = (col as f32).mul_add(-cell_width, x);
+    let y_in_cell = (row as f32).mul_add(-cell_height, y);
 
     if x_in_cell > item_width || y_in_cell > row_height {
         return None; // In spacing area

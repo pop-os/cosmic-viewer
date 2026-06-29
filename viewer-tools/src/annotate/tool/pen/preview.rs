@@ -5,7 +5,8 @@ use crate::ToolOperation;
 use cosmic::{
     Renderer,
     iced::{Color, Point, Size, mouse},
-    iced_widget::canvas::{Frame, Path, Stroke, path::Builder},
+    iced::widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
+    widget::canvas::LineJoin,
 };
 use image::DynamicImage;
 
@@ -17,7 +18,8 @@ pub struct PenPreview {
 }
 
 impl PenPreview {
-    pub fn new(color: Color, width: f32) -> Self {
+    #[must_use]
+    pub const fn new(color: Color, width: f32) -> Self {
         Self {
             points: Vec::new(),
             color,
@@ -43,7 +45,9 @@ impl ToolOperation for PenPreview {
             &path,
             Stroke::default()
                 .with_color(self.color)
-                .with_width(self.width),
+                .with_width(self.width)
+                .with_line_cap(LineCap::Round)
+                .with_line_join(LineJoin::Round),
         );
     }
 

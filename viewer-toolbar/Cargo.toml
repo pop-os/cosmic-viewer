@@ -1,3 +1,6 @@
+# viewer-toolbar — the responsive toolbar widget that lays tool controls out
+# in one row and stacks them when space runs short. Owns toolbar layout only;
+# independent of image data and the app shell.
 [package]
 version.workspace = true
 name = "viewer-toolbar"
@@ -7,3 +10,6 @@ authors.workspace = true
 
 [dependencies]
 libcosmic.workspace = true
+
+[lints]
+workspace = true

@@ -8,7 +8,7 @@ use crate::{
 use cosmic::{
     Renderer,
     iced::{Color, Point, Rectangle, Size},
-    iced_widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
+    iced::widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
 };
 use image::DynamicImage;
 use tiny_skia::LineCap as SkiaLineCap;
@@ -21,7 +21,7 @@ pub struct PencilOperation {
 }
 
 impl ToolOperation for PencilOperation {
-    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, _scale: f32) {
         if self.points.len() < 2 {
             return;
         }
@@ -40,7 +40,7 @@ impl ToolOperation for PencilOperation {
             &path,
             Stroke::default()
                 .with_color(pencil_color)
-                .with_width(self.width / scale)
+                .with_width(self.width)
                 .with_line_cap(LineCap::Butt),
         );
     }

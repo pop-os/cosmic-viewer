@@ -20,7 +20,8 @@ pub enum DragHandle {
 }
 
 impl DragHandle {
-    pub fn cursor(&self) -> mouse::Interaction {
+    #[must_use]
+    pub const fn cursor(&self) -> mouse::Interaction {
         match self {
             Self::None => mouse::Interaction::Crosshair,
             Self::TopLeft | Self::BottomRight => mouse::Interaction::ResizingDiagonallyDown,

@@ -5,7 +5,7 @@ use crate::ToolOperation;
 use cosmic::{
     Renderer,
     iced::{Color, Point, Size, mouse},
-    iced_widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
+    iced::widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
     widget::canvas::LineJoin,
 };
 use image::DynamicImage;
@@ -21,7 +21,8 @@ pub struct HighlighterPreview {
 }
 
 impl HighlighterPreview {
-    pub fn new(color: Color, width: f32) -> Self {
+    #[must_use]
+    pub const fn new(color: Color, width: f32) -> Self {
         Self {
             points: Vec::new(),
             color,
@@ -53,8 +54,8 @@ impl ToolOperation for HighlighterPreview {
             } else {
                 // Line to midpoint of first two points
                 let mid = Point::new(
-                    (self.points[0].x + self.points[1].x) / 2.0,
-                    (self.points[0].y + self.points[1].y) / 2.0,
+                    f32::midpoint(self.points[0].x, self.points[1].x),
+                    f32::midpoint(self.points[0].y, self.points[1].y),
                 );
                 builder.line_to(mid);
 
@@ -62,12 +63,12 @@ impl ToolOperation for HighlighterPreview {
                 for idx in 1..self.points.len() - 1 {
                     let control = self.points[idx];
                     let next = self.points[idx + 1];
-                    let end = Point::new((control.x + next.x) / 2.0, (control.y + next.y) / 2.0);
+                    let end = Point::new(f32::midpoint(control.x, next.x), f32::midpoint(control.y, next.y));
                     builder.quadratic_curve_to(control, end);
                 }
 
                 // Final segment to last point
-                builder.line_to(*self.points.last().unwrap());
+                builder.line_to(*self.points.last().expect("points non-empty: len checked at entry"));
             }
         });
 
@@ -117,7 +118,7 @@ impl ToolOperation for HighlighterPreview {
             let dy = point.y - last.y;
             let min_dist = self.width * 0.5;
 
-            if dx * dx + dy * dy < min_dist * min_dist {
+            if dy.mul_add(dy, dx * dx) < min_dist * min_dist {
                 // Skip to reduce join overlap
                 return;
             }

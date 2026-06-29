@@ -8,10 +8,11 @@ use crate::{
 use cosmic::{
     Renderer,
     iced::{Color, Point, Rectangle, Size},
-    iced_widget::canvas::{Frame, Path, Stroke, path::Builder},
+    iced::widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
+    widget::canvas::LineJoin,
 };
 use image::DynamicImage;
-use tiny_skia::LineCap;
+use tiny_skia::LineCap as SkiaLineCap;
 
 #[derive(Debug, Clone)]
 pub struct PenOperation {
@@ -37,7 +38,9 @@ impl ToolOperation for PenOperation {
             &path,
             Stroke::default()
                 .with_color(self.color)
-                .with_width(self.width),
+                .with_width(self.width)
+                .with_line_cap(LineCap::Round)
+                .with_line_join(LineJoin::Round),
         );
     }
 
@@ -55,7 +58,7 @@ impl ToolOperation for PenOperation {
             return;
         };
 
-        stroke_on_image(image, &path, self.color, self.width, LineCap::Round);
+        stroke_on_image(image, &path, self.color, self.width, SkiaLineCap::Round);
     }
 
     fn commit(&self) -> Option<Box<dyn ToolOperation>> {

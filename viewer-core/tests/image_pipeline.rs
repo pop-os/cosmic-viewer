@@ -52,8 +52,8 @@ async fn thumbnail_smaller_than_original() {
     let full = load_image(path.clone()).await.expect("full load");
     let thumb = load_thumbnail(path, 128).await.expect("thumb load");
 
-    let full_pixels = full.width as u64 * full.height as u64;
-    let thumb_pixels = thumb.width as u64 * thumb.height as u64;
+    let full_pixels = u64::from(full.width) * u64::from(full.height);
+    let thumb_pixels = u64::from(thumb.width) * u64::from(thumb.height);
     assert!(thumb_pixels < full_pixels);
     assert!(thumb.width <= 128);
     assert!(thumb.height <= 128);
@@ -114,8 +114,8 @@ async fn thumbnail_preserves_aspect_ratio() {
     let full = load_image(path.clone()).await.expect("full");
     let thumb = load_thumbnail(path, 256).await.expect("thumb");
 
-    let full_ratio = full.width as f64 / full.height as f64;
-    let thumb_ratio = thumb.width as f64 / thumb.height as f64;
+    let full_ratio = f64::from(full.width) / f64::from(full.height);
+    let thumb_ratio = f64::from(thumb.width) / f64::from(thumb.height);
     assert!(
         (full_ratio - thumb_ratio).abs() < 0.05,
         "aspect ratio diverged: full={full_ratio:.3}, thumb={thumb_ratio:.3}",

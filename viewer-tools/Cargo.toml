@@ -1,3 +1,6 @@
+# viewer-tools — editing tool operations (crop, rotate, and the annotation
+# tools) plus their canvas-preview and image-rasterization paths. Owns the
+# tool model and the draw/apply geometry; depends on no other workspace crate.
 [package]
 version.workspace = true
 name = "viewer-tools"
@@ -9,3 +12,6 @@ authors.workspace = true
 libcosmic.workspace = true
 image.workspace = true
 tiny-skia = "0.12.0"
+
+[lints]
+workspace = true

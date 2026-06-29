@@ -3,6 +3,7 @@ use crate::{
     key_binds::{self, MenuAction, keyboard_shortcut_handler},
     menu::menu_bar,
     message::{ContextMessage, EditMessage, ImageMessage, NavMessage, ViewerMessage},
+    watcher::WatcherEvent,
 };
 use cosmic::{
     Action, Application, ApplicationExt, Core, Element, Task,
@@ -15,9 +16,10 @@ use cosmic::{
         clipboard, event, font,
         keyboard::key::{Key, Named},
     },
-    iced_core::Border,
-    iced_wgpu::graphics::text::font_system,
-    iced_widget::{
+    iced::Border,
+    iced::advanced::graphics::text::cosmic_text,
+    iced::advanced::graphics::text::font_system,
+    iced::widget::{
         grid,
         scrollable::{AbsoluteOffset, scroll_to},
         sensor, stack,
@@ -38,6 +40,7 @@ use cosmic::{
 use image::DynamicImage;
 use std::{
     collections::{HashMap, HashSet},
+    fmt::Write as _,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -59,6 +62,9 @@ use viewer_tools::{
 };
 use viewer_widgets::dashed_shape::DashedBorder;
 
+// reason: independent UI toggle flags (text styles, popups, fullscreen, prefs);
+// grouping into a bitflags type would obscure their distinct meanings.
+#[allow(clippy::struct_excessive_bools)]
 pub struct CosmicViewer {
     core: Core,
     key_binds: HashMap<KeyBind, MenuAction>,
@@ -109,10 +115,12 @@ pub struct CosmicViewer {
 }
 
 impl CosmicViewer {
+    // reason: thumbnail dimension is a small pixel count, exact as f32.
+    #[allow(clippy::cast_precision_loss)]
     fn is_narrow(&self) -> bool {
         let nav_width = self.config.thumbnail_size.pixels() as f32 + 36.0;
         let threshold = nav_width + 200.0;
-        self.window_width.map(|w| w < threshold).unwrap_or(false)
+        self.window_width.is_some_and(|w| w < threshold)
     }
 
     fn save_last_color(&mut self) {
@@ -128,11 +136,10 @@ impl CosmicViewer {
         let sort_mode = self.config.sort_mode;
         let sort_order = self.config.sort_order;
 
-        let dir = if let Some(current) = self.nav.current() {
-            get_image_dir(current)
-        } else {
-            self.nav.dir().map(|d| d.to_path_buf())
-        };
+        let dir = self.nav.current().map_or_else(
+            || self.nav.dir().map(std::path::Path::to_path_buf),
+            |current| get_image_dir(current),
+        );
 
         if let Some(dir) = dir {
             return future(async move {
@@ -144,7 +151,7 @@ impl CosmicViewer {
         Task::none()
     }
 
-    fn open_path(&mut self, path: PathBuf) -> Task<Action<ViewerMessage>> {
+    fn open_path(&self, path: PathBuf) -> Task<Action<ViewerMessage>> {
         let Some(dir) = get_image_dir(&path) else {
             return Task::none();
         };
@@ -163,6 +170,16 @@ impl CosmicViewer {
         })
     }
 
+    // reason: thumbnail size and grid index are small in-range counts; exact as f32.
+    #[allow(clippy::cast_precision_loss)]
+    fn grid_scroll_offset(&self, idx: usize) -> f32 {
+        let thumb_size = self.config.thumbnail_size.pixels() as f32;
+        let button_padding = 8.0;
+        let cell_size = thumb_size + (button_padding * 2.0);
+        let row_spacing = 8.0;
+        idx as f32 * (cell_size + row_spacing)
+    }
+
     fn rebuild_nav_handles(&mut self) {
         self.nav_handles = self
             .nav
@@ -179,7 +196,7 @@ impl CosmicViewer {
             .nav
             .current()
             .and_then(|path| self.cache.get_full(path))
-            .map(|cached| cached.image.clone());
+            .map(|cached| cached.image);
 
         if let Some(mut base) = original {
             for op in self.viewport.operations() {
@@ -189,12 +206,7 @@ impl CosmicViewer {
                         RotateDirection::Right => base.rotate90(),
                     };
                 } else if let Some(crop) = op.as_any().downcast_ref::<CropOperation>() {
-                    base = base.crop_imm(
-                        crop.region.x as u32,
-                        crop.region.y as u32,
-                        crop.region.width as u32,
-                        crop.region.height as u32,
-                    );
+                    base = crop_to_region(&base, crop.region);
                 }
             }
 
@@ -246,7 +258,7 @@ impl CosmicViewer {
         }
     }
 
-    fn load_full_image(&mut self, path: PathBuf) -> Task<Action<ViewerMessage>> {
+    fn load_full_image(&self, path: PathBuf) -> Task<Action<ViewerMessage>> {
         if self.cache.get_full(&path).is_some() || self.cache.is_pending(&path) {
             return Task::none();
         }
@@ -344,7 +356,7 @@ impl CosmicViewer {
         content.into()
     }
 
-    fn build_context_menu_element(&self) -> Element<'_, ViewerMessage> {
+    fn build_context_menu_element<'a>() -> Element<'a, ViewerMessage> {
         let menu_item = |label: String, message: ViewerMessage| {
             menu_button(vec![text(label).into()]).on_press(message)
         };
@@ -461,6 +473,8 @@ impl CosmicViewer {
         }
     }
 
+    // reason: zoom percent is rounded, non-negative, and well within u32 range.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn build_default_toolbar(&self) -> Element<'_, ViewerMessage> {
         let mode = ToolbarMode::from_width(self.window_width.expect("Window has width"));
 
@@ -575,8 +589,7 @@ impl CosmicViewer {
             let is_portrait = self
                 .viewport
                 .image_size()
-                .map(|size| size.height > size.width)
-                .unwrap_or(false);
+                .is_some_and(|size| size.height > size.width);
 
             let presets = CropRatio::presets();
             let mut list = Column::new().spacing(4);
@@ -625,9 +638,8 @@ impl CosmicViewer {
 
             pop = pop
                 .popup(popup)
-                // TODO: Create libcosmic PR for Position::Top and replace when accepted.
-                // The Point currently sets the popup to be on top of the toolbar centered
-                // on the button.
+                // NOTE: libcosmic has no Position::Top, so this Point offset places the popup
+                // on top of the toolbar, centered on the button. Revisit if upstream adds it.
                 .position(popover::Position::Point(Point::new(-35.0, -10.0)))
                 .on_close(ViewerMessage::Edit(EditMessage::CropRatioPopupToggle));
         }
@@ -691,6 +703,8 @@ impl CosmicViewer {
             .view()
     }
 
+    // reason: single declarative widget tree; splitting would fragment the layout.
+    #[allow(clippy::too_many_lines)]
     fn build_annotate_toolbar(&self) -> Element<'_, ViewerMessage> {
         let mode = if self.core().is_condensed() {
             ToolbarMode::Compact
@@ -761,7 +775,7 @@ impl CosmicViewer {
                     theme::Button::Icon
                 }),
             ))
-            .start(ToolbarItem::new(self.build_shape_selector()))
+            .start(ToolbarItem::new(self.build_shape_selector()).width_hint(120.0))
             .start(ToolbarItem::new({
                 let has_movable =
                     self.viewport.operations().iter().any(|op| op.movable()) && !self.text_editing;
@@ -777,13 +791,14 @@ impl CosmicViewer {
                     .into();
                 el
             }))
-            .center(ToolbarItem::new(
-                if matches!(self.annotate_tool, AnnotateTool::Text) {
+            .center(
+                ToolbarItem::new(if matches!(self.annotate_tool, AnnotateTool::Text) {
                     self.build_text_format_dropdown()
                 } else {
                     self.build_stroke_selector()
-                },
-            ));
+                })
+                .width_hint(140.0),
+            );
 
         let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
         let swatch_size = 14.0;
@@ -845,7 +860,7 @@ impl CosmicViewer {
                 .into()
         } else {
             let neutral: Color = theme::active().cosmic().palette.neutral_5.into();
-            let dashed = DashedBorder::circle(Color { ..neutral }, 2.0).dash_pattern(3.0, 3.0);
+            let dashed = DashedBorder::circle(neutral, 2.0).dash_pattern(3.0, 3.0);
 
             let canvas_bg = canvas(dashed)
                 .width(Length::Fixed(swatch_size))
@@ -881,7 +896,7 @@ impl CosmicViewer {
                 .build("Recent colors", "Copy", "Copied!");
 
             let popup = container(picker)
-                .padding(12)
+                .padding(theme::active().cosmic().spacing.space_s)
                 .max_width(260.0)
                 .style(|theme| {
                     let cosmic = theme.cosmic();
@@ -907,10 +922,13 @@ impl CosmicViewer {
 
         toolbar = toolbar.center(ToolbarItem::new(color_picker_popover));
 
-        toolbar = toolbar.end(ToolbarItem::new(
-            button::standard(fl!("toolbar-cancel"))
-                .on_press(ViewerMessage::Edit(EditMessage::AnnotateCancel)),
-        ));
+        toolbar = toolbar.end(
+            ToolbarItem::new(
+                button::standard(fl!("toolbar-cancel"))
+                    .on_press(ViewerMessage::Edit(EditMessage::AnnotateCancel)),
+            )
+            .width_hint(96.0),
+        );
 
         toolbar = toolbar.end(ToolbarItem::new(
             button::icon(icon::from_name("object-select-symbolic"))
@@ -927,7 +945,7 @@ impl CosmicViewer {
         } else {
             let current = self.nav.current()?;
             let cached = self.cache.get_full(current)?;
-            cached.image.clone()
+            cached.image
         };
 
         let mut image = base;
@@ -1013,6 +1031,8 @@ impl CosmicViewer {
         pop.into()
     }
 
+    // reason: single declarative widget tree; splitting would fragment the layout.
+    #[allow(clippy::too_many_lines)]
     fn build_text_format_dropdown(&self) -> Element<'_, ViewerMessage> {
         let trigger = button::custom(
             Row::new()
@@ -1029,9 +1049,10 @@ impl CosmicViewer {
         if self.show_text_format_menu {
             let font_sizes = vec!["12pt", "16pt", "20pt", "24pt", "32pt", "48pt", "64pt"];
             let font_size_values = [12.0_f32, 16.0, 20.0, 24.0, 32.0, 48.0, 64.0];
+            // presets are exact integer-valued floats; match the active size to one.
             let font_size_selected = font_size_values
                 .iter()
-                .position(|s| *s == self.text_font_size);
+                .position(|s| (*s - self.text_font_size).abs() < f32::EPSILON);
 
             let font_row = Row::new()
                 .push(dropdown(&self.font_families, self.text_font_index, |idx| {
@@ -1156,7 +1177,8 @@ impl CosmicViewer {
 
             let mut list = Column::new().spacing(4);
             for (label, &size) in labels.iter().zip(sizes.iter()) {
-                let is_selected = size == current;
+                // presets are exact integer-valued floats; match the active size.
+                let is_selected = (size - current).abs() < f32::EPSILON;
                 let item: Element<'_, ViewerMessage> = Row::new()
                     .push(text::body(*label))
                     .push(if is_selected {
@@ -1168,7 +1190,11 @@ impl CosmicViewer {
                     .width(Length::Fill)
                     .into();
 
-                let idx = sizes.iter().position(|s| *s == size).unwrap();
+                // `size` is drawn from `sizes`, so a matching preset always exists.
+                let idx = sizes
+                    .iter()
+                    .position(|s| (*s - size).abs() < f32::EPSILON)
+                    .expect("iterated size is one of the presets");
                 list = list.push(
                     button::custom(item)
                         .width(Length::Fill)
@@ -1243,7 +1269,7 @@ impl Application for CosmicViewer {
             .last_color
             .map(|c| Color::from_rgba(c[0], c[1], c[2], c[3]));
 
-        let mut viewer = Self {
+        let viewer = Self {
             core,
             key_binds: key_binds::init_keybinds(),
             config,
@@ -1307,7 +1333,13 @@ impl Application for CosmicViewer {
     }
 
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
-        vec![menu_bar(&self.core, &self.key_binds, &[])]
+        vec![menu_bar(
+            &self.core,
+            &self.key_binds,
+            &[],
+            self.viewport.can_undo(),
+            self.viewport.can_redo(),
+        )]
     }
 
     fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Self::Message>> {
@@ -1326,16 +1358,18 @@ impl Application for CosmicViewer {
         Some(&self.nav_bar_model)
     }
 
+    // reason: thumbnail size is a small in-range pixel count; exact as f32.
+    #[allow(clippy::cast_precision_loss)]
     fn nav_bar(&self) -> Option<Element<'_, Action<Self::Message>>> {
-        if self.is_narrow() || !self.core().nav_bar_active() {
+        if !self.core().nav_bar_active() {
             return None;
         }
 
         let thumbnail_size = self.config.thumbnail_size.pixels();
         //let col_spacing: f32 = 8.0;
-        let space_xxs = theme::active().cosmic().spacing.space_xxs as f32;
+        let space_xxs = f32::from(theme::active().cosmic().spacing.space_xxs);
         //let panel_width = thumbnail_size as f32 + col_spacing * 2.0 + 36.;
-        let panel_width = thumbnail_size as f32 + space_xxs * 2.0 + 36.0;
+        let panel_width = space_xxs.mul_add(2.0, thumbnail_size as f32) + 36.0;
 
         let active = self.nav.index().unwrap_or(0);
 
@@ -1348,7 +1382,7 @@ impl Application for CosmicViewer {
                 let handle = self
                     .nav_handles
                     .get(img)
-                    .and_then(|handle| handle.clone())
+                    .and_then(std::clone::Clone::clone)
                     .unwrap_or_else(|| Handle::from_rgba(1, 1, vec![0, 0, 0, 0]));
 
                 let btn = button::image(handle)
@@ -1379,15 +1413,25 @@ impl Application for CosmicViewer {
         let scrollable =
             scrollable(container(nav_grid).padding(space_xxs)).id(self.scroll_id.clone());
 
+        let nav_width = if self.is_narrow() {
+            // Narrow mode: overlay the view, filling window width minus a space_xxs gutter.
+            self.window_width
+                .map_or(Length::Fill, |w| Length::Fixed((w - space_xxs).max(panel_width)))
+        } else {
+            Length::Fixed(panel_width)
+        };
+
         Some(
             container(scrollable)
-                .width(Length::Fixed(panel_width))
+                .width(nav_width)
                 .height(Length::Fill)
                 .class(theme::Container::custom(nav_bar::nav_bar_style))
                 .into(),
         )
     }
 
+    // reason: top-level declarative view tree; splitting would fragment the layout.
+    #[allow(clippy::too_many_lines)]
     fn view(&self) -> Element<'_, Self::Message> {
         let has_image = self.viewport.image().is_some();
         let content: Element<'_, Self::Message> = if has_image {
@@ -1465,7 +1509,7 @@ impl Application for CosmicViewer {
             && self.delete_dialog.is_none()
         {
             pop = pop
-                .popup(self.build_context_menu_element())
+                .popup(Self::build_context_menu_element())
                 .position(widget::popover::Position::Point(point))
                 .on_close(ViewerMessage::Canvas(CanvasMessage::ContextMenu(None)));
         }
@@ -1528,6 +1572,8 @@ impl Application for CosmicViewer {
         stack![toaster(&self.toasts, view), self.trash_toast_overlay()].into()
     }
 
+    // reason: central message dispatch; one match arm per variant, kept colocated.
+    #[allow(clippy::too_many_lines)]
     fn update(&mut self, message: Self::Message) -> Task<Action<Self::Message>> {
         let mut tasks = vec![];
 
@@ -1556,7 +1602,12 @@ impl Application for CosmicViewer {
                     return cosmic::iced::clipboard::write(path.display().to_string());
                 }
             }
-            ViewerMessage::Cut => {}
+            // No-op messages: reserved menu actions with no current behavior.
+            ViewerMessage::Cut
+            | ViewerMessage::Paste
+            | ViewerMessage::CloseFile
+            | ViewerMessage::Print
+            | ViewerMessage::Cancelled => {}
             ViewerMessage::OpenFileDialog => {
                 return future(async move {
                     let dialog = file_chooser::open::Dialog::new()
@@ -1609,13 +1660,10 @@ impl Application for CosmicViewer {
                         .filter(FileFilter::new("hdr").extension("hdr").extension("HDR"));
 
                     match dialog.open_file().await {
-                        Ok(response) => {
-                            if let Ok(path) = response.url().to_file_path() {
-                                Action::App(ViewerMessage::Open(path))
-                            } else {
-                                Action::App(ViewerMessage::Cancelled)
-                            }
-                        }
+                        Ok(response) => response.url().to_file_path().map_or_else(
+                            |()| Action::App(ViewerMessage::Cancelled),
+                            |path| Action::App(ViewerMessage::Open(path)),
+                        ),
                         Err(file_chooser::Error::Cancelled) => {
                             Action::App(ViewerMessage::Cancelled)
                         }
@@ -1631,13 +1679,10 @@ impl Application for CosmicViewer {
                     let dialog = file_chooser::open::Dialog::new().title("Open Folder");
 
                     match dialog.open_folder().await {
-                        Ok(response) => {
-                            if let Ok(path) = response.url().to_file_path() {
-                                Action::App(ViewerMessage::Open(path))
-                            } else {
-                                Action::App(ViewerMessage::Cancelled)
-                            }
-                        }
+                        Ok(response) => response.url().to_file_path().map_or_else(
+                            |()| Action::App(ViewerMessage::Cancelled),
+                            |path| Action::App(ViewerMessage::Open(path)),
+                        ),
                         Err(file_chooser::Error::Cancelled) => {
                             Action::App(ViewerMessage::Cancelled)
                         }
@@ -1657,8 +1702,6 @@ impl Application for CosmicViewer {
                     tracing::error!("Failed to open containing folder: {e}");
                 }
             }
-            ViewerMessage::Paste => {}
-            ViewerMessage::CloseFile => {}
             ViewerMessage::Save => {
                 if let (Some(image), Some(path)) = (self.flatten_image(), self.nav.current()) {
                     if let Err(e) = image.save(path) {
@@ -1688,17 +1731,14 @@ impl Application for CosmicViewer {
                         .file_name(suggested);
 
                     match dialog.save_file().await {
-                        Ok(response) => {
-                            if let Ok(path) = response
-                                .url()
-                                .expect("response.url should be vaild")
-                                .to_file_path()
-                            {
-                                Action::App(ViewerMessage::SavedAs(path))
-                            } else {
-                                Action::App(ViewerMessage::Cancelled)
-                            }
-                        }
+                        Ok(response) => response
+                            .url()
+                            .expect("save dialog response carries a valid URL")
+                            .to_file_path()
+                            .map_or_else(
+                                |()| Action::App(ViewerMessage::Cancelled),
+                                |path| Action::App(ViewerMessage::SavedAs(path)),
+                            ),
                         Err(file_chooser::Error::Cancelled) => {
                             Action::App(ViewerMessage::Cancelled)
                         }
@@ -1719,8 +1759,6 @@ impl Application for CosmicViewer {
                 self.viewport.cancel_tool();
                 self.viewport.revert_all();
             }
-            ViewerMessage::Print => {}
-            ViewerMessage::Cancelled => {}
             ViewerMessage::Quit => {
                 if let Some(id) = self.core.main_window_id() {
                     return iced::window::close(id);
@@ -1737,7 +1775,6 @@ impl Application for CosmicViewer {
                 }
             }
             ViewerMessage::WatcherEvent(evt) => {
-                use crate::watcher::WatcherEvent;
                 match &evt {
                     WatcherEvent::Modified(path) if path.exists() => {
                         self.cache.remove_full(path);
@@ -1781,15 +1818,15 @@ impl Application for CosmicViewer {
                                     self.available_outputs = get_cosmic_outputs();
                                     if self.available_outputs.len() <= 1 {
                                         return future(async move {
-                                            let result = set_wallpaper_cosmic_on(&path, None).await;
+                                            let result = set_wallpaper_cosmic_on(&path, None);
                                             Action::App(ViewerMessage::WallpaperResult(result))
                                         });
                                     }
-                                    self.wallpaper_dialog = Some(path.to_path_buf());
+                                    self.wallpaper_dialog = Some(path);
                                 }
                                 viewer_config::WallpaperBehavior::AllDisplays => {
                                     return future(async move {
-                                        let result = set_wallpaper_cosmic_on(&path, None).await;
+                                        let result = set_wallpaper_cosmic_on(&path, None);
                                         Action::App(ViewerMessage::WallpaperResult(result))
                                     });
                                 }
@@ -1798,7 +1835,7 @@ impl Application for CosmicViewer {
                                     let output = outputs.first().cloned();
                                     return future(async move {
                                         let result =
-                                            set_wallpaper_cosmic_on(&path, output.as_deref()).await;
+                                            set_wallpaper_cosmic_on(&path, output.as_deref());
                                         Action::App(ViewerMessage::WallpaperResult(result))
                                     });
                                 }
@@ -1806,7 +1843,7 @@ impl Application for CosmicViewer {
                         } else {
                             // Non-COSMIC Linux: set on all outputs
                             return future(async move {
-                                let result = set_wallpaper_cosmic_on(&path, None).await;
+                                let result = set_wallpaper_cosmic_on(&path, None);
                                 Action::App(ViewerMessage::WallpaperResult(result))
                             });
                         }
@@ -1825,7 +1862,7 @@ impl Application for CosmicViewer {
                     crate::message::WallpaperTarget::Output(name) => Some(name),
                 };
                 return future(async move {
-                    let result = set_wallpaper_cosmic_on(&path, output.as_deref()).await;
+                    let result = set_wallpaper_cosmic_on(&path, output.as_deref());
                     Action::App(ViewerMessage::WallpaperResult(result))
                 });
             }
@@ -1871,7 +1908,7 @@ impl Application for CosmicViewer {
 
                     // Show undo toast
                     let label = format!("Moved {file_name} to trash");
-                    self.trash_toast = Some((label, paths.clone()));
+                    self.trash_toast = Some((label, paths));
                 }
             }
             ViewerMessage::UndoTrash(recently_trashed) => {
@@ -1883,7 +1920,7 @@ impl Application for CosmicViewer {
 
                     if let Ok(trash_items) = trash::os_limited::list() {
                         for path in &*recently_trashed {
-                            let target_parent = path.parent().unwrap_or(Path::new("/"));
+                            let target_parent = path.parent().unwrap_or_else(|| Path::new("/"));
                             let target_name =
                                 path.file_name().unwrap_or_default().to_string_lossy();
 
@@ -1922,7 +1959,7 @@ impl Application for CosmicViewer {
             }
             ViewerMessage::CloseToast(toast_id) => {
                 self.trash_toast = None;
-                self.toasts.remove(toast_id)
+                self.toasts.remove(toast_id);
             }
             ViewerMessage::KeyPressed(key, modifiers, text) => {
                 if self.context_menu_position.is_some() && matches!(key, Key::Named(Named::Escape))
@@ -1980,7 +2017,6 @@ impl Application for CosmicViewer {
                     .and_then(|preview| preview.as_any_mut().downcast_mut::<TextPreview>());
 
                 if is_text_editing {
-                    use cosmic::iced_widget::graphics::text::cosmic_text as ct;
                     let shift = modifiers.shift();
 
                     if modifiers.control() {
@@ -1996,9 +2032,9 @@ impl Application for CosmicViewer {
                                             let bold = self.text_bold;
                                             t.apply_attr_to_selection(|a| {
                                                 a.weight(if bold {
-                                                    ct::Weight::BOLD
+                                                    cosmic_text::Weight::BOLD
                                                 } else {
-                                                    ct::Weight::NORMAL
+                                                    cosmic_text::Weight::NORMAL
                                                 })
                                             });
                                         }
@@ -2016,9 +2052,9 @@ impl Application for CosmicViewer {
                                             let italic = self.text_italic;
                                             t.apply_attr_to_selection(|a| {
                                                 a.style(if italic {
-                                                    ct::Style::Italic
+                                                    cosmic_text::Style::Italic
                                                 } else {
-                                                    ct::Style::Normal
+                                                    cosmic_text::Style::Normal
                                                 })
                                             });
                                         }
@@ -2035,7 +2071,7 @@ impl Application for CosmicViewer {
                                         if t.has_selection() {
                                             let underline = self.text_underline;
                                             t.apply_attr_to_selection(|a| {
-                                                a.metadata(if underline { 1 } else { 0 })
+                                                a.metadata(usize::from(underline))
                                             });
                                         }
                                         t.underline = self.text_underline;
@@ -2094,10 +2130,10 @@ impl Application for CosmicViewer {
                     match &key {
                         Key::Named(Named::Enter) if shift => {
                             if let Some(preview) = preview {
-                                preview.editor_action(ct::Action::Enter);
+                                preview.editor_action(cosmic_text::Action::Enter);
                             }
                         }
-                        Key::Named(Named::Enter) | Key::Named(Named::Escape) => {
+                        Key::Named(Named::Enter | Named::Escape) => {
                             if self.color_picker.get_is_active() {
                                 _ = self.color_picker.update::<ViewerMessage>(
                                     cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
@@ -2121,42 +2157,42 @@ impl Application for CosmicViewer {
                         }
                         Key::Named(Named::Backspace) => {
                             if let Some(preview) = preview {
-                                preview.editor_action(ct::Action::Backspace);
+                                preview.editor_action(cosmic_text::Action::Backspace);
                             }
                         }
                         Key::Named(Named::Delete) => {
                             if let Some(preview) = preview {
-                                preview.editor_action(ct::Action::Delete);
+                                preview.editor_action(cosmic_text::Action::Delete);
                             }
                         }
                         Key::Named(Named::ArrowLeft) => {
                             if let Some(preview) = preview {
-                                preview.motion_with_shift(ct::Motion::Left, shift);
+                                preview.motion_with_shift(cosmic_text::Motion::Left, shift);
                             }
                         }
                         Key::Named(Named::ArrowRight) => {
                             if let Some(preview) = preview {
-                                preview.motion_with_shift(ct::Motion::Right, shift);
+                                preview.motion_with_shift(cosmic_text::Motion::Right, shift);
                             }
                         }
                         Key::Named(Named::ArrowUp) => {
                             if let Some(preview) = preview {
-                                preview.motion_with_shift(ct::Motion::Up, shift);
+                                preview.motion_with_shift(cosmic_text::Motion::Up, shift);
                             }
                         }
                         Key::Named(Named::ArrowDown) => {
                             if let Some(preview) = preview {
-                                preview.motion_with_shift(ct::Motion::Down, shift);
+                                preview.motion_with_shift(cosmic_text::Motion::Down, shift);
                             }
                         }
                         Key::Named(Named::Home) => {
                             if let Some(preview) = preview {
-                                preview.motion_with_shift(ct::Motion::Home, shift);
+                                preview.motion_with_shift(cosmic_text::Motion::Home, shift);
                             }
                         }
                         Key::Named(Named::End) => {
                             if let Some(preview) = preview {
-                                preview.motion_with_shift(ct::Motion::End, shift);
+                                preview.motion_with_shift(cosmic_text::Motion::End, shift);
                             }
                         }
                         Key::Character(c) if c.as_str() == " " => {
@@ -2263,11 +2299,7 @@ impl Application for CosmicViewer {
                             tasks.push(self.load_full_image(path));
                         }
 
-                        let thumb_size = self.config.thumbnail_size.pixels() as f32;
-                        let button_padding = 8.0;
-                        let cell_size = thumb_size + (button_padding * 2.0);
-                        let row_spacing = 8.0;
-                        let offset = idx as f32 * (cell_size + row_spacing);
+                        let offset = self.grid_scroll_offset(idx);
                         tasks.push(scroll_to(
                             self.scroll_id.clone(),
                             AbsoluteOffset {
@@ -2281,7 +2313,7 @@ impl Application for CosmicViewer {
                     if self
                         .nav_handles
                         .get(img)
-                        .is_some_and(|handle| handle.is_none())
+                        .is_some_and(std::option::Option::is_none)
                         && let Some(path) = self.nav.images().get(img).cloned()
                     {
                         if let Some(handle) = self.cache.get_thumbnail(&path) {
@@ -2348,7 +2380,7 @@ impl Application for CosmicViewer {
                                     width: cached.width,
                                     height: cached.height,
                                 }),
-                                Some(cached.image.clone()),
+                                Some(cached.image),
                             );
                         }
                         // Don't clear the viewport — keep the previous image
@@ -2356,11 +2388,12 @@ impl Application for CosmicViewer {
 
                         tasks.push(self.load_full_image(path));
                         let images = self.nav.images().to_vec();
-                        for (idx, adj_path) in images.iter().enumerate() {
-                            let dist = idx.abs_diff(idx);
-                            if dist == 0 {
-                                continue;
-                            } else if dist <= 1
+                        for (adj_idx, adj_path) in images.iter().enumerate() {
+                            // distance from the just-activated image to this neighbor;
+                            // skip the activated image itself, which is loaded above.
+                            let dist = idx.abs_diff(adj_idx);
+                            if dist != 0
+                                && dist <= 1
                                 && self.cache.get_full(adj_path).is_none()
                                 && !self.cache.is_pending(adj_path)
                             {
@@ -2385,7 +2418,7 @@ impl Application for CosmicViewer {
                 }
                 NavMessage::DirectoryRefreshed(images) => {
                     let selected = self.nav.current().cloned();
-                    let dir = self.nav.dir().map(|d| d.to_path_buf());
+                    let dir = self.nav.dir().map(std::path::Path::to_path_buf);
                     if let Some(dir) = dir {
                         self.nav.set_images(dir, images, selected.as_deref());
                         self.rebuild_nav_handles();
@@ -2441,7 +2474,7 @@ impl Application for CosmicViewer {
                                         width: cached.width,
                                         height: cached.height,
                                     }),
-                                    Some(cached.image.clone()),
+                                    Some(cached.image),
                                 );
                             }
                         }
@@ -2646,14 +2679,12 @@ impl Application for CosmicViewer {
                                     .is_some_and(|t| t.hit_test(point))
                             });
 
-                            if let Some(idx) = hit {
+                            hit.and_then(|idx| {
                                 let op = ops.remove(idx);
                                 op.as_any()
                                     .downcast_ref::<TextOperation>()
-                                    .map(|t| t.to_preview())
-                            } else {
-                                None
-                            }
+                                    .map(viewer_tools::annotate::TextOperation::to_preview)
+                            })
                         };
 
                         if let Some(preview) = re_edit {
@@ -2700,12 +2731,10 @@ impl Application for CosmicViewer {
                             }
                             self.move_start = Some(point);
                         }
-                    } else {
-                        if let Some(size) = self.viewport.image_size()
-                            && let Some(preview) = self.viewport.preview_mut()
-                        {
-                            preview.on_drag(point, size);
-                        }
+                    } else if let Some(size) = self.viewport.image_size()
+                        && let Some(preview) = self.viewport.preview_mut()
+                    {
+                        preview.on_drag(point, size);
                     }
                 }
                 CanvasMessage::ToolEnd => {
@@ -2839,7 +2868,7 @@ impl Application for CosmicViewer {
                                     width: cached.width,
                                     height: cached.height,
                                 }),
-                                Some(cached.image.clone()),
+                                Some(cached.image),
                             );
                         }
                     }
@@ -2963,15 +2992,9 @@ impl Application for CosmicViewer {
                             {
                                 text.color = color.0;
                                 if text.has_selection() {
-                                    use cosmic::iced_widget::graphics::text::cosmic_text as ct;
                                     let c = color.0;
                                     text.apply_attr_to_selection(|a| {
-                                        a.color(ct::Color::rgba(
-                                            (c.r * 255.0) as u8,
-                                            (c.g * 255.0) as u8,
-                                            (c.b * 255.0) as u8,
-                                            (c.a * 255.0) as u8,
-                                        ))
+                                        a.color(text_color_rgba(c))
                                     });
                                 }
                             }
@@ -3011,7 +3034,8 @@ impl Application for CosmicViewer {
                             let fit_scale =
                                 (bounds.width / size.width).min(bounds.height / size.height);
 
-                            let region = if zoom == 1.0 && pan == Vector::ZERO {
+                            // default (unzoomed, un-panned) view: zoom is set to exactly 1.0 on reset.
+                            let region = if (zoom - 1.0).abs() < f32::EPSILON && pan == Vector::ZERO {
                                 fit_region
                             } else {
                                 let cx = size.width / 2.0;
@@ -3034,12 +3058,7 @@ impl Application for CosmicViewer {
                             self.viewport.apply_tool();
 
                             if let Some(img) = self.viewport.working_image_mut() {
-                                *img = img.crop_imm(
-                                    region.x as u32,
-                                    region.y as u32,
-                                    region.width as u32,
-                                    region.height as u32,
-                                );
+                                *img = crop_to_region(img, region);
                             }
                             self.viewport.rebuild_display();
                         }
@@ -3049,11 +3068,11 @@ impl Application for CosmicViewer {
                         if let Some(current) = self.nav.current() {
                             self.viewport.revert_all();
                             self.cache.remove_full(current);
-                            tasks.push(self.load_full_image(current.to_path_buf()));
+                            tasks.push(self.load_full_image(current.clone()));
                         }
                     }
                     EditMessage::CropRatioPopupToggle => {
-                        self.crop_ratio_popup = !self.crop_ratio_popup
+                        self.crop_ratio_popup = !self.crop_ratio_popup;
                     }
                     EditMessage::CropRatio(ratio) => {
                         let img_size = self.viewport.image_size();
@@ -3207,16 +3226,8 @@ impl Application for CosmicViewer {
                             if let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>() {
                                 text.color = self.annotate_color.0;
                                 if text.has_selection() {
-                                    use cosmic::iced_widget::graphics::text::cosmic_text as ct;
                                     let c = self.annotate_color.0;
-                                    text.apply_attr_to_selection(|a| {
-                                        a.color(ct::Color::rgba(
-                                            (c.r * 255.0) as u8,
-                                            (c.g * 255.0) as u8,
-                                            (c.b * 255.0) as u8,
-                                            (c.a * 255.0) as u8,
-                                        ))
-                                    });
+                                    text.apply_attr_to_selection(|a| a.color(text_color_rgba(c)));
                                 }
                             } else if let Some(pen) =
                                 preview.as_any_mut().downcast_mut::<PenPreview>()
@@ -3242,7 +3253,6 @@ impl Application for CosmicViewer {
                         self.show_text_format_menu = !self.show_text_format_menu;
                     }
                     EditMessage::TextBold => {
-                        use cosmic::iced_widget::graphics::text::cosmic_text as ct;
                         self.text_bold = !self.text_bold;
                         if let Some(preview) = self.viewport.preview_mut()
                             && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
@@ -3251,9 +3261,9 @@ impl Application for CosmicViewer {
                                 let bold = self.text_bold;
                                 text.apply_attr_to_selection(|a| {
                                     a.weight(if bold {
-                                        ct::Weight::BOLD
+                                        cosmic_text::Weight::BOLD
                                     } else {
-                                        ct::Weight::NORMAL
+                                        cosmic_text::Weight::NORMAL
                                     })
                                 });
                             }
@@ -3262,7 +3272,6 @@ impl Application for CosmicViewer {
                         self.viewport.rebuild_display();
                     }
                     EditMessage::TextItalic => {
-                        use cosmic::iced_widget::graphics::text::cosmic_text as ct;
                         self.text_italic = !self.text_italic;
                         if let Some(preview) = self.viewport.preview_mut()
                             && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
@@ -3271,9 +3280,9 @@ impl Application for CosmicViewer {
                                 let italic = self.text_italic;
                                 text.apply_attr_to_selection(|a| {
                                     a.style(if italic {
-                                        ct::Style::Italic
+                                        cosmic_text::Style::Italic
                                     } else {
-                                        ct::Style::Normal
+                                        cosmic_text::Style::Normal
                                     })
                                 });
                             }
@@ -3289,7 +3298,7 @@ impl Application for CosmicViewer {
                             if text.has_selection() {
                                 let underline = self.text_underline;
                                 text.apply_attr_to_selection(|a| {
-                                    a.metadata(if underline { 1 } else { 0 })
+                                    a.metadata(usize::from(underline))
                                 });
                             }
                             text.underline = self.text_underline;
@@ -3326,8 +3335,7 @@ impl Application for CosmicViewer {
                             && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
                         {
                             if text.has_selection() {
-                                use cosmic::iced_widget::graphics::text::cosmic_text as ct;
-                                text.apply_attr_to_selection(|a| a.family(ct::Family::Name(fam)));
+                                text.apply_attr_to_selection(|a| a.family(cosmic_text::Family::Name(fam)));
                             }
                             text.font_family = fam;
                         }
@@ -3429,7 +3437,7 @@ impl Application for CosmicViewer {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        let watcher_sub = crate::watcher::watch_directory(self.nav.dir().map(|d| d.to_path_buf()))
+        let watcher_sub = crate::watcher::watch_directory(self.nav.dir().map(std::path::Path::to_path_buf))
             .map(ViewerMessage::WatcherEvent);
 
         Subscription::batch([
@@ -3483,6 +3491,30 @@ fn friendly_type_name(ext: &str) -> String {
     .to_string()
 }
 
+// reason: file sizes never approach 2^52 bytes, so f64 represents them exactly.
+// reason: crop region is a non-negative, in-bounds pixel rectangle.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn crop_to_region(img: &DynamicImage, region: Rectangle) -> DynamicImage {
+    img.crop_imm(
+        region.x as u32,
+        region.y as u32,
+        region.width as u32,
+        region.height as u32,
+    )
+}
+
+// reason: normalized color channels are in 0.0..=1.0, so *255 lands in u8 range.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn text_color_rgba(c: Color) -> cosmic_text::Color {
+    cosmic_text::Color::rgba(
+        (c.r * 255.0) as u8,
+        (c.g * 255.0) as u8,
+        (c.b * 255.0) as u8,
+        (c.a * 255.0) as u8,
+    )
+}
+
+#[allow(clippy::cast_precision_loss)]
 fn format_file_size(bytes: u64) -> String {
     const KB: f64 = 1024.0;
     const MB: f64 = 1024.0 * KB;
@@ -3519,16 +3551,21 @@ fn format_system_time(time: std::time::SystemTime) -> String {
     date_time.format("%a %d %b %Y %I:%M:%S %p %Z").to_string()
 }
 
+// reason: the write guard must live across the whole `.faces()` walk (its single
+// use); clippy's auto-merge suggestion can't see through the borrow chain.
+#[allow(clippy::significant_drop_tightening)]
 fn load_font_families() -> Vec<&'static str> {
-    let mut font_sys = font_system().write().expect("Read font system");
-    let db = font_sys.raw().db();
-
-    let mut families: Vec<String> = db
-        .faces()
-        .flat_map(|face| face.families.iter().map(|(name, _)| name.clone()))
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
+    // Scope the write guard so the font-system lock is released before sorting.
+    let mut families: Vec<String> = {
+        let mut font_sys = font_system().write().expect("Read font system");
+        let unique: HashSet<String> = font_sys
+            .raw()
+            .db()
+            .faces()
+            .flat_map(|face| face.families.iter().map(|(name, _)| name.clone()))
+            .collect();
+        unique.into_iter().collect()
+    };
 
     families.sort();
 
@@ -3542,8 +3579,7 @@ fn load_font_families() -> Vec<&'static str> {
 
 fn is_cosmic_desktop() -> bool {
     std::env::var("XDG_CURRENT_DESKTOP")
-        .map(|d| d.to_uppercase().contains("COSMIC"))
-        .unwrap_or(false)
+        .is_ok_and(|d| d.to_uppercase().contains("COSMIC"))
 }
 
 fn get_cosmic_outputs() -> Vec<String> {
@@ -3602,7 +3638,7 @@ fn set_wallpaper_portable(path: &std::path::Path) -> Result<(), String> {
     .map_err(|e| format!("Failed to set wallpaper: {e}"))
 }
 
-async fn set_wallpaper_cosmic_on(
+fn set_wallpaper_cosmic_on(
     path: &std::path::Path,
     output: Option<&str>,
 ) -> Result<(), String> {
@@ -3615,10 +3651,10 @@ async fn set_wallpaper_cosmic_on(
 
     let path_str = path.to_string_lossy();
 
-    let (config_filename, output_field) = match output {
-        Some(name) => (format!("output.{name}"), name.to_string()),
-        None => ("all".to_string(), "all".to_string()),
-    };
+    let (config_filename, output_field) = output.map_or_else(
+        || ("all".to_string(), "all".to_string()),
+        |name| (format!("output.{name}"), name.to_string()),
+    );
 
     let config_path = config_dir.join(&config_filename);
 
@@ -3640,16 +3676,15 @@ async fn set_wallpaper_cosmic_on(
     } else {
         format!(
             r#"(
-    output: "{}",
-    source: Path("{}"),
+    output: "{output_field}",
+    source: Path("{path_str}"),
     filter_by_theme: false,
     rotation_frequency: 300,
     filter_method: Lanczos,
     scaling_mode: Zoom,
     sampling_method: Alphanumeric,
 )
-"#,
-            output_field, path_str
+"#
         )
     };
 
@@ -3782,7 +3817,8 @@ fn update_source_in_config(existing: &str, new_path: &str) -> String {
         }
 
         if trimmed.starts_with("source:") {
-            result.push_str(&format!("    source: Path(\"{new_path}\"),\n"));
+            writeln!(result, "    source: Path(\"{new_path}\"),")
+                .expect("writing to a String is infallible");
             if !trimmed.ends_with(',') && !trimmed.ends_with(')') {
                 skip_until_comma_or_paren = true;
             }

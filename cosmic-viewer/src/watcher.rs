@@ -1,5 +1,6 @@
 use cosmic::iced::Subscription;
-use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
+use cosmic::iced::futures::SinkExt;
+use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 
@@ -15,9 +16,7 @@ pub fn watch_directory(dir: Option<PathBuf>) -> Subscription<WatcherEvent> {
     Subscription::run_with(dir, |dir| {
         cosmic::iced::stream::channel(100, {
             let dir = dir.clone();
-            move |mut output: cosmic::iced_futures::futures::channel::mpsc::Sender<WatcherEvent>| async move {
-                use cosmic::iced_futures::futures::SinkExt;
-
+            move |mut output: cosmic::iced::futures::channel::mpsc::Sender<WatcherEvent>| async move {
                 let Some(dir) = dir else {
                     std::future::pending::<()>().await;
                     unreachable!()
@@ -50,7 +49,6 @@ pub fn watch_directory(dir: Option<PathBuf>) -> Subscription<WatcherEvent> {
                 while let Some(result) = rx.recv().await {
                     match result {
                         Ok(event) => {
-                            use notify::EventKind;
                             for path in event.paths {
                                 let msg = match event.kind {
                                     EventKind::Create(_) => Some(WatcherEvent::Created(path)),

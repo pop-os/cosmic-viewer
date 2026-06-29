@@ -5,14 +5,15 @@ use cosmic::iced::Color;
 pub struct AnnotateColor(pub Color);
 
 impl AnnotateColor {
-    pub fn presets() -> Vec<AnnotateColor> {
+    #[must_use]
+    pub fn presets() -> Vec<Self> {
         vec![
-            AnnotateColor(Color::WHITE),
-            AnnotateColor(Color::from_rgb(1.0, 0.0, 0.0)), // Red
-            AnnotateColor(Color::from_rgb(1.0, 0.65, 0.0)), // Orange
-            AnnotateColor(Color::from_rgb(0.0, 1.0, 0.0)), // Green
-            AnnotateColor(Color::from_rgb(0.0, 0.0, 1.0)), // Blue
-            AnnotateColor(Color::BLACK),
+            Self(Color::WHITE),
+            Self(Color::from_rgb(1.0, 0.0, 0.0)), // Red
+            Self(Color::from_rgb(1.0, 0.65, 0.0)), // Orange
+            Self(Color::from_rgb(0.0, 1.0, 0.0)), // Green
+            Self(Color::from_rgb(0.0, 0.0, 1.0)), // Blue
+            Self(Color::BLACK),
         ]
     }
 }

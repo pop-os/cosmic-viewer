@@ -1,7 +1,8 @@
 use crate::{
     ToolOperation,
     annotate::tool::text::{
-        LINE_HEIGHT_FACTOR, TEXT_INSET, TextSpan, intern_str,
+        LINE_HEIGHT_FACTOR, TEXT_INSET, TextSpan, build_buffer_line, color_channel_u8, group_spans,
+        intern_str, span_attrs,
         preview::{TextEditState, TextPreview},
     },
     rotate::RotateDirection,
@@ -13,11 +14,9 @@ use cosmic::{
         alignment::{Horizontal, Vertical},
         font,
     },
-    iced_core::text::{LineHeight, Shaping},
-    iced_widget::{
-        canvas::{self, Frame},
-        graphics::text::{cosmic_text, font_system},
-    },
+    iced::advanced::text::{LineHeight, Shaping},
+    iced::widget::canvas::{self, Frame},
+    iced::advanced::graphics::text::{cosmic_text, font_system},
 };
 use image::{DynamicImage, Rgba};
 use std::any::Any;
@@ -34,9 +33,25 @@ pub struct TextOperation {
     pub edit_scale: f32,
 }
 
+/// A run of identically-styled glyphs, laid out for canvas rendering.
+struct SpanRun {
+    content: String,
+    x: f32,
+    x_end: f32,
+    line_top: f32,
+    line_h: f32,
+    bold: bool,
+    italic: bool,
+    underline: bool,
+    color: Color,
+    font_size: f32,
+    family: &'static str,
+}
+
 impl TextOperation {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         position: Point,
         spans: Vec<TextSpan>,
         color: Color,
@@ -60,10 +75,12 @@ impl TextOperation {
 }
 
 impl TextOperation {
-    pub fn bounds(&self) -> Rectangle {
+    #[must_use]
+    pub const fn bounds(&self) -> Rectangle {
         self.bounding_box
     }
 
+    #[must_use]
     pub fn hit_test(&self, point: Point) -> bool {
         self.bounds().contains(point)
     }
@@ -75,6 +92,7 @@ impl TextOperation {
         self.bounding_box.y += dy;
     }
 
+    #[must_use]
     pub fn to_preview(&self) -> TextPreview {
         let mut preview = TextPreview::new(
             self.color,
@@ -108,8 +126,6 @@ impl TextOperation {
 
 impl TextOperation {
     fn build_buffer(&self, scale: f32) -> cosmic_text::Buffer {
-        use crate::annotate::tool::text::{build_buffer_line, group_spans, span_attrs};
-
         let metrics =
             cosmic_text::Metrics::new(self.font_size, self.font_size * LINE_HEIGHT_FACTOR);
         let default_attrs =
@@ -118,7 +134,7 @@ impl TextOperation {
         let mut font_sys = font_system().write().expect("Write font system");
         let mut buffer = cosmic_text::Buffer::new(font_sys.raw(), metrics);
         buffer.set_size(
-            Some((self.bounding_box.width - TEXT_INSET * 2.0) * scale),
+            Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width) * scale),
             None,
         );
         buffer.set_wrap(cosmic_text::Wrap::WordOrGlyph);
@@ -140,6 +156,63 @@ impl TextOperation {
         buffer.shape_until_scroll(font_sys.raw(), false);
         buffer
     }
+
+    /// Lay the text out and collect runs of identically-styled glyphs for rendering.
+    fn layout_runs(&self, scale: f32) -> Vec<SpanRun> {
+        let buffer = self.build_buffer(scale);
+        let mut runs = Vec::new();
+        for run in buffer.layout_runs() {
+            if run.glyphs.is_empty() {
+                continue;
+            }
+            let line = &buffer.lines[run.line_i];
+            let attrs_list = line.attrs_list();
+            let mut start = 0;
+            while start < run.glyphs.len() {
+                let first = &run.glyphs[start];
+                let attrs = attrs_list.get_span(first.start);
+                let mut end = start + 1;
+                while end < run.glyphs.len() {
+                    if attrs_list.get_span(run.glyphs[end].start) != attrs {
+                        break;
+                    }
+                    end += 1;
+                }
+                let last = &run.glyphs[end - 1];
+                let color = attrs.color_opt.map_or(self.color, |c| {
+                    Color::from_rgba(
+                        f32::from(c.r()) / 255.0,
+                        f32::from(c.g()) / 255.0,
+                        f32::from(c.b()) / 255.0,
+                        f32::from(c.a()) / 255.0,
+                    )
+                });
+                let font_size = attrs.metrics_opt.map_or(self.font_size, |m| {
+                    let metrics: cosmic_text::Metrics = m.into();
+                    metrics.font_size
+                });
+                let family: &'static str = match attrs.family {
+                    cosmic_text::Family::Name(n) if n != self.font_family => intern_str(n),
+                    _ => self.font_family,
+                };
+                runs.push(SpanRun {
+                    content: run.text[first.start..last.end].to_string(),
+                    x: first.x,
+                    x_end: last.x + last.w,
+                    line_top: run.line_top,
+                    line_h: run.line_height,
+                    bold: attrs.weight >= cosmic_text::Weight::BOLD,
+                    italic: attrs.style == cosmic_text::Style::Italic,
+                    underline: attrs.metadata == 1,
+                    color,
+                    font_size,
+                    family,
+                });
+                start = end;
+            }
+        }
+        runs
+    }
 }
 
 impl ToolOperation for TextOperation {
@@ -148,96 +221,30 @@ impl ToolOperation for TextOperation {
             return;
         }
 
-        let runs = {
-            let buffer = self.build_buffer(scale);
-            let mut result = Vec::new();
-            for run in buffer.layout_runs() {
-                if run.glyphs.is_empty() {
-                    continue;
-                }
-                let line = &buffer.lines[run.line_i];
-                let attrs_list = line.attrs_list();
-                let mut i = 0;
-                while i < run.glyphs.len() {
-                    let first = &run.glyphs[i];
-                    let a = attrs_list.get_span(first.start);
-                    let mut j = i + 1;
-                    while j < run.glyphs.len() {
-                        if attrs_list.get_span(run.glyphs[j].start) != a {
-                            break;
-                        }
-                        j += 1;
-                    }
-                    let last = &run.glyphs[j - 1];
-                    let span_color = a.color_opt.map_or(self.color, |c| {
-                        Color::from_rgba(
-                            c.r() as f32 / 255.0,
-                            c.g() as f32 / 255.0,
-                            c.b() as f32 / 255.0,
-                            c.a() as f32 / 255.0,
-                        )
-                    });
-                    let span_fs = a.metrics_opt.map_or(self.font_size, |m| {
-                        let metrics: cosmic_text::Metrics = m.into();
-                        metrics.font_size
-                    });
-                    let span_fam: &'static str = match a.family {
-                        cosmic_text::Family::Name(n) if n != self.font_family => intern_str(n),
-                        _ => self.font_family,
-                    };
-                    result.push((
-                        run.text[first.start..last.end].to_string(),
-                        first.x,
-                        last.x + last.w,
-                        run.line_top,
-                        run.line_height,
-                        a.weight >= cosmic_text::Weight::BOLD,
-                        a.style == cosmic_text::Style::Italic,
-                        a.metadata == 1,
-                        span_color,
-                        span_fs,
-                        span_fam,
-                    ));
-                    i = j;
-                }
-            }
-            result
-        };
+        let runs = self.layout_runs(scale);
 
         let inv = 1.0 / scale;
         let inset = TEXT_INSET / scale;
         let origin = Point::new(self.bounding_box.x + inset, self.bounding_box.y);
 
-        for (
-            content,
-            x,
-            x_end,
-            line_top,
-            line_h,
-            bold,
-            italic,
-            underline,
-            span_color,
-            span_fs,
-            span_fam,
-        ) in &runs
-        {
+        for run in &runs {
             let text = canvas::Text {
-                content: content.clone(),
+                content: run.content.clone(),
                 position: Point::new(
-                    origin.x + x * inv,
-                    origin.y + (line_top + line_h - span_fs * LINE_HEIGHT_FACTOR) * inv,
+                    run.x.mul_add(inv, origin.x),
+                    (run.line_top + run.font_size.mul_add(-LINE_HEIGHT_FACTOR, run.line_h))
+                        .mul_add(inv, origin.y),
                 ),
-                color: *span_color,
-                size: (span_fs / scale).into(),
+                color: run.color,
+                size: (run.font_size / scale).into(),
                 font: Font {
-                    family: font::Family::Name(span_fam),
-                    weight: if *bold {
+                    family: font::Family::Name(run.family),
+                    weight: if run.bold {
                         font::Weight::Bold
                     } else {
                         font::Weight::Normal
                     },
-                    style: if *italic {
+                    style: if run.italic {
                         font::Style::Italic
                     } else {
                         font::Style::Normal
@@ -252,26 +259,31 @@ impl ToolOperation for TextOperation {
             };
             frame.fill_text(text);
 
-            if *underline {
-                let uy = origin.y + (line_top + line_h) * inv - 1.0 / scale;
-                let ux = origin.x + x * inv;
-                let uw = (x_end - x) * inv;
+            if run.underline {
+                let uy = (run.line_top + run.line_h).mul_add(inv, origin.y) - 1.0 / scale;
+                let ux = run.x.mul_add(inv, origin.x);
+                let uw = (run.x_end - run.x) * inv;
                 frame.stroke(
                     &canvas::Path::line(Point::new(ux, uy), Point::new(ux + uw, uy)),
                     canvas::Stroke::default()
-                        .with_color(*span_color)
+                        .with_color(run.color)
                         .with_width(1.0 / scale),
                 );
             }
         }
     }
 
+    // reason: image dimensions and glyph offsets are pixel coordinates well within i32/u32 range;
+    // float->int truncation is the intended quantization and bounds are explicitly checked before indexing.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss
+    )]
     fn apply(&self, image: &mut DynamicImage) {
         if self.spans.is_empty() || self.bounding_box.width < 1.0 {
             return;
         }
-
-        use crate::annotate::tool::text::{build_buffer_line, group_spans, span_attrs};
 
         let img_font = self.font_size / self.edit_scale;
         let img_metrics = cosmic_text::Metrics::new(img_font, img_font * LINE_HEIGHT_FACTOR);
@@ -281,7 +293,7 @@ impl ToolOperation for TextOperation {
 
         let mut font_sys = font_system().write().expect("Write font system");
         let mut buffer = cosmic_text::Buffer::new(font_sys.raw(), img_metrics);
-        buffer.set_size(Some(self.bounding_box.width - TEXT_INSET * 2.0), None);
+        buffer.set_size(Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)), None);
         buffer.set_wrap(cosmic_text::Wrap::WordOrGlyph);
 
         let lines = group_spans(&self.spans);
@@ -307,10 +319,10 @@ impl ToolOperation for TextOperation {
         let (img_w, img_h) = (rgba.width() as i32, rgba.height() as i32);
 
         let fallback_color = cosmic_text::Color::rgba(
-            (self.color.r * 255.0) as u8,
-            (self.color.g * 255.0) as u8,
-            (self.color.b * 255.0) as u8,
-            (self.color.a * 255.0) as u8,
+            color_channel_u8(self.color.r),
+            color_channel_u8(self.color.g),
+            color_channel_u8(self.color.b),
+            color_channel_u8(self.color.a),
         );
 
         let mut swash_cache = cosmic_text::SwashCache::new();
@@ -338,15 +350,18 @@ impl ToolOperation for TextOperation {
                         let py = (gy as i32) + off_y;
 
                         if px >= 0 && px < img_w && py >= 0 && py < img_h {
-                            let alpha = color.a() as f32 / 255.0;
+                            let alpha = f32::from(color.a()) / 255.0;
                             if alpha > 0.0 {
                                 let existing = rgba.get_pixel(px as u32, py as u32);
+                                let out_alpha = 255.0f32
+                                    .mul_add(alpha, f32::from(existing[3]) * (1.0 - alpha))
+                                    .round()
+                                    .clamp(0.0, 255.0) as u8;
                                 let blended = Rgba([
                                     blend_channel(existing[0], color.r(), alpha),
                                     blend_channel(existing[1], color.g(), alpha),
                                     blend_channel(existing[2], color.b(), alpha),
-                                    (existing[3] as f32 * (1.0 - alpha) + 255.0 * alpha).min(255.0)
-                                        as u8,
+                                    out_alpha,
                                 ]);
                                 rgba.put_pixel(px as u32, py as u32, blended);
                             }
@@ -355,48 +370,17 @@ impl ToolOperation for TextOperation {
                 );
             }
 
-            // Underlines
-            if run.glyphs.is_empty() {
-                continue;
-            }
-            let mut i = 0;
-            while i < run.glyphs.len() {
-                let first = &run.glyphs[i];
-                let a = attrs_list.get_span(first.start);
-                let mut j = i + 1;
-                while j < run.glyphs.len() {
-                    if attrs_list.get_span(run.glyphs[j].start) != a {
-                        break;
-                    }
-                    j += 1;
-                }
-
-                if a.metadata == 1 {
-                    let last = &run.glyphs[j - 1];
-                    let span_fs = a.metrics_opt.map_or(img_font, |m| {
-                        let metrics: cosmic_text::Metrics = m.into();
-                        metrics.font_size
-                    });
-                    let uy = (origin.y + run.line_top + span_fs * LINE_HEIGHT_FACTOR + 2.0) as i32;
-                    let x_start = (origin.x + first.x) as i32;
-                    let x_end = (origin.x + last.x + last.w) as i32;
-
-                    let color = a.color_opt.unwrap_or(fallback_color);
-                    let r = color.r();
-                    let g = color.g();
-                    let b = color.b();
-                    let ca = color.a();
-
-                    if uy >= 0 && uy < img_h {
-                        for x in x_start.max(0)..x_end.min(img_w) {
-                            rgba.put_pixel(x as u32, uy as u32, Rgba([r, g, b, ca]));
-                        }
-                    }
-                }
-
-                i = j;
-            }
+            draw_run_underlines(
+                &run,
+                attrs_list,
+                origin,
+                img_font,
+                fallback_color,
+                rgba,
+                (img_w, img_h),
+            );
         }
+        drop(font_sys);
 
         *image = DynamicImage::ImageRgba8(rgba.clone());
     }
@@ -435,18 +419,78 @@ impl ToolOperation for TextOperation {
     }
 
     fn hit_test(&self, point: Point) -> bool {
-        TextOperation::hit_test(self, point)
+        Self::hit_test(self, point)
     }
 
     fn translate(&mut self, dx: f32, dy: f32) {
-        TextOperation::translate(self, dx, dy);
+        Self::translate(self, dx, dy);
     }
 
     fn bounds(&self) -> Option<Rectangle> {
-        Some(TextOperation::bounds(self))
+        Some(Self::bounds(self))
     }
 }
 
+// reason: underline pixel coordinates are within i32/u32 range; float->int truncation is intended and bounds are checked.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
+)]
+fn draw_run_underlines(
+    run: &cosmic_text::LayoutRun,
+    attrs_list: &cosmic_text::AttrsList,
+    origin: Point,
+    img_font: f32,
+    fallback_color: cosmic_text::Color,
+    rgba: &mut image::RgbaImage,
+    (img_w, img_h): (i32, i32),
+) {
+    let mut start = 0;
+    while start < run.glyphs.len() {
+        let first = &run.glyphs[start];
+        let attrs = attrs_list.get_span(first.start);
+        let mut end = start + 1;
+        while end < run.glyphs.len() {
+            if attrs_list.get_span(run.glyphs[end].start) != attrs {
+                break;
+            }
+            end += 1;
+        }
+
+        if attrs.metadata == 1 {
+            let last = &run.glyphs[end - 1];
+            let span_fs = attrs.metrics_opt.map_or(img_font, |m| {
+                let metrics: cosmic_text::Metrics = m.into();
+                metrics.font_size
+            });
+            let uy = (span_fs.mul_add(LINE_HEIGHT_FACTOR, origin.y + run.line_top) + 2.0) as i32;
+            let x_start = (origin.x + first.x) as i32;
+            let x_end = (origin.x + last.x + last.w) as i32;
+
+            let underline_color = attrs.color_opt.unwrap_or(fallback_color);
+            let pixel = Rgba([
+                underline_color.r(),
+                underline_color.g(),
+                underline_color.b(),
+                underline_color.a(),
+            ]);
+
+            if uy >= 0 && uy < img_h {
+                for x in x_start.max(0)..x_end.min(img_w) {
+                    rgba.put_pixel(x as u32, uy as u32, pixel);
+                }
+            }
+        }
+
+        start = end;
+    }
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // reason: clamped to 0.0..=255.0 then rounded, in-range for u8
 fn blend_channel(dst: u8, src: u8, alpha: f32) -> u8 {
-    ((dst as f32) * (1.0 - alpha) + (src as f32) * alpha).min(255.0) as u8
+    f32::from(src)
+        .mul_add(alpha, f32::from(dst) * (1.0 - alpha))
+        .round()
+        .clamp(0.0, 255.0) as u8
 }

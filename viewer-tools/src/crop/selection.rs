@@ -5,7 +5,7 @@ use crate::{ToolOperation, crop::CropOperation};
 use cosmic::{
     Renderer,
     iced::{Color, Point, Rectangle, Size, mouse},
-    iced_widget::canvas::{Fill, Frame, Path, Stroke},
+    iced::widget::canvas::{Fill, Frame, Path, Stroke},
 };
 use image::DynamicImage;
 
@@ -40,6 +40,7 @@ impl Default for CropSelection {
 }
 
 impl CropSelection {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             region: Rectangle::default(),
@@ -102,7 +103,7 @@ impl CropSelection {
     }
 
     /// Begin a new selection from scratch at the given image-coordinate point
-    pub fn start_new(&mut self, origin: Point) {
+    pub const fn start_new(&mut self, origin: Point) {
         self.region = Rectangle::new(origin, Size::ZERO);
         self.active_handle = DragHandle::BottomRight;
         self.drag_origin = origin;
@@ -111,7 +112,7 @@ impl CropSelection {
     }
 
     /// Begin dragging an existing handle
-    pub fn start_handle_drag(&mut self, handle: DragHandle, origin: Point) {
+    pub const fn start_handle_drag(&mut self, handle: DragHandle, origin: Point) {
         self.active_handle = handle;
         self.drag_origin = origin;
         self.drag_start_region = self.region;
@@ -183,6 +184,7 @@ impl CropSelection {
     }
 
     /// Hit-test a point against handles and interior
+    #[must_use]
     pub fn hit_test(&self, point: Point) -> DragHandle {
         if !self.visible || self.region.width < MIN_SIZE {
             return DragHandle::None;
@@ -275,56 +277,42 @@ impl CropSelection {
         color: Color,
     ) {
         let rect = Rectangle::new(
-            Point::new(center.x - w * anchor_x, center.y - h * anchor_y),
+            Point::new(w.mul_add(-anchor_x, center.x), h.mul_add(-anchor_y, center.y)),
             Size::new(w, h),
         );
 
         frame.fill_rectangle(rect.position(), rect.size(), Fill::from(color));
     }
-}
 
-impl ToolOperation for CropSelection {
-    fn draw(&self, frame: &mut Frame<Renderer>, image_size: Size, scale: f32) {
-        if !self.visible || self.region.width < MIN_SIZE {
-            return;
-        }
-
+    fn draw_overlay(&self, frame: &mut Frame<Renderer>, frame_size: Size) {
         let region = self.region;
-        let frame_size = image_size;
         let overlay_color = Color::from_rgba(0.0, 0.0, 0.0, 0.5);
-        let border_width = BORDER_WIDTH / scale;
-        let handle_size = HANDLE_SIZE / scale;
-        let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
 
-        // Dark overlay outside selection
-        frame.fill_rectangle(
-            Point::ORIGIN,
-            Size::new(frame_size.width, region.y),
-            Fill::from(overlay_color),
-        );
-
-        frame.fill_rectangle(
-            Point::new(0.0, region.y + region.height),
-            Size::new(
-                frame_size.width,
-                frame_size.height - region.y - region.height,
+        let bands = [
+            (Point::ORIGIN, Size::new(frame_size.width, region.y)),
+            (
+                Point::new(0.0, region.y + region.height),
+                Size::new(
+                    frame_size.width,
+                    frame_size.height - region.y - region.height,
+                ),
             ),
-            Fill::from(overlay_color),
-        );
+            (
+                Point::new(0.0, region.y),
+                Size::new(region.x, region.height),
+            ),
+            (
+                Point::new(region.x + region.width, region.y),
+                Size::new(frame_size.width - region.x - region.width, region.height),
+            ),
+        ];
+        for (position, size) in bands {
+            frame.fill_rectangle(position, size, Fill::from(overlay_color));
+        }
+    }
 
-        frame.fill_rectangle(
-            Point::new(0.0, region.y),
-            Size::new(region.x, region.height),
-            Fill::from(overlay_color),
-        );
-
-        frame.fill_rectangle(
-            Point::new(region.x + region.width, region.y),
-            Size::new(frame_size.width - region.x - region.width, region.height),
-            Fill::from(overlay_color),
-        );
-
-        // Selection border
+    fn draw_border(&self, frame: &mut Frame<Renderer>, border_width: f32, accent: Color) {
+        let region = self.region;
         let inset = border_width / 2.0;
         frame.stroke(
             &Path::rectangle(
@@ -335,129 +323,52 @@ impl ToolOperation for CropSelection {
                 .with_color(accent)
                 .with_width(border_width),
         );
+    }
 
+    fn draw_handles(&self, frame: &mut Frame<Renderer>, handle_size: f32, accent: Color) {
+        let region = self.region;
         let bar_long = handle_size * HANDLE_BAR_RATIO;
         let bar_short = handle_size * HANDLE_THICKNESS_RATIO;
 
-        // Corner handles — two bars each forming an L
-        // Top-left
-        Self::draw_handle(
-            frame,
-            Point::new(region.x, region.y),
-            bar_long,
-            bar_short,
-            0.0,
-            0.0,
-            accent,
-        );
-        Self::draw_handle(
-            frame,
-            Point::new(region.x, region.y),
-            bar_short,
-            bar_long,
-            0.0,
-            0.0,
-            accent,
-        );
-        // Top-right
-        Self::draw_handle(
-            frame,
-            Point::new(region.x + region.width, region.y),
-            bar_long,
-            bar_short,
-            1.0,
-            0.0,
-            accent,
-        );
-        Self::draw_handle(
-            frame,
-            Point::new(region.x + region.width, region.y),
-            bar_short,
-            bar_long,
-            1.0,
-            0.0,
-            accent,
-        );
-        // Bottom-left
-        Self::draw_handle(
-            frame,
-            Point::new(region.x, region.y + region.height),
-            bar_long,
-            bar_short,
-            0.0,
-            1.0,
-            accent,
-        );
-        Self::draw_handle(
-            frame,
-            Point::new(region.x, region.y + region.height),
-            bar_short,
-            bar_long,
-            0.0,
-            1.0,
-            accent,
-        );
-        // Bottom-right
-        Self::draw_handle(
-            frame,
-            Point::new(region.x + region.width, region.y + region.height),
-            bar_long,
-            bar_short,
-            1.0,
-            1.0,
-            accent,
-        );
-        Self::draw_handle(
-            frame,
-            Point::new(region.x + region.width, region.y + region.height),
-            bar_short,
-            bar_long,
-            1.0,
-            1.0,
-            accent,
-        );
+        let left = region.x;
+        let right = region.x + region.width;
+        let top = region.y;
+        let bottom = region.y + region.height;
+        let mid_x = region.x + region.width / 2.0;
+        let mid_y = region.y + region.height / 2.0;
 
-        // Edge handles — single bar each
-        // Top center
-        Self::draw_handle(
-            frame,
-            Point::new(region.x + region.width / 2.0, region.y),
-            bar_long,
-            bar_short,
-            0.5,
-            0.0,
-            accent,
-        );
-        // Bottom center
-        Self::draw_handle(
-            frame,
-            Point::new(region.x + region.width / 2.0, region.y + region.height),
-            bar_long,
-            bar_short,
-            0.5,
-            1.0,
-            accent,
-        );
-        // Left center
-        Self::draw_handle(
-            frame,
-            Point::new(region.x, region.y + region.height / 2.0),
-            bar_short,
-            bar_long,
-            0.0,
-            0.5,
-            accent,
-        );
-        // Right center
-        Self::draw_handle(
-            frame,
-            Point::new(region.x + region.width, region.y + region.height / 2.0),
-            bar_short,
-            bar_long,
-            1.0,
-            0.5,
-            accent,
-        );
+        // Corner handles — two bars each forming an L; edge handles — single bar.
+        // Each entry: (center, bar_w, bar_h, anchor_x, anchor_y).
+        let handles = [
+            (Point::new(left, top), bar_long, bar_short, 0.0, 0.0),
+            (Point::new(left, top), bar_short, bar_long, 0.0, 0.0),
+            (Point::new(right, top), bar_long, bar_short, 1.0, 0.0),
+            (Point::new(right, top), bar_short, bar_long, 1.0, 0.0),
+            (Point::new(left, bottom), bar_long, bar_short, 0.0, 1.0),
+            (Point::new(left, bottom), bar_short, bar_long, 0.0, 1.0),
+            (Point::new(right, bottom), bar_long, bar_short, 1.0, 1.0),
+            (Point::new(right, bottom), bar_short, bar_long, 1.0, 1.0),
+            (Point::new(mid_x, top), bar_long, bar_short, 0.5, 0.0),
+            (Point::new(mid_x, bottom), bar_long, bar_short, 0.5, 1.0),
+            (Point::new(left, mid_y), bar_short, bar_long, 0.0, 0.5),
+            (Point::new(right, mid_y), bar_short, bar_long, 1.0, 0.5),
+        ];
+        for (center, w, h, anchor_x, anchor_y) in handles {
+            Self::draw_handle(frame, center, w, h, anchor_x, anchor_y, accent);
+        }
+    }
+}
+
+impl ToolOperation for CropSelection {
+    fn draw(&self, frame: &mut Frame<Renderer>, image_size: Size, scale: f32) {
+        if !self.visible || self.region.width < MIN_SIZE {
+            return;
+        }
+
+        let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
+        self.draw_overlay(frame, image_size);
+        self.draw_border(frame, BORDER_WIDTH / scale, accent);
+        self.draw_handles(frame, HANDLE_SIZE / scale, accent);
     }
 
     fn apply(&self, _image: &mut DynamicImage) {

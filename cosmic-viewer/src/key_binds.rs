@@ -1,12 +1,12 @@
 use crate::message::{ContextMessage, EditMessage, ViewerMessage};
 use cosmic::{
     iced::keyboard::{Key, Modifiers, key::Named},
-    iced_core::SmolStr,
     widget::menu::{
         Action,
         key_bind::{KeyBind, Modifier},
     },
 };
+use smol_str::SmolStr;
 use std::{collections::HashMap, sync::OnceLock};
 use viewer_canvas::CanvasMessage;
 
@@ -44,39 +44,40 @@ pub enum MenuAction {
 }
 
 impl MenuAction {
-    pub fn message(self) -> ViewerMessage {
+    #[must_use]
+    pub const fn message(self) -> ViewerMessage {
         match self {
             // Basic App Actions
-            MenuAction::OpenFile => ViewerMessage::OpenFileDialog,
-            MenuAction::OpenFolder => ViewerMessage::OpenFolderDialog,
-            MenuAction::OpenRecent(idx) => ViewerMessage::OpenRecent(idx),
-            MenuAction::OpenContaining => ViewerMessage::OpenContaining,
-            MenuAction::CloseFile => ViewerMessage::CloseFile,
-            MenuAction::Copy => ViewerMessage::Copy,
-            MenuAction::CopyToClipboard => ViewerMessage::CopyToClipboard,
-            MenuAction::Cut => ViewerMessage::Cut,
-            MenuAction::Paste => ViewerMessage::Paste,
-            MenuAction::Save => ViewerMessage::Save,
-            MenuAction::SaveAs => ViewerMessage::SaveAs,
-            MenuAction::Print => ViewerMessage::Print,
-            MenuAction::Quit => ViewerMessage::Quit,
+            Self::OpenFile => ViewerMessage::OpenFileDialog,
+            Self::OpenFolder => ViewerMessage::OpenFolderDialog,
+            Self::OpenRecent(idx) => ViewerMessage::OpenRecent(idx),
+            Self::OpenContaining => ViewerMessage::OpenContaining,
+            Self::CloseFile => ViewerMessage::CloseFile,
+            Self::Copy => ViewerMessage::Copy,
+            Self::CopyToClipboard => ViewerMessage::CopyToClipboard,
+            Self::Cut => ViewerMessage::Cut,
+            Self::Paste => ViewerMessage::Paste,
+            Self::Save => ViewerMessage::Save,
+            Self::SaveAs => ViewerMessage::SaveAs,
+            Self::Print => ViewerMessage::Print,
+            Self::Quit => ViewerMessage::Quit,
             // Context Actions
-            MenuAction::ImageDetails => ViewerMessage::Context(ContextMessage::ImageDetails),
-            MenuAction::About => ViewerMessage::Context(ContextMessage::About),
+            Self::ImageDetails => ViewerMessage::Context(ContextMessage::ImageDetails),
+            Self::About => ViewerMessage::Context(ContextMessage::About),
             // Viewport Actions
-            MenuAction::ZoomIn => ViewerMessage::Canvas(CanvasMessage::ZoomIn),
-            MenuAction::ZoomOut => ViewerMessage::Canvas(CanvasMessage::ZoomOut),
-            MenuAction::ActualSize => ViewerMessage::Canvas(CanvasMessage::ActualSize),
-            MenuAction::FitToView => ViewerMessage::Canvas(CanvasMessage::FitToView),
-            MenuAction::Fullscreen => ViewerMessage::Canvas(CanvasMessage::Fullscreen),
+            Self::ZoomIn => ViewerMessage::Canvas(CanvasMessage::ZoomIn),
+            Self::ZoomOut => ViewerMessage::Canvas(CanvasMessage::ZoomOut),
+            Self::ActualSize => ViewerMessage::Canvas(CanvasMessage::ActualSize),
+            Self::FitToView => ViewerMessage::Canvas(CanvasMessage::FitToView),
+            Self::Fullscreen => ViewerMessage::Canvas(CanvasMessage::Fullscreen),
             // Edit Messages
-            MenuAction::RotateLeft => ViewerMessage::Edit(EditMessage::RotateLeft),
-            MenuAction::RotateRight => ViewerMessage::Edit(EditMessage::RotateRight),
-            MenuAction::Undo => ViewerMessage::Edit(EditMessage::Undo),
-            MenuAction::Redo => ViewerMessage::Edit(EditMessage::Redo),
-            MenuAction::RevertAll => ViewerMessage::Edit(EditMessage::RevertAll),
-            MenuAction::SetWallpaper => ViewerMessage::SetWallpaper,
-            MenuAction::MoveToTrash => ViewerMessage::MoveToTrash,
+            Self::RotateLeft => ViewerMessage::Edit(EditMessage::RotateLeft),
+            Self::RotateRight => ViewerMessage::Edit(EditMessage::RotateRight),
+            Self::Undo => ViewerMessage::Edit(EditMessage::Undo),
+            Self::Redo => ViewerMessage::Edit(EditMessage::Redo),
+            Self::RevertAll => ViewerMessage::Edit(EditMessage::RevertAll),
+            Self::SetWallpaper => ViewerMessage::SetWallpaper,
+            Self::MoveToTrash => ViewerMessage::MoveToTrash,
         }
     }
 }
@@ -89,6 +90,9 @@ impl Action for MenuAction {
     }
 }
 
+// reason: flat keybinding registration table; one insert per shortcut.
+#[allow(clippy::too_many_lines)]
+#[must_use]
 pub fn init_keybinds() -> HashMap<KeyBind, MenuAction> {
     let mut binds = HashMap::new();
 
@@ -339,11 +343,11 @@ pub fn keyboard_shortcut_handler(
 
     let key_bind = KeyBind {
         modifiers: mods,
-        key: key.clone(),
+        key,
     };
 
     KEYBINDS
         .get_or_init(init_keybinds)
         .get(&key_bind)
-        .map(|action| action.message())
+        .map(cosmic::widget::menu::Action::message)
 }

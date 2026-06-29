@@ -17,6 +17,7 @@ pub enum ToolbarMode {
 
 impl ToolbarMode {
     /// Determine toolbar mode based on available width
+    #[must_use]
     pub fn from_width(width: f32) -> Self {
         if width >= 600.0 {
             Self::Full

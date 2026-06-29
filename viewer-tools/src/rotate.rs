@@ -1,5 +1,5 @@
 use crate::ToolOperation;
-use cosmic::{Renderer, iced::Size, iced_widget::canvas::Frame};
+use cosmic::{Renderer, iced::Size, iced::widget::canvas::Frame};
 use image::DynamicImage;
 use std::any::Any;
 
@@ -10,10 +10,11 @@ pub enum RotateDirection {
 }
 
 impl RotateDirection {
-    pub fn inverse(&self) -> Self {
+    #[must_use]
+    pub const fn inverse(&self) -> Self {
         match self {
-            RotateDirection::Left => RotateDirection::Right,
-            RotateDirection::Right => RotateDirection::Left,
+            Self::Left => Self::Right,
+            Self::Right => Self::Left,
         }
     }
 }
@@ -24,7 +25,8 @@ pub struct RotateOperation {
 }
 
 impl RotateOperation {
-    pub fn new(direction: RotateDirection) -> Self {
+    #[must_use]
+    pub const fn new(direction: RotateDirection) -> Self {
         Self { direction }
     }
 }

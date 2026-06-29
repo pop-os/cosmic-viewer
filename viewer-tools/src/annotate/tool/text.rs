@@ -2,23 +2,27 @@ pub mod operation;
 pub mod preview;
 
 use cosmic::iced::mouse;
-use cosmic::iced_widget::graphics::text::cosmic_text;
+use cosmic::iced::advanced::graphics::text::cosmic_text;
 pub use operation::TextOperation;
 pub use preview::TextPreview;
 use std::collections::HashSet;
 use std::sync::Mutex;
 
 static INTERNED: Mutex<Option<HashSet<&'static str>>> = Mutex::new(None);
-pub(crate) const TEXT_INSET: f32 = 6.0;
+pub const TEXT_INSET: f32 = 6.0;
 
-pub(crate) fn intern_str(s: &str) -> &'static str {
-    let mut guard = INTERNED.lock().unwrap();
+/// # Panics
+///
+/// Panics if the intern table mutex is poisoned by a panic in another thread.
+pub fn intern_str(s: &str) -> &'static str {
+    let mut guard = INTERNED.lock().expect("intern table mutex poisoned");
     let set = guard.get_or_insert_with(HashSet::new);
     if let Some(&existing) = set.get(s) {
         return existing;
     }
     let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
     set.insert(leaked);
+    drop(guard);
     leaked
 }
 
@@ -37,7 +41,8 @@ pub enum TextDragHandle {
 }
 
 impl TextDragHandle {
-    pub fn cursor(&self) -> mouse::Interaction {
+    #[must_use]
+    pub const fn cursor(&self) -> mouse::Interaction {
         match self {
             Self::None => mouse::Interaction::Crosshair,
             Self::TopLeft | Self::BottomRight => mouse::Interaction::ResizingDiagonallyDown,
@@ -49,28 +54,36 @@ impl TextDragHandle {
     }
 }
 
-pub(crate) const BORDER_WIDTH: f32 = 1.5;
+pub const BORDER_WIDTH: f32 = 1.5;
 
-pub(crate) fn encode_align(align: cosmic_text::Align) -> u8 {
+/// Quantize a 0.0..=1.0 color component to an 8-bit channel, rounding to nearest
+/// and clamping so out-of-gamut inputs cannot wrap.
+#[must_use]
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // reason: clamped to 0.0..=255.0 then rounded, in-range for u8
+pub fn color_channel_u8(component: f32) -> u8 {
+    (component * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
+pub const fn encode_align(align: cosmic_text::Align) -> u8 {
     match align {
-        cosmic_text::Align::Left => 0,
         cosmic_text::Align::Center => 1,
         cosmic_text::Align::Right => 2,
+        // Left and any future variant default to left alignment.
         _ => 0,
     }
 }
 
-pub(crate) fn decode_align(val: u8) -> cosmic_text::Align {
+pub const fn decode_align(val: u8) -> cosmic_text::Align {
     match val {
         1 => cosmic_text::Align::Center,
         2 => cosmic_text::Align::Right,
         _ => cosmic_text::Align::Left,
     }
 }
-pub(crate) const MIN_BOX_WIDTH: f32 = 40.0;
-pub(crate) const MIN_BOX_HEIGHT: f32 = 20.0;
-pub(crate) const DEFAULT_BOX_WIDTH: f32 = 200.0;
-pub(crate) const LINE_HEIGHT_FACTOR: f32 = 1.2;
+pub const MIN_BOX_WIDTH: f32 = 40.0;
+pub const MIN_BOX_HEIGHT: f32 = 20.0;
+pub const DEFAULT_BOX_WIDTH: f32 = 200.0;
+pub const LINE_HEIGHT_FACTOR: f32 = 1.2;
 pub const FONT_SIZE_PRESETS: [f32; 7] = [12.0, 16.0, 20.0, 24.0, 32.0, 40.0, 64.0];
 const DRAG_THRESHOLD: f32 = 5.0;
 
@@ -86,15 +99,16 @@ pub struct TextSpan {
     pub align: Option<u8>,
 }
 
-pub(crate) type SpanLine<'a> = (String, Vec<&'a TextSpan>, Option<u8>);
+pub type SpanLine<'a> = (String, Vec<&'a TextSpan>, Option<u8>);
 
-pub(crate) fn group_spans<'a>(spans: &'a [TextSpan]) -> Vec<SpanLine<'a>> {
+pub fn group_spans<'a>(spans: &'a [TextSpan]) -> Vec<SpanLine<'a>> {
     let mut lines: Vec<SpanLine<'a>> = vec![(String::new(), Vec::new(), None)];
     for span in spans {
         if span.text.is_empty() {
             lines.push((String::new(), Vec::new(), span.align));
         } else {
-            let cur = lines.last_mut().unwrap();
+            // `lines` is seeded with one entry and never popped, so it is non-empty.
+            let cur = lines.last_mut().expect("lines is never empty");
             cur.0.push_str(&span.text);
             if cur.2.is_none() {
                 cur.2 = span.align;
@@ -105,7 +119,7 @@ pub(crate) fn group_spans<'a>(spans: &'a [TextSpan]) -> Vec<SpanLine<'a>> {
     lines
 }
 
-pub(crate) fn span_attrs<'a>(
+pub fn span_attrs<'a>(
     base: cosmic_text::Attrs<'a>,
     span: &TextSpan,
     font_scale: f32,
@@ -121,13 +135,13 @@ pub(crate) fn span_attrs<'a>(
         } else {
             cosmic_text::Style::Normal
         })
-        .metadata(if span.underline { 1 } else { 0 });
+        .metadata(usize::from(span.underline));
     if let Some([r, g, b, alpha]) = span.color {
         a = a.color(cosmic_text::Color::rgba(
-            (r * 255.0) as u8,
-            (g * 255.0) as u8,
-            (b * 255.0) as u8,
-            (alpha * 255.0) as u8,
+            color_channel_u8(r),
+            color_channel_u8(g),
+            color_channel_u8(b),
+            color_channel_u8(alpha),
         ));
     }
     if let Some(fs) = span.font_size {
@@ -143,7 +157,7 @@ pub(crate) fn span_attrs<'a>(
     a
 }
 
-pub(crate) fn build_buffer_line(
+pub fn build_buffer_line(
     text: &str,
     attrs_list: cosmic_text::AttrsList,
     align: Option<u8>,
@@ -160,12 +174,12 @@ pub(crate) fn build_buffer_line(
     line
 }
 
-pub(crate) fn content_height(buf: &cosmic_text::Buffer) -> f32 {
+pub fn content_height(buf: &cosmic_text::Buffer) -> f32 {
     buf.layout_runs()
         .fold(0.0, |h, run| (run.line_top + run.line_height).max(h))
 }
 
-pub(crate) fn snap_font_size(target: f32) -> f32 {
+pub fn snap_font_size(target: f32) -> f32 {
     FONT_SIZE_PRESETS
         .iter()
         .copied()

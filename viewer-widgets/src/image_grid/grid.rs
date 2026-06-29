@@ -1,4 +1,4 @@
-//! ImageGrid - A reactive grid widget
+//! `ImageGrid` - A reactive grid widget
 //!
 //! Features:
 //! - Built-in item rendering with proper centering
@@ -11,7 +11,7 @@ use super::grid_core as core;
 use cosmic::{
     Element, Renderer, Theme,
     iced::{
-        Color, Length, Padding, Point, Rectangle, Size,
+        Color, Length, Padding, Point, Rectangle, Shadow, Size,
         advanced::{
             Clipboard, Layout, Shell, Widget,
             image::Renderer as ItemRenderer,
@@ -39,7 +39,7 @@ pub struct GridItem {
 }
 
 impl GridItem {
-    pub fn new(path: PathBuf, handle: Option<Handle>, width: u32, height: u32) -> Self {
+    pub const fn new(path: PathBuf, handle: Option<Handle>, width: u32, height: u32) -> Self {
         Self {
             path,
             handle,
@@ -55,7 +55,7 @@ pub struct ScrollRequest {
     pub offset_y: f32,
 }
 
-/// Builder for ImageGrid
+/// Builder for `ImageGrid`
 pub struct ImageGrid<'a, M> {
     inner: ImageGridInner<'a, M>,
     scrollable_id: Option<Id>,
@@ -63,6 +63,7 @@ pub struct ImageGrid<'a, M> {
 }
 
 impl<'a, M: Clone + 'static> ImageGrid<'a, M> {
+    #[must_use]
     pub fn new(items: Vec<GridItem>) -> Self {
         Self {
             inner: ImageGridInner {
@@ -89,32 +90,36 @@ impl<'a, M: Clone + 'static> ImageGrid<'a, M> {
     }
 
     /// Enable or disable keyboard navigation
-    pub fn keyboard_navigation(mut self, enabled: bool) -> Self {
+    #[must_use]
+    pub const fn keyboard_navigation(mut self, enabled: bool) -> Self {
         self.keyboard_nav_enabled = enabled;
         self.inner.keyboard_nav_enabled = enabled;
         self
     }
 
-    pub fn thumbnail_size(mut self, size: u32) -> Self {
+    #[must_use]
+    pub const fn thumbnail_size(mut self, size: u32) -> Self {
         self.inner.thumbnail_size = size;
         self
     }
 
-    pub fn focused(mut self, idx: Option<usize>) -> Self {
+    #[must_use]
+    pub const fn focused(mut self, idx: Option<usize>) -> Self {
         self.inner.focused_idx = idx;
         self
     }
 
+    #[must_use]
     pub fn selected(mut self, indices: Vec<usize>) -> Self {
         self.inner.selected_indicies = indices;
         self
     }
 
-    pub fn get_focused(&self) -> Option<usize> {
+    pub const fn get_focused(&self) -> Option<usize> {
         self.inner.focused_idx
     }
 
-    pub fn set_focused(&mut self, idx: Option<usize>) {
+    pub const fn set_focused(&mut self, idx: Option<usize>) {
         self.inner.focused_idx = idx;
     }
 
@@ -134,47 +139,55 @@ impl<'a, M: Clone + 'static> ImageGrid<'a, M> {
         self.inner.items = items;
     }
 
-    pub fn items_mut(&mut self) -> &mut Vec<GridItem> {
+    pub const fn items_mut(&mut self) -> &mut Vec<GridItem> {
         &mut self.inner.items
     }
 
+    #[must_use]
     pub fn padding(mut self, padding: impl Into<Padding>) -> Self {
         self.inner.padding = padding.into();
         self
     }
 
-    pub fn spacing(mut self, spacing: u16) -> Self {
+    #[must_use]
+    pub const fn spacing(mut self, spacing: u16) -> Self {
         self.inner.col_spacing = spacing;
         self.inner.row_spacing = spacing;
         self
     }
 
-    pub fn column_spacing(mut self, spacing: u16) -> Self {
+    #[must_use]
+    pub const fn column_spacing(mut self, spacing: u16) -> Self {
         self.inner.col_spacing = spacing;
         self
     }
 
-    pub fn row_spacing(mut self, spacing: u16) -> Self {
+    #[must_use]
+    pub const fn row_spacing(mut self, spacing: u16) -> Self {
         self.inner.row_spacing = spacing;
         self
     }
 
+    #[must_use]
     pub fn width(mut self, width: impl Into<Length>) -> Self {
         self.inner.width = width.into();
         self
     }
 
+    #[must_use]
     pub fn height(mut self, height: impl Into<Length>) -> Self {
         self.inner.height = height.into();
         self
     }
 
+    #[must_use]
     pub fn scrollable(mut self, id: Id) -> Self {
         self.scrollable_id = Some(id);
         self
     }
 
     /// Callback when focus changes (hover or keyboard nav)
+    #[must_use]
     pub fn on_focus<F>(mut self, f: F) -> Self
     where
         F: Fn(usize) -> M + 'a,
@@ -184,6 +197,7 @@ impl<'a, M: Clone + 'static> ImageGrid<'a, M> {
     }
 
     /// Callback when item is activated (click or Enter)
+    #[must_use]
     pub fn on_activate<F>(mut self, f: F) -> Self
     where
         F: Fn(usize) -> M + 'a,
@@ -193,6 +207,7 @@ impl<'a, M: Clone + 'static> ImageGrid<'a, M> {
     }
 
     /// Callback when scroll is needed (for external scrollable container)
+    #[must_use]
     pub fn on_scroll_request<F>(mut self, f: F) -> Self
     where
         F: Fn(ScrollRequest) -> M + 'a,
@@ -222,6 +237,7 @@ impl<'a, M: Clone + 'static> ImageGrid<'a, M> {
 }
 
 /// Convience function
+#[must_use]
 pub fn image_grid<M: Clone + 'static>(items: Vec<GridItem>) -> ImageGrid<'static, M> {
     ImageGrid::new(items)
 }
@@ -246,14 +262,16 @@ struct ImageGridInner<'a, M> {
     keyboard_nav_enabled: bool,
 }
 
-impl<'a, M> ImageGridInner<'a, M> {
+impl<M> ImageGridInner<'_, M> {
+    // reason: thumbnail_size is a small pixel dimension; u32->f32 is exact in practice.
+    #[allow(clippy::cast_precision_loss)]
     fn grid_config(&self) -> core::GridConfig {
         let item_size = self.thumbnail_size as f32;
-        let button_padding = self.col_spacing as f32;
+        let button_padding = f32::from(self.col_spacing);
         core::GridConfig {
-            item_width: item_size + (button_padding * 2.0),
-            column_spacing: self.col_spacing as f32,
-            row_spacing: self.row_spacing as f32,
+            item_width: button_padding.mul_add(2.0, item_size),
+            column_spacing: f32::from(self.col_spacing),
+            row_spacing: f32::from(self.row_spacing),
             min_cols: 1,
             max_cols: None,
             padding: self.padding,
@@ -309,7 +327,7 @@ impl<'a, M> ImageGridInner<'a, M> {
     }
 }
 
-impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInner<'a, M> {
+impl<M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInner<'_, M> {
     fn children(&self) -> Vec<Tree> {
         // No child widgets - thumbnails are rendered directly
         Vec::new()
@@ -323,6 +341,8 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
         Size::new(self.width, self.height)
     }
 
+    // reason: row count -> f32 for total pixel height; precision loss only at astronomical counts.
+    #[allow(clippy::cast_precision_loss)]
     fn layout(&mut self, _tree: &mut Tree, _renderer: &Renderer, limits: &Limits) -> Node {
         if self.items.is_empty() {
             return Node::new(Size::ZERO);
@@ -334,8 +354,7 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
 
         let metrics = self.grid_metrics(avail_width);
 
-        let total_height = (metrics.rows as f32 * metrics.row_height)
-            + ((metrics.rows.saturating_sub(1)) as f32 * self.row_spacing as f32)
+        let total_height = ((metrics.rows.saturating_sub(1)) as f32).mul_add(f32::from(self.row_spacing), metrics.rows as f32 * metrics.row_height)
             + self.padding.y();
 
         self.cached_cols.set(metrics.cols);
@@ -347,6 +366,8 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
         Node::new(limits.resolve(self.width, self.height, content_size))
     }
 
+    // reason: thumbnail dimensions and row/col indices -> f32 are exact pixel-layout conversions.
+    #[allow(clippy::cast_precision_loss, clippy::too_many_lines)]
     fn draw(
         &self,
         _tree: &Tree,
@@ -366,8 +387,8 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
         }
 
         let item_size = self.thumbnail_size as f32;
-        let button_padding = self.col_spacing as f32;
-        let cell_size = item_size + (button_padding * 2.0);
+        let button_padding = f32::from(self.col_spacing);
+        let cell_size = button_padding.mul_add(2.0, item_size);
 
         let cosmic_theme = theme.cosmic();
 
@@ -388,10 +409,10 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
             let col = idx % cols;
 
             let x =
-                bounds.x + self.padding.left + (col as f32 * (cell_size + self.col_spacing as f32));
+                (col as f32).mul_add(cell_size + f32::from(self.col_spacing), bounds.x + self.padding.left);
 
             let y =
-                bounds.y + self.padding.top + (row as f32 * (row_height + self.row_spacing as f32));
+                (row as f32).mul_add(row_height + f32::from(self.row_spacing), bounds.y + self.padding.top);
 
             let cell_bounds = Rectangle::new(Point::new(x, y), Size::new(cell_size, cell_size));
 
@@ -408,7 +429,7 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                             width: 0.0,
                             color: Color::TRANSPARENT,
                         },
-                        shadow: Default::default(),
+                        shadow: Shadow::default(),
                         snap: true,
                     },
                     Color::from_rgba(1.0, 1.0, 1.0, 0.1),
@@ -457,7 +478,7 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                             radius: radius.into(),
                             ..Default::default()
                         },
-                        shadow: Default::default(),
+                        shadow: Shadow::default(),
                         snap: true,
                     },
                     Color::from_rgba(0.5, 0.5, 0.5, 0.3),
@@ -481,7 +502,7 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                                 width: 2.0,
                                 color: accent,
                             },
-                            shadow: Default::default(),
+                            shadow: Shadow::default(),
                             snap: true,
                         },
                         Color::TRANSPARENT,
@@ -504,7 +525,7 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                                 width: 1.0,
                                 color: accent,
                             },
-                            shadow: Default::default(),
+                            shadow: Shadow::default(),
                             snap: true,
                         },
                         bg,
@@ -539,6 +560,8 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
         }
     }
 
+    // reason: focused row index -> f32 for scroll-offset pixel math; precision loss is negligible.
+    #[allow(clippy::cast_precision_loss)]
     fn update(
         &mut self,
         _tree: &mut Tree,
@@ -553,7 +576,6 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
         let bounds = layout.bounds();
 
         match event {
-            Event::Mouse(mouse::Event::CursorMoved { .. }) => {}
             Event::Mouse(mouse::Event::ButtonPressed(Button::Left)) => {
                 if let Some(pos) = cursor.position()
                     && bounds.contains(pos)
@@ -610,9 +632,9 @@ impl<'a, M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInn
                     if let Some(ref on_scroll_request) = self.on_scroll_request {
                         let row_height = self.cached_row_height.get();
                         let row = new_idx / cols;
-                        let row_spacing = self.row_spacing as f32;
+                        let row_spacing = f32::from(self.row_spacing);
 
-                        let item_top = self.padding.top + (row as f32 * (row_height + row_spacing));
+                        let item_top = (row as f32).mul_add(row_height + row_spacing, self.padding.top);
                         let item_bottom = item_top + row_height;
 
                         let scroll_offset = viewport.y - bounds.y;

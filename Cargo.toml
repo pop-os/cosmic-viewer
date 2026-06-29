@@ -9,6 +9,10 @@ description = "Image viewer for the COSMIC DE"
 edition = "2024"
 authors = ["Bryan Hyland <bryan.hyland32@gmail.com"]
 
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+
 [workspace.dependencies]
 fast_image_resize = { version = "6.0.0", features = ["image"] }
 image = { version = "0.25.9", features = ["png", "jpeg", "gif", "webp", "bmp", "tiff", "ico", "avif"] }

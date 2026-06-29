@@ -5,7 +5,7 @@ use crate::ToolOperation;
 use cosmic::{
     Renderer,
     iced::{Color, Point, Size, mouse},
-    iced_widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
+    iced::widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
 };
 use image::DynamicImage;
 
@@ -17,7 +17,8 @@ pub struct PencilPreview {
 }
 
 impl PencilPreview {
-    pub fn new(color: Color, width: f32) -> Self {
+    #[must_use]
+    pub const fn new(color: Color, width: f32) -> Self {
         Self {
             points: Vec::new(),
             color,
@@ -27,7 +28,7 @@ impl PencilPreview {
 }
 
 impl ToolOperation for PencilPreview {
-    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, _scale: f32) {
         if self.points.len() < 2 {
             return;
         }
@@ -46,7 +47,7 @@ impl ToolOperation for PencilPreview {
             &path,
             Stroke::default()
                 .with_color(pencil_color)
-                .with_width(self.width / scale)
+                .with_width(self.width)
                 .with_line_cap(LineCap::Butt),
         );
     }
@@ -80,7 +81,7 @@ impl ToolOperation for PencilPreview {
     }
 
     fn on_drag(&mut self, point: Point, _image_size: Size) {
-        self.points.push(point)
+        self.points.push(point);
     }
 
     fn on_release(&mut self, _point: Point, _image_size: Size) {}

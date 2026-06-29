@@ -96,10 +96,21 @@ fn build_file_menu(recent_folders: &[String]) -> Vec<menu::Item<MenuAction, Stri
     items
 }
 
-fn build_edit_menu() -> Vec<menu::Item<MenuAction, String>> {
+fn build_edit_menu(can_undo: bool, can_redo: bool) -> Vec<menu::Item<MenuAction, String>> {
+    let undo_item = if can_undo {
+        menu::Item::Button(fl!("menu-undo"), None, MenuAction::Undo)
+    } else {
+        menu::Item::ButtonDisabled(fl!("menu-undo"), None, MenuAction::Undo)
+    };
+    let redo_item = if can_redo {
+        menu::Item::Button(fl!("menu-redo"), None, MenuAction::Redo)
+    } else {
+        menu::Item::ButtonDisabled(fl!("menu-redo"), None, MenuAction::Redo)
+    };
+
     vec![
-        menu::Item::Button(fl!("menu-undo"), None, MenuAction::Undo),
-        menu::Item::Button(fl!("menu-redo"), None, MenuAction::Redo),
+        undo_item,
+        redo_item,
         menu::Item::Button(fl!("menu-revert-all"), None, MenuAction::RevertAll),
         menu::Item::Divider,
         menu::Item::Button(fl!("menu-cut"), None, MenuAction::Cut),
@@ -127,13 +138,18 @@ fn build_view_menu() -> Vec<menu::Item<MenuAction, String>> {
     ]
 }
 
+// reason: cosmic's `into_element` requires the default-hasher HashMap, so this
+// signature cannot be generalized over the BuildHasher.
+#[allow(clippy::implicit_hasher)]
 pub fn menu_bar<'a>(
     core: &Core,
     key_binds: &HashMap<KeyBind, MenuAction>,
     recent_folders: &[String],
+    can_undo: bool,
+    can_redo: bool,
 ) -> Element<'a, ViewerMessage> {
     let file_menu = build_file_menu(recent_folders);
-    let edit_menu = build_edit_menu();
+    let edit_menu = build_edit_menu(can_undo, can_redo);
     let view_menu = build_view_menu();
 
     responsive_menu_bar()

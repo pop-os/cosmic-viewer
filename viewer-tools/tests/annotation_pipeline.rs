@@ -14,7 +14,7 @@ fn pixel_sum(img: &DynamicImage) -> u64 {
     img.as_rgba8()
         .unwrap()
         .pixels()
-        .map(|p| p.0.iter().map(|&b| b as u64).sum::<u64>())
+        .map(|p| p.0.iter().map(|&b| u64::from(b)).sum::<u64>())
         .sum()
 }
 

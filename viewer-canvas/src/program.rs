@@ -7,13 +7,13 @@ use cosmic::{
         Rectangle, Size, Vector,
         mouse::{self, Button, Cursor, Event as MouseEvent},
     },
-    iced_core::image::Renderer as IcedRenderer,
-    iced_widget::canvas::{Action, Event, Frame, Geometry, Program},
+    iced::advanced::image::Renderer as IcedRenderer,
+    iced::widget::canvas::{Action, Event, Frame, Geometry, Program},
     widget::canvas::Cache,
 };
 use viewer_tools::ToolOperation;
 
-/// Per-frame view of the canvas state, built by ViewportManger.
+/// Per-frame view of the canvas state, built by `ViewportManger`.
 pub struct ViewerCanvas<'a> {
     pub image: Option<&'a CanvasImage>,
     pub cache: &'a Cache,
@@ -25,7 +25,7 @@ pub struct ViewerCanvas<'a> {
     pub overlay_only: bool,
 }
 
-impl<'a> Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'a> {
+impl Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'_> {
     type State = Interaction;
 
     fn update(
@@ -73,6 +73,8 @@ impl<'a> Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'a> {
         }
     }
 
+    // reason: image dimensions are pixel counts used for rendering geometry; f32 precision is ample.
+    #[allow(clippy::cast_precision_loss)]
     fn draw(
         &self,
         _state: &Interaction,
@@ -90,7 +92,27 @@ impl<'a> Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'a> {
 
             let _ = renderer.load_image(&image.handle);
 
-            if !self.overlay_only {
+            if self.overlay_only {
+                // Overlay layer
+                let center = frame.center();
+                frame.translate(Vector::new(center.x, center.y));
+                frame.translate(self.pan);
+                frame.scale(self.zoom * fit_scale);
+                frame.translate(Vector::new(
+                    -(image.width as f32) / 2.0,
+                    -(image.height as f32) / 2.0,
+                ));
+
+                let effective_scale = self.zoom * fit_scale;
+
+                for op in self.operations {
+                    op.draw(&mut frame, image_size, effective_scale);
+                }
+
+                if let Some(preview) = self.preview {
+                    preview.draw(&mut frame, image_size, effective_scale);
+                }
+            } else {
                 // Image layer
                 let clip_region = Rectangle {
                     x: 0.0,
@@ -114,26 +136,6 @@ impl<'a> Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'a> {
 
                     frame.draw_image(img_rect, &image.handle);
                 });
-            } else {
-                // Overlay layer
-                let center = frame.center();
-                frame.translate(Vector::new(center.x, center.y));
-                frame.translate(self.pan);
-                frame.scale(self.zoom * fit_scale);
-                frame.translate(Vector::new(
-                    -(image.width as f32) / 2.0,
-                    -(image.height as f32) / 2.0,
-                ));
-
-                let effective_scale = self.zoom * fit_scale;
-
-                for op in self.operations {
-                    op.draw(&mut frame, image_size, effective_scale);
-                }
-
-                if let Some(preview) = self.preview {
-                    preview.draw(&mut frame, image_size, effective_scale);
-                }
             }
         }
 

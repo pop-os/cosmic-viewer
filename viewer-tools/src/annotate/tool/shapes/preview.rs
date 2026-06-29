@@ -6,7 +6,7 @@ use crate::ToolOperation;
 use cosmic::{
     Renderer,
     iced::{Color, Point, Size, mouse},
-    iced_widget::canvas::Frame,
+    iced::widget::canvas::Frame,
 };
 use image::DynamicImage;
 
@@ -20,7 +20,8 @@ pub struct ShapePreview {
 }
 
 impl ShapePreview {
-    pub fn new(kind: ShapeKind, color: Color, width: f32) -> Self {
+    #[must_use]
+    pub const fn new(kind: ShapeKind, color: Color, width: f32) -> Self {
         Self {
             kind,
             start: None,

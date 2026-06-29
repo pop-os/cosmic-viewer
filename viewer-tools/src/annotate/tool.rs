@@ -22,22 +22,25 @@ pub enum AnnotateTool {
 
 impl AnnotateTool {
     /// Presets shown in each dropdown group.
-    pub fn draw_tools() -> &'static [AnnotateTool] {
-        &[AnnotateTool::Pen]
+    #[must_use]
+    pub const fn draw_tools() -> &'static [Self] {
+        &[Self::Pen]
     }
 
-    pub fn shape_tools() -> &'static [AnnotateTool] {
+    #[must_use]
+    pub const fn shape_tools() -> &'static [Self] {
         &[
-            AnnotateTool::Rectangle,
-            AnnotateTool::Ellipse,
-            AnnotateTool::Arrow,
-            AnnotateTool::Line,
-            AnnotateTool::Star,
-            AnnotateTool::Polygon,
+            Self::Rectangle,
+            Self::Ellipse,
+            Self::Arrow,
+            Self::Line,
+            Self::Star,
+            Self::Polygon,
         ]
     }
 
-    pub fn icon_name(&self) -> &'static str {
+    #[must_use]
+    pub const fn icon_name(&self) -> &'static str {
         match self {
             Self::Pen => "insert-drawing-symbolic",
             Self::Highlighter => "text-highlight-symbolic",

@@ -8,7 +8,26 @@ pub fn build_path(f: impl FnOnce(&mut PathBuilder)) -> Option<Path> {
     path_builder.finish()
 }
 
+// Quantize a 0.0..=1.0 color component to an 8-bit channel. Rounds to nearest
+// and clamps so out-of-gamut inputs cannot wrap. `as u8` on a float already
+// saturates, but truncates instead of rounding, hence the explicit round.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // reason: value clamped to 0.0..=255.0 then rounded, in-range for u8
+fn channel_u8(component: f32) -> u8 {
+    (component * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
+// Quantize an already-scaled 0.0..=255.0 intensity to an 8-bit channel.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // reason: value clamped to 0.0..=255.0 then rounded, in-range for u8
+const fn intensity_u8(value: f32) -> u8 {
+    value.round().clamp(0.0, 255.0) as u8
+}
+
 /// Stroke a path onto a `DynamicImage` with the given color, width, and line cap.
+///
+/// # Panics
+///
+/// Panics if `image` is not RGBA, or if its dimensions cannot back a pixmap
+/// (zero-sized or larger than tiny-skia supports).
 pub fn stroke_on_image(
     image: &mut DynamicImage,
     path: &Path,
@@ -24,10 +43,10 @@ pub fn stroke_on_image(
         Pixmap::new(img_width, img_height).expect("image dimensions should produce a valid pixmap");
     let mut paint = Paint::default();
     paint.set_color_rgba8(
-        (color.r * 255.0) as u8,
-        (color.g * 255.0) as u8,
-        (color.b * 255.0) as u8,
-        (color.a * 255.0) as u8,
+        channel_u8(color.r),
+        channel_u8(color.g),
+        channel_u8(color.b),
+        channel_u8(color.a),
     );
 
     let stroke = Stroke {
@@ -44,6 +63,11 @@ pub fn stroke_on_image(
 }
 
 /// Fill a path onto a `DynamicImage` with the given color.
+///
+/// # Panics
+///
+/// Panics if `image` is not RGBA, or if its dimensions cannot back a pixmap
+/// (zero-sized or larger than tiny-skia supports).
 pub fn fill_on_image(image: &mut DynamicImage, path: &Path, color: Color) {
     let rgba = image.as_mut_rgba8().expect("image should be RGBA");
     let (img_width, img_height) = (rgba.width(), rgba.height());
@@ -52,10 +76,10 @@ pub fn fill_on_image(image: &mut DynamicImage, path: &Path, color: Color) {
         Pixmap::new(img_width, img_height).expect("image dimensions should produce a valid pixmap");
     let mut paint = Paint::default();
     paint.set_color_rgba8(
-        (color.r * 255.0) as u8,
-        (color.g * 255.0) as u8,
-        (color.b * 255.0) as u8,
-        (color.a * 255.0) as u8,
+        channel_u8(color.r),
+        channel_u8(color.g),
+        channel_u8(color.b),
+        channel_u8(color.a),
     );
 
     overlay.fill_path(path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
@@ -70,35 +94,35 @@ fn blend_overlay(dst: &mut RgbaImage, overlay: &Pixmap) {
         .chunks_exact_mut(4)
         .zip(overlay_data.chunks_exact(4))
     {
-        let src_alpha = src_chunk[3] as f32 / 255.0;
+        let src_alpha = f32::from(src_chunk[3]) / 255.0;
         if src_alpha == 0.0 {
             continue;
         }
 
         // Un-premultiply the overlay
-        let src_red = src_chunk[0] as f32 / src_alpha;
-        let src_green = src_chunk[1] as f32 / src_alpha;
-        let src_blue = src_chunk[2] as f32 / src_alpha;
+        let src_red = f32::from(src_chunk[0]) / src_alpha;
+        let src_green = f32::from(src_chunk[1]) / src_alpha;
+        let src_blue = f32::from(src_chunk[2]) / src_alpha;
 
-        let dst_alpha = dst_pixel[3] as f32 / 255.0;
-        let dst_red = dst_pixel[0] as f32;
-        let dst_green = dst_pixel[1] as f32;
-        let dst_blue = dst_pixel[2] as f32;
+        let dst_alpha = f32::from(dst_pixel[3]) / 255.0;
+        let dst_red = f32::from(dst_pixel[0]);
+        let dst_green = f32::from(dst_pixel[1]);
+        let dst_blue = f32::from(dst_pixel[2]);
 
         // Source-over compositing
         let out_alpha = src_alpha + dst_alpha * (1.0 - src_alpha);
 
         if out_alpha > 0.0 {
-            dst_pixel[0] = ((src_red * src_alpha + dst_red * dst_alpha * (1.0 - src_alpha))
-                / out_alpha)
-                .min(255.0) as u8;
-            dst_pixel[1] = ((src_green * src_alpha + dst_green * dst_alpha * (1.0 - src_alpha))
-                / out_alpha)
-                .min(255.0) as u8;
-            dst_pixel[2] = ((src_blue * src_alpha + dst_blue * dst_alpha * (1.0 - src_alpha))
-                / out_alpha)
-                .min(255.0) as u8;
-            dst_pixel[3] = (out_alpha * 255.0).min(255.0) as u8;
+            dst_pixel[0] = intensity_u8(
+                (dst_red * dst_alpha).mul_add(1.0 - src_alpha, src_red * src_alpha) / out_alpha,
+            );
+            dst_pixel[1] = intensity_u8(
+                (dst_green * dst_alpha).mul_add(1.0 - src_alpha, src_green * src_alpha) / out_alpha,
+            );
+            dst_pixel[2] = intensity_u8(
+                (dst_blue * dst_alpha).mul_add(1.0 - src_alpha, src_blue * src_alpha) / out_alpha,
+            );
+            dst_pixel[3] = intensity_u8(out_alpha * 255.0);
         }
     }
 }
