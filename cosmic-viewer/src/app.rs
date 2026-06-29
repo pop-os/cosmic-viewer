@@ -6,23 +6,22 @@ use crate::{
     watcher::WatcherEvent,
 };
 use cosmic::{
-    Action, Application, ApplicationExt, Core, Element, Task,
+    Action, Application, ApplicationExt, Core, Element, Task, Theme,
     app::context_drawer,
     cosmic_config::CosmicConfigEntry,
     dialog::file_chooser::{self, FileFilter},
     iced::{
-        self, Alignment, Background, Color, Length, Point, Rectangle, Size, Subscription, Vector,
+        self, Alignment, Background, Border, Color, Length, Point, Rectangle, Size, Subscription,
+        Vector,
+        advanced::graphics::text::{cosmic_text, font_system},
         alignment::Horizontal,
         clipboard, event, font,
         keyboard::key::{Key, Named},
-    },
-    iced::Border,
-    iced::advanced::graphics::text::cosmic_text,
-    iced::advanced::graphics::text::font_system,
-    iced::widget::{
-        grid,
-        scrollable::{AbsoluteOffset, scroll_to},
-        sensor, stack,
+        widget::{
+            grid,
+            scrollable::{AbsoluteOffset, scroll_to},
+            sensor, stack,
+        },
     },
     task::future,
     theme::{self, Button},
@@ -745,11 +744,8 @@ impl CosmicViewer {
                     fl!("text-tool"),
                     ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Text)),
                 )
-                .class(if self.annotate_tool == AnnotateTool::Text {
-                    theme::Button::Suggested
-                } else {
-                    theme::Button::Icon
-                }),
+                .selected(self.annotate_tool == AnnotateTool::Text)
+                .class(tool_toggle_class(self.annotate_tool == AnnotateTool::Text)),
             ))
             .start(ToolbarItem::new(
                 icon_btn(
@@ -757,11 +753,10 @@ impl CosmicViewer {
                     fl!("drawing-pen"),
                     ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::draw_tools()[0])),
                 )
-                .class(if self.annotate_tool == AnnotateTool::draw_tools()[0] {
-                    theme::Button::Suggested
-                } else {
-                    theme::Button::Icon
-                }),
+                .selected(self.annotate_tool == AnnotateTool::draw_tools()[0])
+                .class(tool_toggle_class(
+                    self.annotate_tool == AnnotateTool::draw_tools()[0],
+                )),
             ))
             .start(ToolbarItem::new(
                 icon_btn(
@@ -769,11 +764,10 @@ impl CosmicViewer {
                     fl!("drawing-highlighter"),
                     ViewerMessage::Edit(EditMessage::AnnotateTool(AnnotateTool::Highlighter)),
                 )
-                .class(if self.annotate_tool == AnnotateTool::Highlighter {
-                    theme::Button::Suggested
-                } else {
-                    theme::Button::Icon
-                }),
+                .selected(self.annotate_tool == AnnotateTool::Highlighter)
+                .class(tool_toggle_class(
+                    self.annotate_tool == AnnotateTool::Highlighter,
+                )),
             ))
             .start(ToolbarItem::new(self.build_shape_selector()).width_hint(120.0))
             .start(ToolbarItem::new({
@@ -782,7 +776,7 @@ impl CosmicViewer {
                 let mut btn = button::icon(icon::from_name("object-move-symbolic"))
                     .tooltip(fl!("toolbar-move"));
                 if self.move_mode {
-                    btn = btn.class(theme::Button::Suggested);
+                    btn = btn.class(tool_toggle_class(self.move_mode));
                 }
                 let el: Element<'_, ViewerMessage> = btn
                     .on_press_maybe(
@@ -966,11 +960,10 @@ impl CosmicViewer {
                 .align_y(Alignment::Center)
                 .spacing(2),
         )
-        .class(if self.annotate_tool.icon_name() == current_icon {
-            theme::Button::Suggested
-        } else {
-            theme::Button::Icon
-        })
+        .selected(self.annotate_tool.icon_name() == current_icon)
+        .class(tool_toggle_class(
+            self.annotate_tool.icon_name() == current_icon,
+        ))
         .on_press(ViewerMessage::Edit(EditMessage::ShapePopupToggle));
 
         let mut pop = popover(trigger);
@@ -1067,61 +1060,43 @@ impl CosmicViewer {
             let style_row = Row::new()
                 .push(
                     button::icon(icon::from_name("format-text-bold-symbolic"))
-                        .class(if self.text_bold {
-                            Button::Suggested
-                        } else {
-                            Button::Icon
-                        })
+                        .selected(self.text_bold)
+                        .class(tool_toggle_class(self.text_bold))
                         .on_press(ViewerMessage::Edit(EditMessage::TextBold)),
                 )
                 .push(
                     button::icon(icon::from_name("format-text-italic-symbolic"))
-                        .class(if self.text_italic {
-                            Button::Suggested
-                        } else {
-                            Button::Icon
-                        })
+                        .selected(self.text_italic)
+                        .class(tool_toggle_class(self.text_italic))
                         .on_press(ViewerMessage::Edit(EditMessage::TextItalic)),
                 )
                 .push(
                     button::icon(icon::from_name("format-text-underline-symbolic"))
-                        .class(if self.text_underline {
-                            Button::Suggested
-                        } else {
-                            Button::Icon
-                        })
+                        .selected(self.text_underline)
+                        .class(tool_toggle_class(self.text_underline))
                         .on_press(ViewerMessage::Edit(EditMessage::TextUnderline)),
                 )
                 .push(Space::new().width(8))
                 .push(
                     button::icon(icon::from_name("format-justify-left-symbolic"))
-                        .class(if self.text_alignment == Horizontal::Left {
-                            Button::Suggested
-                        } else {
-                            Button::Icon
-                        })
+                        .selected(self.text_alignment == Horizontal::Left)
+                        .class(tool_toggle_class(self.text_alignment == Horizontal::Left))
                         .on_press(ViewerMessage::Edit(EditMessage::TextAlignment(
                             Horizontal::Left,
                         ))),
                 )
                 .push(
                     button::icon(icon::from_name("format-justify-center-symbolic"))
-                        .class(if self.text_alignment == Horizontal::Center {
-                            Button::Suggested
-                        } else {
-                            Button::Icon
-                        })
+                        .selected(self.text_alignment == Horizontal::Center)
+                        .class(tool_toggle_class(self.text_alignment == Horizontal::Center))
                         .on_press(ViewerMessage::Edit(EditMessage::TextAlignment(
                             Horizontal::Center,
                         ))),
                 )
                 .push(
                     button::icon(icon::from_name("format-justify-right-symbolic"))
-                        .class(if self.text_alignment == Horizontal::Right {
-                            Button::Suggested
-                        } else {
-                            Button::Icon
-                        })
+                        .selected(self.text_alignment == Horizontal::Right)
+                        .class(tool_toggle_class(self.text_alignment == Horizontal::Right))
                         .on_press(ViewerMessage::Edit(EditMessage::TextAlignment(
                             Horizontal::Right,
                         ))),
@@ -1415,8 +1390,9 @@ impl Application for CosmicViewer {
 
         let nav_width = if self.is_narrow() {
             // Narrow mode: overlay the view, filling window width minus a space_xxs gutter.
-            self.window_width
-                .map_or(Length::Fill, |w| Length::Fixed((w - space_xxs).max(panel_width)))
+            self.window_width.map_or(Length::Fill, |w| {
+                Length::Fixed((w - space_xxs).max(panel_width))
+            })
         } else {
             Length::Fixed(panel_width)
         };
@@ -2993,9 +2969,7 @@ impl Application for CosmicViewer {
                                 text.color = color.0;
                                 if text.has_selection() {
                                     let c = color.0;
-                                    text.apply_attr_to_selection(|a| {
-                                        a.color(text_color_rgba(c))
-                                    });
+                                    text.apply_attr_to_selection(|a| a.color(text_color_rgba(c)));
                                 }
                             }
                         }
@@ -3035,7 +3009,8 @@ impl Application for CosmicViewer {
                                 (bounds.width / size.width).min(bounds.height / size.height);
 
                             // default (unzoomed, un-panned) view: zoom is set to exactly 1.0 on reset.
-                            let region = if (zoom - 1.0).abs() < f32::EPSILON && pan == Vector::ZERO {
+                            let region = if (zoom - 1.0).abs() < f32::EPSILON && pan == Vector::ZERO
+                            {
                                 fit_region
                             } else {
                                 let cx = size.width / 2.0;
@@ -3335,7 +3310,9 @@ impl Application for CosmicViewer {
                             && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
                         {
                             if text.has_selection() {
-                                text.apply_attr_to_selection(|a| a.family(cosmic_text::Family::Name(fam)));
+                                text.apply_attr_to_selection(|a| {
+                                    a.family(cosmic_text::Family::Name(fam))
+                                });
                             }
                             text.font_family = fam;
                         }
@@ -3437,8 +3414,9 @@ impl Application for CosmicViewer {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        let watcher_sub = crate::watcher::watch_directory(self.nav.dir().map(std::path::Path::to_path_buf))
-            .map(ViewerMessage::WatcherEvent);
+        let watcher_sub =
+            crate::watcher::watch_directory(self.nav.dir().map(std::path::Path::to_path_buf))
+                .map(ViewerMessage::WatcherEvent);
 
         Subscription::batch([
             event::listen_with(|event, _status, _id| match event {
@@ -3578,8 +3556,7 @@ fn load_font_families() -> Vec<&'static str> {
 // Wallpaper functions
 
 fn is_cosmic_desktop() -> bool {
-    std::env::var("XDG_CURRENT_DESKTOP")
-        .is_ok_and(|d| d.to_uppercase().contains("COSMIC"))
+    std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.to_uppercase().contains("COSMIC"))
 }
 
 fn get_cosmic_outputs() -> Vec<String> {
@@ -3638,10 +3615,7 @@ fn set_wallpaper_portable(path: &std::path::Path) -> Result<(), String> {
     .map_err(|e| format!("Failed to set wallpaper: {e}"))
 }
 
-fn set_wallpaper_cosmic_on(
-    path: &std::path::Path,
-    output: Option<&str>,
-) -> Result<(), String> {
+fn set_wallpaper_cosmic_on(path: &std::path::Path, output: Option<&str>) -> Result<(), String> {
     let config_dir = dirs::config_dir()
         .ok_or("Could not find config directory")?
         .join("cosmic/com.system76.CosmicBackground/v1");
@@ -3833,4 +3807,54 @@ fn update_source_in_config(existing: &str, new_path: &str) -> String {
     }
 
     result
+}
+
+/// Override the base Icon appearance with the COSMIC selected-icon-button look when selected:
+/// @selected_color backgournd + @accent_text_color glyph/label. Non-selected = untouched Icon style.
+fn apply_selected(mut base: button::Style, selected: bool, t: &Theme) -> button::Style {
+    if selected {
+        let cosmic = t.cosmic();
+        base.background = Some(Background::Color(
+            cosmic.icon_button.selected_state_color().into(),
+        ));
+        base.icon_color = Some(cosmic.accent_text_color().into());
+        base.text_color = Some(cosmic.accent_text_color().into());
+    }
+
+    base
+}
+
+/// Class for a toggle icon button. Delegates to the base Button::Icon Catalog for each state
+/// so hover/press/focus behave normally and layers the selected look on top.
+fn tool_toggle_class(selected: bool) -> theme::Button {
+    theme::Button::Custom {
+        active: Box::new(move |f, t| {
+            apply_selected(
+                button::Catalog::active(t, f, selected, &theme::Button::Icon),
+                selected,
+                t,
+            )
+        }),
+        hovered: Box::new(move |f, t| {
+            apply_selected(
+                button::Catalog::hovered(t, f, selected, &theme::Button::Icon),
+                selected,
+                t,
+            )
+        }),
+        pressed: Box::new(move |f, t| {
+            apply_selected(
+                button::Catalog::pressed(t, f, selected, &theme::Button::Icon),
+                selected,
+                t,
+            )
+        }),
+        disabled: Box::new(move |t| {
+            apply_selected(
+                button::Catalog::disabled(t, &theme::Button::Icon),
+                selected,
+                t,
+            )
+        }),
+    }
 }
