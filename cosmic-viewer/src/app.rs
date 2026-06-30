@@ -2461,15 +2461,6 @@ impl Application for CosmicViewer {
             ViewerMessage::Canvas(msg) => match msg {
                 CanvasMessage::ContextMenu(point) => {
                     self.context_menu_position = point;
-                    if self.color_picker.get_is_active() {
-                        if let Some(color) = self.color_picker.get_applied_color() {
-                            self.annotate_color = AnnotateColor(color);
-                            self.save_last_color();
-                        }
-                        _ = self.color_picker.update::<ViewerMessage>(
-                            cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
-                        );
-                    }
                 }
                 CanvasMessage::ZoomIn => {
                     let bounds = self.viewport.last_bounds().get();

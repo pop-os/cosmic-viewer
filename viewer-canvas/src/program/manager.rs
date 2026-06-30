@@ -2,16 +2,16 @@ use super::ViewerCanvas;
 use crate::{CanvasImage, CanvasMessage, state::ToolKind};
 use cosmic::{
     Element, Theme,
+    iced::advanced::{
+        Clipboard, Layout, Renderer as CoreRenderer, Shell,
+        layout::Node,
+        widget::{Tree, tree},
+    },
     iced::{
         Event, Length, Limits, Point, Rectangle, Renderer, Size, Vector,
         advanced::renderer as iced_renderer,
         mouse::{self, Button, Cursor, Event as MouseEvent},
         overlay,
-    },
-    iced::advanced::{
-        Clipboard, Layout, Renderer as CoreRenderer, Shell,
-        layout::Node,
-        widget::{Tree, tree},
     },
     widget::{self, Operation, Widget, canvas::Cache, image::Handle},
 };
@@ -485,7 +485,10 @@ impl Viewport<'_> {
 
         // Release crop pan even if cursor left the canvas
         if mgr.crop_pan.get().is_some()
-            && matches!(event, Event::Mouse(MouseEvent::ButtonReleased(Button::Left)))
+            && matches!(
+                event,
+                Event::Mouse(MouseEvent::ButtonReleased(Button::Left))
+            )
         {
             mgr.crop_pan.set(None);
             shell.capture_event();
@@ -508,29 +511,16 @@ impl Viewport<'_> {
 
         match mouse_event {
             MouseEvent::ButtonPressed(Button::Left) => {
-                if let Some(pt) = mgr.screen_to_image_fit(position, bounds)
-                    && let Some(preview) = mgr.preview_ref()
-                {
-                    let on_handle = preview.cursor_at(pt) != mouse::Interaction::Crosshair;
-                    if on_handle {
-                        mgr.crop_pan.set(None);
-                        shell.publish(CanvasMessage::ToolStart(pt));
-                        shell.capture_event();
-                        return true;
-                    }
-                    if preview.hit_test(pt) {
-                        mgr.crop_pan.set(Some((position, mgr.pan)));
-                        shell.capture_event();
-                        return true;
-                    }
-                    // Outside region in Custom -- start new selection.
-                    // Anchor in image-fit space (matches the on-handle ToolStart and all
-                    // ToolDrags); publishing raw `position` here mismatched coordinate spaces
-                    // and made a new selection jump on the first drag.
+                if let Some(pt) = mgr.screen_to_image(position, bounds) {
                     shell.publish(CanvasMessage::ToolStart(pt));
                     shell.capture_event();
                     return true;
                 }
+
+                // Press outside the image, the dead area, dismisses the popover
+                shell.publish(CanvasMessage::ContextMenu(None));
+                shell.capture_event();
+                return true;
             }
             MouseEvent::CursorMoved { .. } => {
                 if mgr.tool_dragging
@@ -656,7 +646,10 @@ impl Widget<CanvasMessage, Theme, Renderer> for Viewport<'_> {
                 renderer,
                 theme,
                 style,
-                layout.children().next().expect("layout() always builds one child node"),
+                layout
+                    .children()
+                    .next()
+                    .expect("layout() always builds one child node"),
                 cursor,
                 viewport,
             );
@@ -674,7 +667,10 @@ impl Widget<CanvasMessage, Theme, Renderer> for Viewport<'_> {
                     renderer,
                     theme,
                     style,
-                    layout.children().next().expect("layout() always builds one child node"),
+                    layout
+                        .children()
+                        .next()
+                        .expect("layout() always builds one child node"),
                     cursor,
                     viewport,
                 );
@@ -690,7 +686,10 @@ impl Widget<CanvasMessage, Theme, Renderer> for Viewport<'_> {
                     renderer,
                     theme,
                     style,
-                    layout.children().next().expect("layout() always builds one child node"),
+                    layout
+                        .children()
+                        .next()
+                        .expect("layout() always builds one child node"),
                     cursor,
                     viewport,
                 );
@@ -727,7 +726,10 @@ impl Widget<CanvasMessage, Theme, Renderer> for Viewport<'_> {
         element.as_widget_mut().update(
             &mut tree.children[0],
             event,
-            layout.children().next().expect("layout() always builds one child node"),
+            layout
+                .children()
+                .next()
+                .expect("layout() always builds one child node"),
             cursor,
             renderer,
             clipboard,
@@ -764,7 +766,10 @@ impl Widget<CanvasMessage, Theme, Renderer> for Viewport<'_> {
         let element = self.canvas_element();
         element.as_widget().mouse_interaction(
             &tree.children[0],
-            layout.children().next().expect("layout() always builds one child node"),
+            layout
+                .children()
+                .next()
+                .expect("layout() always builds one child node"),
             cursor,
             viewport,
             renderer,
@@ -781,7 +786,10 @@ impl Widget<CanvasMessage, Theme, Renderer> for Viewport<'_> {
         let mut element = self.canvas_element();
         element.as_widget_mut().operate(
             &mut tree.children[0],
-            layout.children().next().expect("layout() always builds one child node"),
+            layout
+                .children()
+                .next()
+                .expect("layout() always builds one child node"),
             renderer,
             operation,
         );
