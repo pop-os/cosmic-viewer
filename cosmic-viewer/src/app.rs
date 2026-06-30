@@ -107,7 +107,6 @@ pub struct CosmicViewer {
     delete_dialog: Option<PathBuf>,
     available_outputs: Vec<String>,
     watcher_rescan_pending: bool,
-    nav_bar_user_pref: bool,
     was_narrow: bool,
     toasts: Toasts<ViewerMessage>,
 }
@@ -116,9 +115,11 @@ impl CosmicViewer {
     // reason: thumbnail dimension is a small pixel count, exact as f32.
     #[allow(clippy::cast_precision_loss)]
     fn is_narrow(&self) -> bool {
-        let nav_width = self.config.thumbnail_size.pixels() as f32 + 36.0;
-        let threshold = nav_width + 200.0;
-        self.window_width.is_some_and(|w| w < threshold)
+        // Tie "narrow" to libcosmic's own condensed breakpoint (the point it would hide the main
+        // content, ~360px content width). A separate, narrower threshold left a gap band where the
+        // framework hid the content but the app still drew the nav as a fixed column, so the main
+        // view vanished (#32).
+        self.core().is_condensed()
     }
 
     fn save_last_color(&mut self) {
@@ -1281,7 +1282,6 @@ impl Application for CosmicViewer {
             delete_dialog: None,
             available_outputs: Vec::new(),
             watcher_rescan_pending: false,
-            nav_bar_user_pref: true,
             was_narrow: false,
             toasts: Toasts::new(ViewerMessage::CloseToast),
         };
@@ -2220,14 +2220,11 @@ impl Application for CosmicViewer {
                 self.window_width = Some(size.width);
                 let narrow = self.is_narrow();
                 if narrow != self.was_narrow {
-                    if narrow {
-                        self.nav_bar_user_pref = self.core().nav_bar_active();
+                    // Entering the condensed band: auto-collapse the nav so the image keeps full
+                    // width. libcosmic restores the wide-mode nav preference (`toggled`) on the way
+                    // back out, so leaving narrow needs no action here.
+                    if narrow && self.core().nav_bar_active() {
                         self.core.nav_bar_toggle_condensed();
-                    } else if self.nav_bar_user_pref {
-                        // Only restore if user had it open — toggle back if condensed state is wrong
-                        if !self.core().nav_bar_active() {
-                            self.core.nav_bar_toggle_condensed();
-                        }
                     }
                     self.was_narrow = narrow;
                 }
