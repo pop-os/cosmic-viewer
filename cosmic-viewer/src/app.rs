@@ -432,7 +432,13 @@ impl CosmicViewer {
     // reason: zoom percent is rounded, non-negative, and well within u32 range.
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn build_default_toolbar(&self) -> Element<'_, ViewerMessage> {
-        let mode = ToolbarMode::from_width(self.window_width.expect("Window has width"));
+        // The toolbar measures its own fit and stacks only when the single row
+        // overflows; force stacking only when the window is truly condensed.
+        let mode = if self.core().is_condensed() {
+            ToolbarMode::Compact
+        } else {
+            ToolbarMode::Full
+        };
 
         let icon_btn = |name: &'static str,
                         tooltip: String,
@@ -485,20 +491,24 @@ impl CosmicViewer {
                 .priority(ItemPriority::Essential),
             )
             .center(
-                ToolbarItem::new(icon_btn(
-                    "zoom-out-symbolic",
-                    fl!("toolbar-zoom-out"),
-                    ViewerMessage::Canvas(CanvasMessage::ZoomOut),
-                ))
-                .priority(ItemPriority::Essential),
-            )
-            .center(ToolbarItem::new(text::body(zoom_pct)).priority(ItemPriority::Essential))
-            .center(
-                ToolbarItem::new(icon_btn(
-                    "zoom-in-symbolic",
-                    fl!("toolbar-zoom-in"),
-                    ViewerMessage::Canvas(CanvasMessage::ZoomIn),
-                ))
+                // Zoom out / percentage / zoom in stay together as one atom so
+                // the responsive toolbar never splits them across rows.
+                ToolbarItem::new(
+                    Row::new()
+                        .push(icon_btn(
+                            "zoom-out-symbolic",
+                            fl!("toolbar-zoom-out"),
+                            ViewerMessage::Canvas(CanvasMessage::ZoomOut),
+                        ))
+                        .push(text::body(zoom_pct))
+                        .push(icon_btn(
+                            "zoom-in-symbolic",
+                            fl!("toolbar-zoom-in"),
+                            ViewerMessage::Canvas(CanvasMessage::ZoomIn),
+                        ))
+                        .align_y(Alignment::Center)
+                        .spacing(cosmic::theme::active().cosmic().spacing.space_xxs),
+                )
                 .priority(ItemPriority::Essential),
             )
             .end(
@@ -604,7 +614,13 @@ impl CosmicViewer {
     }
 
     fn build_crop_toolbar(&self) -> Element<'_, ViewerMessage> {
-        let mode = ToolbarMode::from_width(self.window_width.expect("Window has width"));
+        // The toolbar measures its own fit and stacks only when the single row
+        // overflows; force stacking only when the window is truly condensed.
+        let mode = if self.core().is_condensed() {
+            ToolbarMode::Compact
+        } else {
+            ToolbarMode::Full
+        };
 
         let icon_btn = |name: &'static str,
                         tooltip: String,
@@ -657,20 +673,24 @@ impl CosmicViewer {
             ))
             .start(ToolbarItem::new(self.build_crop_ratio_selector()))
             .center(
-                ToolbarItem::new(icon_btn(
-                    "zoom-out-symbolic",
-                    fl!("toolbar-zoom-out"),
-                    ViewerMessage::Canvas(CanvasMessage::ZoomOut),
-                ))
-                .priority(ItemPriority::Essential),
-            )
-            .center(ToolbarItem::new(text::body(zoom_pct)).priority(ItemPriority::Essential))
-            .center(
-                ToolbarItem::new(icon_btn(
-                    "zoom-in-symbolic",
-                    fl!("toolbar-zoom-in"),
-                    ViewerMessage::Canvas(CanvasMessage::ZoomIn),
-                ))
+                // Zoom out / percentage / zoom in stay together as one atom so
+                // the responsive toolbar never splits them across rows.
+                ToolbarItem::new(
+                    Row::new()
+                        .push(icon_btn(
+                            "zoom-out-symbolic",
+                            fl!("toolbar-zoom-out"),
+                            ViewerMessage::Canvas(CanvasMessage::ZoomOut),
+                        ))
+                        .push(text::body(zoom_pct))
+                        .push(icon_btn(
+                            "zoom-in-symbolic",
+                            fl!("toolbar-zoom-in"),
+                            ViewerMessage::Canvas(CanvasMessage::ZoomIn),
+                        ))
+                        .align_y(Alignment::Center)
+                        .spacing(cosmic::theme::active().cosmic().spacing.space_xxs),
+                )
                 .priority(ItemPriority::Essential),
             )
             .end(ToolbarItem::new(
@@ -715,7 +735,6 @@ impl CosmicViewer {
             .on_press_maybe(can_redo.then(|| ViewerMessage::Edit(EditMessage::Redo)));
 
         let mut toolbar = responsive_toolbar(mode)
-            .available_width(self.window_width.unwrap_or(0.0))
             .start(ToolbarItem::new(undo_btn))
             .start(ToolbarItem::new(redo_btn))
             .start(ToolbarItem::new(
