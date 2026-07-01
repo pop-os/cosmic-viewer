@@ -1,6 +1,6 @@
 use crate::message::{ContextMessage, EditMessage, ViewerMessage};
 use cosmic::{
-    iced::keyboard::{Key, Modifiers, key::Named},
+    iced::keyboard::{Key, Modifiers},
     widget::menu::{
         Action,
         key_bind::{KeyBind, Modifier},
@@ -195,8 +195,8 @@ pub fn init_keybinds() -> HashMap<KeyBind, MenuAction> {
 
     binds.insert(
         KeyBind {
-            modifiers: vec![],
-            key: Key::Named(Named::F11),
+            modifiers: vec![Modifier::Ctrl, Modifier::Shift],
+            key: Key::Character("f".into()),
         },
         MenuAction::Fullscreen,
     );

@@ -22,6 +22,7 @@ use cosmic::{
             scrollable::{AbsoluteOffset, scroll_to},
             sensor, stack,
         },
+        window,
     },
     task::future,
     theme::{self, Button},
@@ -42,6 +43,7 @@ use std::{
     fmt::Write as _,
     path::{Path, PathBuf},
     sync::Arc,
+    time::Duration,
 };
 use viewer_canvas::{CanvasImage, CanvasMessage, ToolKind, ViewportManager};
 use viewer_config::ViewerConfig;
@@ -103,6 +105,7 @@ pub struct CosmicViewer {
     selected_shape: AnnotateTool,
     window_width: Option<f32>,
     is_fullscreen: bool,
+    saved_nav_toggled: bool,
     wallpaper_dialog: Option<PathBuf>,
     delete_dialog: Option<PathBuf>,
     available_outputs: Vec<String>,
@@ -1306,6 +1309,7 @@ impl Application for CosmicViewer {
             show_text_format_menu: false,
             window_width: Some(0.0),
             is_fullscreen: false,
+            saved_nav_toggled: false,
             wallpaper_dialog: None,
             delete_dialog: None,
             available_outputs: Vec::new(),
@@ -1784,7 +1788,7 @@ impl Application for CosmicViewer {
                 if !matches!(evt, WatcherEvent::Error(_)) && !self.watcher_rescan_pending {
                     self.watcher_rescan_pending = true;
                     tasks.push(future(async {
-                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        tokio::time::sleep(Duration::from_millis(200)).await;
                         Action::App(ViewerMessage::WatcherRescan)
                     }));
                 }
@@ -1994,6 +1998,10 @@ impl Application for CosmicViewer {
                     self.viewport.set_preview(None);
                     self.viewport.rebuild_display();
                     return Task::none();
+                }
+
+                if self.is_fullscreen && matches!(key, Key::Named(Named::Escape)) {
+                    return self.update(ViewerMessage::Canvas(CanvasMessage::Fullscreen));
                 }
 
                 if matches!(key, Key::Named(Named::Delete)) && self.viewport.active_tool().is_none()
@@ -2254,10 +2262,7 @@ impl Application for CosmicViewer {
             ViewerMessage::WindowResized(size) => {
                 self.window_width = Some(size.width);
                 let narrow = self.is_narrow();
-                if narrow != self.was_narrow {
-                    // Entering the condensed band: auto-collapse the nav so the image keeps full
-                    // width. libcosmic restores the wide-mode nav preference (`toggled`) on the way
-                    // back out, so leaving narrow needs no action here.
+                if !self.is_fullscreen && narrow != self.was_narrow {
                     if narrow && self.core().nav_bar_active() {
                         self.core.nav_bar_toggle_condensed();
                     }
@@ -2400,7 +2405,7 @@ impl Application for CosmicViewer {
                 }
                 NavMessage::GridFocus(idx) => {
                     self.nav.select(idx);
-                } //self.grid.set_focused(Some(idx)),
+                }
                 NavMessage::GridScroll(offset) => {
                     tasks.push(scroll_to(
                         self.scroll_id.clone(),
@@ -2438,19 +2443,6 @@ impl Application for CosmicViewer {
                     {
                         *slot = Some(handle);
                     }
-                    /*if let Some(handle) = self.cache.get_thumbnail(&path)
-                    && let Some(item) = self
-                    .grid
-                    .items_mut()
-                    .iter_mut()
-                    .find(|item| item.path == path)
-                    {
-                        item.handle = Some(handle);
-                        item.width = width;
-                        item.height = height;
-                    }
-
-                    tasks.push(self.load_remaining_thumbnails());*/
                 }
                 ImageMessage::ImageReady(path) => {
                     if let Some(idx) = self.nav.index() {
@@ -2579,18 +2571,25 @@ impl Application for CosmicViewer {
                 }
                 CanvasMessage::Fullscreen => {
                     self.is_fullscreen = !self.is_fullscreen;
+
+                    if self.is_fullscreen {
+                        self.saved_nav_toggled = self.core.nav_bar_active();
+                        self.core.window.show_headerbar = false;
+                        self.core.nav_bar_set_toggled(false);
+                    } else {
+                        self.core.window.show_headerbar = true;
+                        self.core.nav_bar_set_toggled(self.saved_nav_toggled);
+                    }
+
                     if let Some(window_id) = self.core.main_window_id() {
-                        return if self.is_fullscreen {
-                            cosmic::iced::window::set_mode(
-                                window_id,
-                                cosmic::iced::window::Mode::Fullscreen,
-                            )
-                        } else {
-                            cosmic::iced::window::set_mode(
-                                window_id,
-                                cosmic::iced::window::Mode::Windowed,
-                            )
-                        };
+                        return window::set_mode(
+                            window_id,
+                            if self.is_fullscreen {
+                                window::Mode::Fullscreen
+                            } else {
+                                window::Mode::Windowed
+                            },
+                        );
                     }
                 }
                 CanvasMessage::ToolStart(point) => {
