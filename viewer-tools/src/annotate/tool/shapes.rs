@@ -38,16 +38,26 @@ pub fn draw_shape(
             frame.fill(&path, Fill::from(color));
         }
         ShapeKind::Arrow => {
-            // Stroke the shaft, fill the arrowhead
-            let shaft = Path::line(start, end);
             let stroke = Stroke::default()
                 .with_color(color)
                 .with_width(width * scale)
                 .with_line_cap(LineCap::Round)
                 .with_line_join(LineJoin::Round);
-            frame.stroke(&shaft, stroke);
-            let head = arrow_head_path(start, end);
-            frame.fill(&head, Fill::from(color));
+            if let Some((base, left, right)) = arrow_head_points(start, end, width) {
+                // Stroke the shaft only up to the head base, so its round cap is hidden behind the
+                // filled head and the tip stays sharp.
+                frame.stroke(&Path::line(start, base), stroke);
+                let head = Path::new(|builder: &mut Builder| {
+                    builder.move_to(end);
+                    builder.line_to(left);
+                    builder.line_to(right);
+                    builder.close();
+                });
+                frame.fill(&head, Fill::from(color));
+            } else {
+                // Degenerate (near-zero length): just the shaft line.
+                frame.stroke(&Path::line(start, end), stroke);
+            }
         }
         _ => {
             let stroke = Stroke::default()
@@ -76,8 +86,9 @@ fn build_path(kind: ShapeKind, start: Point, end: Point) -> Path {
                 radius.height / 2.0,
             )
         }
-        ShapeKind::Line => Path::line(start, end),
-        ShapeKind::Arrow => arrow_path(start, end),
+        // Arrow's rendered head is added separately by `draw_shape`/`apply`; `build_path` only
+        // needs the shaft line for it, same as a plain line.
+        ShapeKind::Line | ShapeKind::Arrow => Path::line(start, end),
         ShapeKind::Star => closed_path(&star_vertices(start, end)),
         ShapeKind::Polygon => closed_path(&polygon_vertices(start, end, 6)),
     }
@@ -110,58 +121,28 @@ fn ellipse_path(center: Point, radius_x: f32, radius_y: f32) -> Path {
     })
 }
 
-fn arrow_path(start: Point, end: Point) -> Path {
+/// Head length as a multiple of the stroke width (NOT the arrow length).
+const ARROW_HEAD_STROKE_LEN_MULTIPLE: f32 = 3.0;
+/// Head base width as a multiple of the stroke width, so the head stays proportional to the shaft.
+const ARROW_HEAD_STROKE_WIDTH_MULTIPLE: f32 = 2.5;
+
+/// Filled-arrowhead geometry for a `width`-thick arrow from `start` to `end`: the head `base`
+/// (center of the head's rear edge — where the shaft should stop so its round cap is hidden and
+/// the tip stays sharp) plus the two base corners `left`/`right`. The tip is `end`. The head is
+/// sized **only from the stroke width** (so it's proportional to the shaft regardless of arrow
+/// length), clamped so it never exceeds the arrow itself. Returns `None` for a degenerate arrow.
+/// Shared by the preview and the rasterized save.
+fn arrow_head_points(start: Point, end: Point, width: f32) -> Option<(Point, Point, Point)> {
     let delta_x = end.x - start.x;
     let delta_y = end.y - start.y;
     let len = delta_x.hypot(delta_y);
     if len < 1.0 {
-        return Path::line(start, end);
+        return None;
     }
 
-    let head_len = (len * 0.25).min(30.0);
-    let head_width = head_len * 0.5;
+    let head_len = (width * ARROW_HEAD_STROKE_LEN_MULTIPLE).min(len);
+    let head_width = width * ARROW_HEAD_STROKE_WIDTH_MULTIPLE;
 
-    // Unit vectors: along line and perpendicular
-    let unit_x = delta_x / len;
-    let unit_y = delta_y / len;
-    let point_x = -unit_y;
-    let point_y = unit_x;
-
-    let base = Point::new(
-        unit_x.mul_add(-head_len, end.x),
-        unit_y.mul_add(-head_len, end.y),
-    );
-    let left = Point::new(
-        base.x + point_x * head_width / 2.0,
-        base.y + point_y * head_width / 2.0,
-    );
-    let right = Point::new(
-        base.x - point_x * head_width / 2.0,
-        base.y - point_y * head_width / 2.0,
-    );
-
-    Path::new(|builder: &mut Builder| {
-        // Shaft
-        builder.move_to(start);
-        builder.line_to(end);
-        // Arrowhead
-        builder.move_to(left);
-        builder.line_to(end);
-        builder.line_to(right);
-    })
-}
-
-/// Filled arrowhead triangle for the canvas preview.
-fn arrow_head_path(start: Point, end: Point) -> Path {
-    let delta_x = end.x - start.x;
-    let delta_y = end.y - start.y;
-    let len = delta_x.hypot(delta_y);
-    if len < 1.0 {
-        return Path::line(start, end);
-    }
-
-    let head_len = (len * 0.25).min(30.0);
-    let head_width = head_len * 0.5;
     let unit_x = delta_x / len;
     let unit_y = delta_y / len;
     let perp_x = -unit_y;
@@ -180,12 +161,7 @@ fn arrow_head_path(start: Point, end: Point) -> Path {
         base.y - perp_y * head_width / 2.0,
     );
 
-    Path::new(|builder: &mut Builder| {
-        builder.move_to(end);
-        builder.line_to(left);
-        builder.line_to(right);
-        builder.close();
-    })
+    Some((base, left, right))
 }
 
 #[allow(clippy::cast_precision_loss)] // reason: point index/count are small (<=10), exact in f32
@@ -252,41 +228,19 @@ fn closed_path(vertices: &[Point]) -> Path {
     })
 }
 
-/// Build line segments for an arrow (shaft + head). Used by `apply()`.
-pub fn arrow_segments(start: Point, end: Point) -> Vec<(Point, Point)> {
-    let delta_x = end.x - start.x;
-    let delta_y = end.y - start.y;
-    let len = delta_x.hypot(delta_y);
-    if len < 1.0 {
+/// Build line segments for an arrow (shaft + head), sized for a `width`-thick stroke. Used by
+/// `apply()`; `[1]` and `[2]` carry the head's left/right corners with the tip as their second
+/// point (see `shapes/operation.rs`).
+pub fn arrow_segments(start: Point, end: Point, width: f32) -> Vec<(Point, Point)> {
+    let Some((base, left, right)) = arrow_head_points(start, end, width) else {
         return vec![(start, end)];
-    }
-
-    let head_len = (len * 0.25).min(30.0);
-    let head_width = head_len * 0.5;
-    let unit_x = delta_x / len;
-    let unit_y = delta_y / len;
-    let point_x = -unit_y;
-    let point_y = unit_x;
-
-    let base = Point::new(
-        unit_x.mul_add(-head_len, end.x),
-        unit_y.mul_add(-head_len, end.y),
-    );
-    let left = Point::new(
-        base.x + point_x * head_width / 2.0,
-        base.y + point_y * head_width / 2.0,
-    );
-    let right = Point::new(
-        base.x - point_x * head_width / 2.0,
-        base.y - point_y * head_width / 2.0,
-    );
-
+    };
     vec![
-        // shaft
-        (start, end),
-        // left part of head
+        // shaft — stops at the head base so the sharp tip comes from the filled head
+        (start, base),
+        // left part of head (to the tip)
         (left, end),
-        // right part of head
+        // right part of head (to the tip)
         (right, end),
     ]
 }

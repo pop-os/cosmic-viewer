@@ -93,13 +93,17 @@ impl ToolOperation for ShapeOperation {
                 fill_on_image(image, &path, self.color);
             }
             ShapeKind::Arrow => {
-                if let Some(shaft) = build_path(|pb| {
-                    pb.move_to(self.start.x, self.start.y);
-                    pb.line_to(self.end.x, self.end.y);
-                }) {
+                let segs = arrow_segments(self.start, self.end, self.width);
+                // `segs[0]` is the shaft, shortened to the head base so the round cap stays hidden
+                // and the filled head gives a sharp tip.
+                if let Some(&(shaft_start, shaft_end)) = segs.first()
+                    && let Some(shaft) = build_path(|pb| {
+                        pb.move_to(shaft_start.x, shaft_start.y);
+                        pb.line_to(shaft_end.x, shaft_end.y);
+                    })
+                {
                     stroke_on_image(image, &shaft, self.color, self.width, SkiaLineCap::Round);
                 }
-                let segs = arrow_segments(self.start, self.end);
                 if segs.len() >= 3 {
                     let tip = segs[1].1;
                     let left = segs[1].0;

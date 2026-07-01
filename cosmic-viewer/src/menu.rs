@@ -107,11 +107,18 @@ fn build_edit_menu(can_undo: bool, can_redo: bool) -> Vec<menu::Item<MenuAction,
     } else {
         menu::Item::ButtonDisabled(fl!("menu-redo"), None, MenuAction::Redo)
     };
+    // Revert all is only meaningful when there's an edit to revert (something on the undo/redo
+    // stacks); disable it otherwise, matching Undo/Redo.
+    let revert_all_item = if can_undo || can_redo {
+        menu::Item::Button(fl!("menu-revert-all"), None, MenuAction::RevertAll)
+    } else {
+        menu::Item::ButtonDisabled(fl!("menu-revert-all"), None, MenuAction::RevertAll)
+    };
 
     vec![
         undo_item,
         redo_item,
-        menu::Item::Button(fl!("menu-revert-all"), None, MenuAction::RevertAll),
+        revert_all_item,
         menu::Item::Divider,
         menu::Item::Button(fl!("menu-cut"), None, MenuAction::Cut),
         menu::Item::Button(fl!("menu-copy"), None, MenuAction::Copy),
