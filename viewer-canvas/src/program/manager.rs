@@ -17,7 +17,10 @@ use cosmic::{
 };
 use image::DynamicImage;
 use std::cell::Cell;
-use viewer_tools::ToolOperation;
+use viewer_tools::{
+    ToolOperation,
+    crop::{CropSelection, DragHandle},
+};
 
 const MAX_TEX: u32 = 2048;
 
@@ -373,6 +376,23 @@ impl ViewportManager {
         ))
     }
 
+    /// Fit-space mapping WITHOUT clamping. Used to hit-test crop handles that sit flush
+    /// against the image edge, where a grab can legitimately land just outside the image;
+    /// the handle's own grab radius bounds how far past the edge still counts as a hit.
+    // reason: image dimensions are pixel counts used for rendering geometry; f32 precision is ample.
+    #[allow(clippy::cast_precision_loss)]
+    pub fn screen_to_image_fit_unclamped(&self, point: Point, bounds: Rectangle) -> Option<Point> {
+        let image = self.image.as_ref()?;
+        let fit_scale =
+            (bounds.width / image.width as f32).min(bounds.height / image.height as f32);
+        let center_x = bounds.width / 2.0;
+        let center_y = bounds.height / 2.0;
+        Some(Point::new(
+            (point.x - center_x) / fit_scale + image.width as f32 / 2.0,
+            (point.y - center_y) / fit_scale + image.height as f32 / 2.0,
+        ))
+    }
+
     /// Get the image dimensions as a Size.
     // reason: image dimensions are pixel counts used for rendering geometry; f32 precision is ample.
     #[allow(clippy::cast_precision_loss)]
@@ -511,7 +531,37 @@ impl Viewport<'_> {
 
         match mouse_event {
             MouseEvent::ButtonPressed(Button::Left) => {
-                if let Some(pt) = mgr.screen_to_image(position, bounds) {
+                let crop = mgr
+                    .active_preview
+                    .as_deref()
+                    .and_then(|preview| preview.as_any().downcast_ref::<CropSelection>());
+
+                // Grab a handle first, hit-tested in unclamped fit space so a handle laid
+                // flush against the image edge stays grabbable when the press lands just
+                // outside the image (the strict over-image gate below would reject it).
+                if let Some(crop) = crop
+                    && let Some(hit_pt) = mgr.screen_to_image_fit_unclamped(position, bounds)
+                    && crop.hit_test(hit_pt) != DragHandle::None
+                    && let Some(pt) = mgr.screen_to_image_fit(position, bounds)
+                {
+                    shell.publish(CanvasMessage::ToolStart(pt));
+                    shell.capture_event();
+                    return true;
+                }
+
+                if mgr.screen_to_image(position, bounds).is_some()
+                    && let Some(pt) = mgr.screen_to_image_fit(position, bounds)
+                {
+                    // Interior press (not on a handle) pans the image behind the frame.
+                    if let Some(crop) = crop
+                        && crop.hit_test(pt) == DragHandle::None
+                        && crop.region.contains(pt)
+                    {
+                        mgr.crop_pan.set(Some((position, mgr.pan)));
+                        shell.capture_event();
+                        return true;
+                    }
+
                     shell.publish(CanvasMessage::ToolStart(pt));
                     shell.capture_event();
                     return true;

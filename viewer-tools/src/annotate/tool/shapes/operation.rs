@@ -10,8 +10,8 @@ use crate::{
 };
 use cosmic::{
     Renderer,
-    iced::{Color, Point, Rectangle, Size},
     iced::widget::canvas::Frame,
+    iced::{Color, Point, Rectangle, Size},
 };
 use image::DynamicImage;
 use tiny_skia::{LineCap as SkiaLineCap, Rect};
@@ -118,8 +118,7 @@ impl ToolOperation for ShapeOperation {
                 let Some(path) = build_path(|pb| match self.kind {
                     ShapeKind::Rectangle => {
                         let rect = normalize_rect(self.start, self.end);
-                        if let Some(rect) =
-                            Rect::from_xywh(rect.x, rect.y, rect.width, rect.height)
+                        if let Some(rect) = Rect::from_xywh(rect.x, rect.y, rect.width, rect.height)
                         {
                             pb.push_rect(rect);
                         }

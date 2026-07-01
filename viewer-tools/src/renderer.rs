@@ -82,7 +82,13 @@ pub fn fill_on_image(image: &mut DynamicImage, path: &Path, color: Color) {
         channel_u8(color.a),
     );
 
-    overlay.fill_path(path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+    overlay.fill_path(
+        path,
+        &paint,
+        tiny_skia::FillRule::Winding,
+        Transform::identity(),
+        None,
+    );
     blend_overlay(rgba, &overlay);
 }
 

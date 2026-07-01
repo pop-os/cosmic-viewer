@@ -4,8 +4,8 @@ use super::{handle::DragHandle, ratio::CropRatio};
 use crate::{ToolOperation, crop::CropOperation};
 use cosmic::{
     Renderer,
-    iced::{Color, Point, Rectangle, Size, mouse},
     iced::widget::canvas::{Fill, Frame, Path, Stroke},
+    iced::{Color, Point, Rectangle, Size, mouse},
 };
 use image::DynamicImage;
 
@@ -277,7 +277,10 @@ impl CropSelection {
         color: Color,
     ) {
         let rect = Rectangle::new(
-            Point::new(w.mul_add(-anchor_x, center.x), h.mul_add(-anchor_y, center.y)),
+            Point::new(
+                w.mul_add(-anchor_x, center.x),
+                h.mul_add(-anchor_y, center.y),
+            ),
             Size::new(w, h),
         );
 

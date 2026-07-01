@@ -7,8 +7,8 @@ use crate::{
 };
 use cosmic::{
     Renderer,
-    iced::{Color, Point, Rectangle, Size},
     iced::widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
+    iced::{Color, Point, Rectangle, Size},
 };
 use image::DynamicImage;
 use tiny_skia::LineCap as SkiaLineCap;

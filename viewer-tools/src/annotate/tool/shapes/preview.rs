@@ -5,8 +5,8 @@ use super::{ShapeKind, draw_shape};
 use crate::ToolOperation;
 use cosmic::{
     Renderer,
-    iced::{Color, Point, Size, mouse},
     iced::widget::canvas::Frame,
+    iced::{Color, Point, Size, mouse},
 };
 use image::DynamicImage;
 

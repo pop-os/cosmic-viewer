@@ -1,19 +1,20 @@
 use super::{
     BORDER_WIDTH, DEFAULT_BOX_WIDTH, DRAG_THRESHOLD, LINE_HEIGHT_FACTOR, MIN_BOX_HEIGHT,
     MIN_BOX_WIDTH, TextDragHandle, TextOperation, TextSpan, build_buffer_line, color_channel_u8,
-    content_height, encode_align, group_spans, intern_str, snap_font_size, span_attrs,
+    content_height, encode_align, group_spans, intern_str, rotated_footprint, snap_font_size,
+    span_attrs,
 };
 use crate::{ToolOperation, annotate::tool::text::TEXT_INSET};
 use cosmic::{
     Renderer,
+    iced::advanced::graphics::text::{cosmic_text, font_system},
+    iced::advanced::text::{LineHeight, Shaping},
+    iced::widget::canvas::{self, Fill, Frame, Path, Stroke},
     iced::{
-        Color, Font, Point, Rectangle, Size,
+        Color, Font, Point, Radians, Rectangle, Size, Vector,
         alignment::{Horizontal, Vertical},
         font, mouse,
     },
-    iced::advanced::text::{LineHeight, Shaping},
-    iced::widget::canvas::{self, Fill, Frame, Path, Stroke},
-    iced::advanced::graphics::text::{cosmic_text, font_system},
 };
 use cosmic_text::Edit;
 use image::DynamicImage;
@@ -52,6 +53,9 @@ pub struct TextPreview {
     blink_start: Cell<Instant>,
     last_click: Option<std::time::Instant>,
     click_count: u8,
+    /// 90° clockwise quarter-turns this text carries (mod 4); set when re-editing an
+    /// already-rotated committed text so commit can restore it. Editing is always upright.
+    pub rotation_steps: u8,
 }
 
 impl TextPreview {
@@ -85,21 +89,52 @@ impl TextPreview {
             click_count: 0,
             drag_start_box: Rectangle::new(Point::ORIGIN, Size::ZERO),
             custom_dragged: false,
+            rotation_steps: 0,
         }
     }
 
+    /// Clockwise quarter-turns of the editing rotation (mod 4).
+    const fn steps(&self) -> u8 {
+        self.rotation_steps % 4
+    }
+
+    /// Inverse-rotate an image-space point into the upright (reading) box frame about `center`.
+    /// Editing happens in the upright box, but the render is rotated, so input on the rotated
+    /// text must be un-rotated to line up with the upright hit-testing/cursor logic.
+    fn unrotate(&self, p: Point, center: Point) -> Point {
+        let (dx, dy) = (p.x - center.x, p.y - center.y);
+        // Inverse of the render rotation; 90° and 270° are each other's inverse (180° is
+        // self-inverse, which is why only the odd turns were mis-mapped).
+        let (rx, ry) = match self.steps() {
+            1 => (dy, -dx),
+            2 => (-dx, -dy),
+            3 => (-dy, dx),
+            _ => (dx, dy),
+        };
+        Point::new(center.x + rx, center.y + ry)
+    }
+
+    /// Inverse-rotate about the current box center, for press/hover hit-testing.
+    fn to_local(&self, p: Point) -> Point {
+        self.unrotate(p, self.bounding_box.center())
+    }
+
+    /// Which handle (if any) a raw image-space point hits, accounting for the editing rotation.
+    /// Callers outside the preview (e.g. the app's press router) must use this rather than
+    /// `hit_test_handle` directly, which expects an already-un-rotated point.
+    #[must_use]
+    pub fn handle_at(&self, image_point: Point) -> TextDragHandle {
+        self.hit_test_handle(self.to_local(image_point))
+    }
+
     fn init_editor(&mut self) {
-        let scale = self.last_scale.get();
         let metrics =
             cosmic_text::Metrics::new(self.font_size, self.font_size * LINE_HEIGHT_FACTOR);
         let mut buffer = {
             let mut font_sys = font_system().write().expect("Write font system");
             cosmic_text::Buffer::new(font_sys.raw(), metrics)
         };
-        buffer.set_size(
-            Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width) * scale),
-            None,
-        );
+        buffer.set_size(Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)), None);
         buffer.set_wrap(cosmic_text::Wrap::WordOrGlyph);
         self.editor = Some(cosmic_text::Editor::new(buffer));
     }
@@ -118,23 +153,6 @@ impl TextPreview {
     /// # Panics
     ///
     /// Panics if the shared font-system lock is poisoned.
-    pub fn sync_buffer_size(&mut self, scale: f32) {
-        if let Some(editor) = &mut self.editor {
-            let mut font_sys = font_system().write().expect("Write font system");
-            editor.with_buffer_mut(|buf| {
-                buf.set_size(
-                    Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width) * scale),
-                    None,
-                );
-                buf.set_scroll(cosmic_text::Scroll::default());
-            });
-            editor.shape_as_needed(font_sys.raw(), false);
-        }
-    }
-
-    /// # Panics
-    ///
-    /// Panics if the shared font-system lock is poisoned.
     pub fn init_editor_with_text(&mut self, text: &str) {
         self.init_editor();
         let attrs = self.current_attrs();
@@ -146,8 +164,7 @@ impl TextPreview {
             editor.shape_as_needed(font_sys.raw(), false);
             drop(font_sys);
 
-            let scale = self.last_scale.get();
-            let content_h: f32 = editor.with_buffer(content_height) / scale;
+            let content_h: f32 = editor.with_buffer(content_height);
             if content_h > self.bounding_box.height {
                 self.bounding_box.height = content_h;
             }
@@ -172,8 +189,7 @@ impl TextPreview {
                     let mut offset = 0;
                     for span in line_spans {
                         let end = offset + span.text.len();
-                        attrs_list
-                            .add_span(offset..end, &span_attrs(default_attrs.clone(), span, 1.0));
+                        attrs_list.add_span(offset..end, &span_attrs(default_attrs.clone(), span));
                         offset = end;
                     }
                     buf.lines
@@ -182,8 +198,7 @@ impl TextPreview {
                 buf.shape_until_scroll(font_sys.raw(), false);
             });
 
-            let scale = self.last_scale.get();
-            let content_h = editor.with_buffer(content_height) / scale;
+            let content_h = editor.with_buffer(content_height);
             if content_h > self.bounding_box.height {
                 self.bounding_box.height = content_h;
             }
@@ -361,13 +376,12 @@ impl TextPreview {
 
     fn sync_height(&mut self) {
         if let Some(editor) = &mut self.editor {
-            let scale = self.last_scale.get();
-            let min_h = self.font_size * LINE_HEIGHT_FACTOR / scale;
-            let content_h: f32 = editor.with_buffer(content_height) / scale;
+            let min_h = self.font_size * LINE_HEIGHT_FACTOR;
+            let content_h: f32 = editor.with_buffer(content_height);
             self.bounding_box.height = content_h.max(min_h);
 
             editor.with_buffer_mut(|buf| {
-                buf.set_size(Some(self.bounding_box.width * scale), None);
+                buf.set_size(Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)), None);
                 buf.set_scroll(cosmic_text::Scroll::default());
             });
         }
@@ -379,19 +393,18 @@ impl TextPreview {
     pub fn editor_action(&mut self, action: cosmic_text::Action) {
         self.blink_start.set(Instant::now());
         if let Some(editor) = &mut self.editor {
-            let scale = self.last_scale.get();
             let mut font_sys = font_system().write().expect("Write font system");
             editor.action(font_sys.raw(), action);
             editor.shape_as_needed(font_sys.raw(), false);
             drop(font_sys);
 
             // Fit box height to content
-            let min_h = self.font_size * LINE_HEIGHT_FACTOR / scale;
-            let content_h: f32 = editor.with_buffer(content_height) / scale;
+            let min_h = self.font_size * LINE_HEIGHT_FACTOR;
+            let content_h: f32 = editor.with_buffer(content_height);
             self.bounding_box.height = content_h.max(min_h);
 
             editor.with_buffer_mut(|buf| {
-                buf.set_size(Some(self.bounding_box.width * scale), None);
+                buf.set_size(Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)), None);
                 buf.set_scroll(cosmic_text::Scroll::default());
             });
         }
@@ -540,24 +553,28 @@ impl TextPreview {
             h = MIN_BOX_HEIGHT;
         }
 
-        x = x.clamp(0.0, (image_size.width - w).max(0.0));
-        y = y.clamp(0.0, (image_size.height - h).max(0.0));
-        w = w.min(image_size.width - x);
-        h = h.min(image_size.height - y);
+        // The image-bounds clamp only applies to an axis-aligned (un-rotated) box. When rotated,
+        // the reading box lives in a rotated frame and legitimately extends past image-aligned
+        // bounds, so clamping it here would collapse the box and block resizing.
+        if self.steps() == 0 {
+            x = x.clamp(0.0, (image_size.width - w).max(0.0));
+            y = y.clamp(0.0, (image_size.height - h).max(0.0));
+            w = w.min(image_size.width - x);
+            h = h.min(image_size.height - y);
+        }
 
         self.bounding_box = Rectangle::new(Point::new(x, y), Size::new(w, h));
 
         if let Some(editor) = &mut self.editor {
-            let scale = self.last_scale.get();
             let mut font_sys = font_system().write().expect("Write font system");
             editor.with_buffer_mut(|buf| {
-                buf.set_size(Some(self.bounding_box.width * scale), None);
+                buf.set_size(Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)), None);
                 buf.set_scroll(cosmic_text::Scroll::default());
             });
             editor.shape_as_needed(font_sys.raw(), false);
             drop(font_sys);
 
-            let content_h: f32 = editor.with_buffer(content_height) / scale;
+            let content_h: f32 = editor.with_buffer(content_height);
 
             let width_only = matches!(
                 self.active_handle,
@@ -566,7 +583,7 @@ impl TextPreview {
 
             if width_only {
                 // Width handles
-                let min_h = self.font_size * LINE_HEIGHT_FACTOR / scale;
+                let min_h = self.font_size * LINE_HEIGHT_FACTOR;
                 self.bounding_box.height = content_h.max(min_h);
             } else {
                 // Height handles
@@ -628,9 +645,7 @@ impl TextPreview {
         frame: &mut Frame<Renderer>,
         editor: &cosmic_text::Editor<'static>,
         origin: Point,
-        scale: f32,
     ) {
-        let inv = 1.0 / scale;
         editor.with_buffer(|buffer| {
             for run in buffer.layout_runs() {
                 if run.glyphs.is_empty() {
@@ -682,11 +697,11 @@ impl TextPreview {
                     let text = canvas::Text {
                         content: span_text.to_string(),
                         position: Point::new(
-                            first.x.mul_add(inv, origin.x),
-                            (run.line_top + baseline_offset).mul_add(inv, origin.y),
+                            first.x + origin.x,
+                            run.line_top + baseline_offset + origin.y,
                         ),
                         color: span_color,
-                        size: (span_font_size / scale).into(),
+                        size: span_font_size.into(),
                         font: Font {
                             family: font::Family::Name(span_family),
                             weight: if bold {
@@ -712,15 +727,13 @@ impl TextPreview {
                     if underline {
                         let uy = span_font_size
                             .mul_add(LINE_HEIGHT_FACTOR, run.line_top + baseline_offset)
-                            .mul_add(inv, origin.y)
-                            - 1.0 / scale;
-                        let ux = first.x.mul_add(inv, origin.x);
-                        let uw = (last.x + last.w - first.x) * inv;
+                            + origin.y
+                            - 1.0;
+                        let ux = first.x + origin.x;
+                        let uw = last.x + last.w - first.x;
                         frame.stroke(
                             &Path::line(Point::new(ux, uy), Point::new(ux + uw, uy)),
-                            Stroke::default()
-                                .with_color(span_color)
-                                .with_width(1.0 / scale),
+                            Stroke::default().with_color(span_color).with_width(1.0),
                         );
                     }
 
@@ -739,7 +752,6 @@ impl TextPreview {
         origin: Point,
         scale: f32,
     ) {
-        let inv = 1.0 / scale;
         let elapsed = self.blink_start.get().elapsed().as_millis();
         let cursor_visible = elapsed < 500 || (elapsed / 500).is_multiple_of(2);
         if self.state == TextEditState::Editing
@@ -754,7 +766,11 @@ impl TextPreview {
                     if run.line_i == cursor.line {
                         lh = run.line_height;
                         if let Some(line) = buf.lines.get(run.line_i) {
-                            let idx = if cursor.index > 0 { cursor.index - 1 } else { 0 };
+                            let idx = if cursor.index > 0 {
+                                cursor.index - 1
+                            } else {
+                                0
+                            };
                             let a = line.attrs_list().get_span(idx);
                             if let Some(m) = a.metrics_opt {
                                 let metrics: cosmic_text::Metrics = m.into();
@@ -767,9 +783,9 @@ impl TextPreview {
                 (lh, fs)
             });
             let offset = cursor_fs.mul_add(-LINE_HEIGHT_FACTOR, line_h).max(0.0);
-            let cursor_x = (cx as f32).mul_add(inv, origin.x);
-            let cursor_y = (cy as f32 + offset).mul_add(inv, origin.y);
-            let cursor_h = cursor_fs * LINE_HEIGHT_FACTOR * inv;
+            let cursor_x = cx as f32 + origin.x;
+            let cursor_y = cy as f32 + offset + origin.y;
+            let cursor_h = cursor_fs * LINE_HEIGHT_FACTOR;
             frame.fill_rectangle(
                 Point::new(cursor_x, cursor_y),
                 Size::new(1.0 / scale, cursor_h),
@@ -782,70 +798,83 @@ impl TextPreview {
 impl ToolOperation for TextPreview {
     fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
         self.last_scale.set(scale);
-        let show_frame = self.custom_dragged || !self.is_empty();
 
+        // Edit in place: the box, glyphs, selection and caret are all authored in the upright
+        // reading frame and rendered rotated about the box center, so a rotated text edits as it
+        // will be saved. `rotation_steps == 0` skips the transform entirely.
+        let steps = self.steps();
+        // While resizing, rotate about the fixed start-of-drag center — the same pivot the input
+        // un-rotation uses — so the box doesn't slide as its own center moves with the edge.
+        let center = if self.state == TextEditState::Resizing {
+            self.drag_start_box.center()
+        } else {
+            self.bounding_box.center()
+        };
+        if steps != 0 {
+            frame.push_transform();
+            frame.translate(Vector::new(center.x, center.y));
+            frame.rotate(Radians(f32::from(steps) * f32::consts::FRAC_PI_2));
+            frame.translate(Vector::new(-center.x, -center.y));
+        }
+
+        let show_frame = self.custom_dragged || !self.is_empty();
         if matches!(self.state, TextEditState::Editing | TextEditState::Resizing) && show_frame {
             self.draw_bounding_box(frame, scale);
         }
-
         if self.state == TextEditState::PlacingDrag && self.custom_dragged {
             self.draw_bounding_box(frame, scale);
         }
 
-        let inset = TEXT_INSET / scale;
-        let origin = Point::new(self.bounding_box.x + inset, self.bounding_box.y);
-        if self.bounding_box.width < 1.0 {
-            return;
-        }
+        if self.bounding_box.width >= 1.0 {
+            let origin = Point::new(self.bounding_box.x + TEXT_INSET, self.bounding_box.y);
 
-        if self.state == TextEditState::Editing && self.is_empty() {
-            let placeholder = canvas::Text {
-                content: "Type here...".to_string(),
-                position: Point::new(origin.x, origin.y),
-                color: Color {
-                    a: 0.4,
-                    ..self.color
-                },
-                size: (self.font_size / scale).into(),
-                font: Font {
-                    family: font::Family::Name(self.font_family),
-                    ..Default::default()
-                },
-                max_width: f32::INFINITY,
-                line_height: LineHeight::Relative(LINE_HEIGHT_FACTOR),
-                align_x: Horizontal::Left.into(),
-                align_y: Vertical::Top,
-                shaping: Shaping::Advanced,
-            };
-            frame.fill_text(placeholder);
-        }
+            if self.state == TextEditState::Editing && self.is_empty() {
+                let placeholder = canvas::Text {
+                    content: "Type here...".to_string(),
+                    position: Point::new(origin.x, origin.y),
+                    color: Color {
+                        a: 0.4,
+                        ..self.color
+                    },
+                    size: self.font_size.into(),
+                    font: Font {
+                        family: font::Family::Name(self.font_family),
+                        ..Default::default()
+                    },
+                    max_width: f32::INFINITY,
+                    line_height: LineHeight::Relative(LINE_HEIGHT_FACTOR),
+                    align_x: Horizontal::Left.into(),
+                    align_y: Vertical::Top,
+                    shaping: Shaping::Advanced,
+                };
+                frame.fill_text(placeholder);
+            }
 
-        let Some(editor) = &self.editor else {
-            return;
-        };
-
-        let inv = 1.0 / scale;
-
-        // Selection highlights
-        let sel_bounds = editor.selection_bounds();
-        if let Some((start, end)) = sel_bounds {
-            let sel_color = Color::from_rgba(0.0, 0.5, 1.0, 0.4);
-
-            editor.with_buffer(|buffer| {
-                for run in buffer.layout_runs() {
-                    for (x_start, x_width) in run.highlight(start, end) {
-                        frame.fill_rectangle(
-                            Point::new(x_start.mul_add(inv, origin.x), run.line_top.mul_add(inv, origin.y)),
-                            Size::new(x_width * inv, run.line_height * inv),
-                            Fill::from(sel_color),
-                        );
-                    }
+            if let Some(editor) = &self.editor {
+                // Selection highlights
+                if let Some((start, end)) = editor.selection_bounds() {
+                    let sel_color = Color::from_rgba(0.0, 0.5, 1.0, 0.4);
+                    editor.with_buffer(|buffer| {
+                        for run in buffer.layout_runs() {
+                            for (x_start, x_width) in run.highlight(start, end) {
+                                frame.fill_rectangle(
+                                    Point::new(x_start + origin.x, run.line_top + origin.y),
+                                    Size::new(x_width, run.line_height),
+                                    Fill::from(sel_color),
+                                );
+                            }
+                        }
+                    });
                 }
-            });
+
+                self.draw_glyphs(frame, editor, origin);
+                self.draw_cursor(frame, editor, origin, scale);
+            }
         }
 
-        self.draw_glyphs(frame, editor, origin, scale);
-        self.draw_cursor(frame, editor, origin, scale);
+        if steps != 0 {
+            frame.pop_transform();
+        }
     }
 
     fn apply(&self, _image: &mut DynamicImage) {}
@@ -930,16 +959,16 @@ impl ToolOperation for TextPreview {
             return None;
         }
 
-        Some(Box::new(TextOperation::new(
-            self.bounding_box.position(),
+        Some(Box::new(TextOperation {
+            position: self.bounding_box.position(),
             spans,
-            self.color,
-            self.font_size,
-            self.font_family,
-            self.alignment,
-            self.bounding_box,
-            self.last_scale.get(),
-        )))
+            color: self.color,
+            font_size: self.font_size,
+            font_family: self.font_family,
+            alignment: self.alignment,
+            bounding_box: rotated_footprint(self.bounding_box, self.rotation_steps),
+            rotation_steps: self.rotation_steps,
+        }))
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -965,7 +994,9 @@ impl ToolOperation for TextPreview {
             }
             TextEditState::PlacingDrag => mouse::Interaction::Crosshair,
             TextEditState::Editing => {
-                let handle = self.hit_test_handle(point);
+                // Un-rotate the press into the upright editing frame (identity when unrotated).
+                let lp = self.to_local(point);
+                let handle = self.hit_test_handle(lp);
                 match handle {
                     TextDragHandle::None => {
                         // Outside box, app.rs will commit
@@ -973,9 +1004,8 @@ impl ToolOperation for TextPreview {
                     }
                     TextDragHandle::Move => {
                         self.blink_start.set(Instant::now());
-                        let scale = self.last_scale.get();
-                        let x = ((point.x - self.bounding_box.x) * scale) as i32;
-                        let y = ((point.y - self.bounding_box.y) * scale) as i32;
+                        let x = (lp.x - self.bounding_box.x) as i32;
+                        let y = (lp.y - self.bounding_box.y) as i32;
 
                         // Track click count for double/triple click
                         let now = std::time::Instant::now();
@@ -1001,10 +1031,10 @@ impl ToolOperation for TextPreview {
                     }
                     _ => {
                         self.active_handle = handle;
-                        self.drag_origin = point;
+                        self.drag_origin = lp;
                         self.drag_start_box = self.bounding_box;
                         self.state = TextEditState::Resizing;
-                        handle.cursor()
+                        handle.rotated(self.steps()).cursor()
                     }
                 }
             }
@@ -1029,13 +1059,15 @@ impl ToolOperation for TextPreview {
                 }
             }
             TextEditState::Resizing => {
-                self.update_drag(point, image_size);
+                // Un-rotate about the fixed start-of-drag center so the resize frame is stable.
+                let lp = self.unrotate(point, self.drag_start_box.center());
+                self.update_drag(lp, image_size);
             }
             TextEditState::Editing if self.mouse_selecting => {
                 self.blink_start.set(Instant::now());
-                let scale = self.last_scale.get();
-                let x = ((point.x - self.bounding_box.x) * scale) as i32;
-                let y = ((point.y - self.bounding_box.y) * scale) as i32;
+                let lp = self.to_local(point);
+                let x = (lp.x - self.bounding_box.x) as i32;
+                let y = (lp.y - self.bounding_box.y) as i32;
                 self.editor_action(cosmic_text::Action::Drag { x, y });
             }
             _ => {}
@@ -1047,14 +1079,23 @@ impl ToolOperation for TextPreview {
         match self.state {
             TextEditState::PlacingDrag => {
                 if self.custom_dragged {
-                    // Bigger height drag = bigger font size
-                    let screen_h = self.bounding_box.height * self.last_scale.get();
-                    self.font_size = snap_font_size(screen_h / LINE_HEIGHT_FACTOR);
+                    // Bigger height drag = bigger font size (box is image-space)
+                    self.font_size = snap_font_size(self.bounding_box.height / LINE_HEIGHT_FACTOR);
                 }
                 self.init_editor();
                 self.state = TextEditState::Editing;
             }
             TextEditState::Resizing => {
+                // The box was rendered about the fixed start-of-drag pivot; re-anchor it so that
+                // rendering about its own center (in Editing) reproduces the same visual, with no
+                // jump on release. (Identity when un-rotated.)
+                if self.steps() != 0 {
+                    let pivot = self.drag_start_box.center();
+                    let c = self.bounding_box.center();
+                    let t = i_minus_r(Vector::new(pivot.x - c.x, pivot.y - c.y), self.steps());
+                    self.bounding_box.x += t.x;
+                    self.bounding_box.y += t.y;
+                }
                 self.active_handle = TextDragHandle::None;
                 self.state = TextEditState::Editing;
             }
@@ -1066,28 +1107,32 @@ impl ToolOperation for TextPreview {
         match self.state {
             TextEditState::Placing | TextEditState::PlacingDrag => mouse::Interaction::Crosshair,
             TextEditState::Editing => {
-                let handle = self.hit_test_handle(point);
+                let handle = self.hit_test_handle(self.to_local(point));
                 if handle == TextDragHandle::None {
                     mouse::Interaction::Text
                 } else {
-                    handle.cursor()
+                    handle.rotated(self.steps()).cursor()
                 }
             }
-            TextEditState::Resizing => self.active_handle.cursor(),
+            TextEditState::Resizing => self.active_handle.rotated(self.steps()).cursor(),
         }
-    }
-
-    fn on_zoom_changed(&mut self, old_zoom: f32, new_zoom: f32, _image_size: Size) {
-        let old_scale = self.last_scale.get();
-        let new_scale = old_scale * (new_zoom / old_zoom);
-        self.last_scale.set(new_scale);
-        self.sync_buffer_size(new_scale);
-        self.sync_height();
     }
 }
 
 fn near(a: Point, b: Point, threshold: f32) -> bool {
     (a.x - b.x).abs() < threshold && (a.y - b.y).abs() < threshold
+}
+
+/// `v - R(v)` where `R` is the clockwise quarter-turn render rotation for `steps`. Used to
+/// re-anchor a resized rotated box from the fixed-pivot render to its own-center render.
+fn i_minus_r(v: Vector, steps: u8) -> Vector {
+    let rv = match steps % 4 {
+        1 => Vector::new(-v.y, v.x),
+        2 => Vector::new(-v.x, -v.y),
+        3 => Vector::new(v.y, -v.x),
+        _ => v,
+    };
+    Vector::new(v.x - rv.x, v.y - rv.y)
 }
 
 fn draw_handle(
@@ -1100,7 +1145,10 @@ fn draw_handle(
     color: Color,
 ) {
     let rect = Rectangle::new(
-        Point::new(w.mul_add(-anchor_x, center.x), h.mul_add(-anchor_y, center.y)),
+        Point::new(
+            w.mul_add(-anchor_x, center.x),
+            h.mul_add(-anchor_y, center.y),
+        ),
         Size::new(w, h),
     );
     frame.fill_rectangle(rect.position(), rect.size(), Fill::from(color));

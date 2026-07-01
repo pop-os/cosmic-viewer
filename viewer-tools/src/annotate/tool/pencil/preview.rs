@@ -4,8 +4,8 @@ use super::PencilOperation;
 use crate::ToolOperation;
 use cosmic::{
     Renderer,
-    iced::{Color, Point, Size, mouse},
     iced::widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
+    iced::{Color, Point, Size, mouse},
 };
 use image::DynamicImage;
 

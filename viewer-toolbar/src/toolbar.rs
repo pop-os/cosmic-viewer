@@ -110,9 +110,8 @@ impl<'a, Message: Clone + 'static> ResponsiveToolbar<'a, Message> {
         let mode = if self.mode == ToolbarMode::Full {
             self.available_width.map_or(ToolbarMode::Full, |available| {
                 let total_items = start.len() + center.len() + end.len();
-                let divider_count = usize::from(has_start)
-                    + usize::from(has_center)
-                    + usize::from(has_end);
+                let divider_count =
+                    usize::from(has_start) + usize::from(has_center) + usize::from(has_end);
                 let needed = Self::estimated_width(
                     total_items,
                     divider_count.saturating_sub(1),

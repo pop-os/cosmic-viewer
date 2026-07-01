@@ -324,7 +324,8 @@ fn extract_exif_thumbnail(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u
 
     // Get the thumbnail data
     let thumbnail = exif
-        .get_field(exif::Tag::JPEGInterchangeFormat, exif::In::THUMBNAIL).zip(exif.get_field(exif::Tag::JPEGInterchangeFormatLength, exif::In::THUMBNAIL));
+        .get_field(exif::Tag::JPEGInterchangeFormat, exif::In::THUMBNAIL)
+        .zip(exif.get_field(exif::Tag::JPEGInterchangeFormatLength, exif::In::THUMBNAIL));
 
     if thumbnail.is_none() {
         return Err(LoadError::UnsupportedFormat("No EXIF thumbnail".into()));
@@ -465,7 +466,6 @@ fn find_tiff_header_offset(file: &mut File) -> Result<u64, LoadError> {
 // casts cannot truncate.
 #[allow(clippy::cast_possible_truncation)]
 fn decode_jpeg_scaled(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u8>), LoadError> {
-
     // Read the JPEG file
     let mut file = File::open(path)?;
     let mut jpeg_data = Vec::new();

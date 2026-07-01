@@ -354,12 +354,15 @@ impl<M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInner<'
 
         let metrics = self.grid_metrics(avail_width);
 
-        let total_height = ((metrics.rows.saturating_sub(1)) as f32).mul_add(f32::from(self.row_spacing), metrics.rows as f32 * metrics.row_height)
-            + self.padding.y();
+        let total_height = ((metrics.rows.saturating_sub(1)) as f32).mul_add(
+            f32::from(self.row_spacing),
+            metrics.rows as f32 * metrics.row_height,
+        ) + self.padding.y();
 
         self.cached_cols.set(metrics.cols);
         self.cached_row_height.set(metrics.row_height);
-        self.last_layout.set((metrics.cols, metrics.row_height.to_bits()));
+        self.last_layout
+            .set((metrics.cols, metrics.row_height.to_bits()));
 
         let content_size = Size::new(avail_width + self.padding.x(), total_height);
 
@@ -408,11 +411,15 @@ impl<M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInner<'
             let row = idx / cols;
             let col = idx % cols;
 
-            let x =
-                (col as f32).mul_add(cell_size + f32::from(self.col_spacing), bounds.x + self.padding.left);
+            let x = (col as f32).mul_add(
+                cell_size + f32::from(self.col_spacing),
+                bounds.x + self.padding.left,
+            );
 
-            let y =
-                (row as f32).mul_add(row_height + f32::from(self.row_spacing), bounds.y + self.padding.top);
+            let y = (row as f32).mul_add(
+                row_height + f32::from(self.row_spacing),
+                bounds.y + self.padding.top,
+            );
 
             let cell_bounds = Rectangle::new(Point::new(x, y), Size::new(cell_size, cell_size));
 
@@ -634,7 +641,8 @@ impl<M: Clone + 'static> Widget<M, cosmic::Theme, Renderer> for ImageGridInner<'
                         let row = new_idx / cols;
                         let row_spacing = f32::from(self.row_spacing);
 
-                        let item_top = (row as f32).mul_add(row_height + row_spacing, self.padding.top);
+                        let item_top =
+                            (row as f32).mul_add(row_height + row_spacing, self.padding.top);
                         let item_bottom = item_top + row_height;
 
                         let scroll_offset = viewport.y - bounds.y;

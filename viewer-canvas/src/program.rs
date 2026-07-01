@@ -3,12 +3,12 @@ pub mod manager;
 use crate::state::{CanvasImage, CanvasMessage, Interaction, ToolKind};
 use cosmic::{
     Renderer, Theme,
+    iced::advanced::image::Renderer as IcedRenderer,
+    iced::widget::canvas::{Action, Event, Frame, Geometry, Program},
     iced::{
         Rectangle, Size, Vector,
         mouse::{self, Button, Cursor, Event as MouseEvent},
     },
-    iced::advanced::image::Renderer as IcedRenderer,
-    iced::widget::canvas::{Action, Event, Frame, Geometry, Program},
     widget::canvas::Cache,
 };
 use viewer_tools::ToolOperation;
@@ -93,24 +93,44 @@ impl Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'_> {
             let _ = renderer.load_image(&image.handle);
 
             if self.overlay_only {
-                // Overlay layer
+                // Overlay layer. `center` is the outer frame's center; it must be captured
+                // explicitly rather than read via `frame.center()` inside `with_clip`, because the
+                // drafted clip frame reports its own (clip-sized) center.
                 let center = frame.center();
-                frame.translate(Vector::new(center.x, center.y));
-                frame.translate(self.pan);
-                frame.scale(self.zoom * fit_scale);
-                frame.translate(Vector::new(
-                    -(image.width as f32) / 2.0,
-                    -(image.height as f32) / 2.0,
-                ));
-
                 let effective_scale = self.zoom * fit_scale;
 
-                for op in self.operations {
-                    op.draw(&mut frame, image_size, effective_scale);
-                }
+                let render = |frame: &mut Frame<Renderer>| {
+                    frame.translate(Vector::new(center.x, center.y));
+                    frame.translate(self.pan);
+                    frame.scale(effective_scale);
+                    frame.translate(Vector::new(
+                        -(image.width as f32) / 2.0,
+                        -(image.height as f32) / 2.0,
+                    ));
 
-                if let Some(preview) = self.preview {
-                    preview.draw(&mut frame, image_size, effective_scale);
+                    for op in self.operations {
+                        op.draw(frame, image_size, effective_scale);
+                    }
+
+                    if let Some(preview) = self.preview {
+                        preview.draw(frame, image_size, effective_scale);
+                    }
+                };
+
+                if self.active_tool == Some(ToolKind::Crop) {
+                    // Crop frame: never clip — the handles extend past the image edge by design.
+                    render(&mut frame);
+                } else {
+                    // Annotations: clip to the image rectangle so marks outside the (possibly
+                    // cropped) image aren't painted into the dead area, matching the rasterized
+                    // save where apply() can only write within the image buffer.
+                    let img_clip = Rectangle {
+                        x: center.x + self.pan.x - image.width as f32 * effective_scale / 2.0,
+                        y: center.y + self.pan.y - image.height as f32 * effective_scale / 2.0,
+                        width: image.width as f32 * effective_scale,
+                        height: image.height as f32 * effective_scale,
+                    };
+                    frame.with_clip(img_clip, render);
                 }
             } else {
                 // Image layer

@@ -4,8 +4,8 @@ use super::PenOperation;
 use crate::ToolOperation;
 use cosmic::{
     Renderer,
-    iced::{Color, Point, Size, mouse},
     iced::widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
+    iced::{Color, Point, Size, mouse},
     widget::canvas::LineJoin,
 };
 use image::DynamicImage;
@@ -29,7 +29,7 @@ impl PenPreview {
 }
 
 impl ToolOperation for PenPreview {
-    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, _scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
         if self.points.len() < 2 {
             return;
         }
@@ -45,7 +45,7 @@ impl ToolOperation for PenPreview {
             &path,
             Stroke::default()
                 .with_color(self.color)
-                .with_width(self.width)
+                .with_width(self.width * scale)
                 .with_line_cap(LineCap::Round)
                 .with_line_join(LineJoin::Round),
         );

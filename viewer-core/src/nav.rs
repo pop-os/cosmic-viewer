@@ -221,8 +221,14 @@ fn natural_cmp(a: &str, b: &str) -> Ordering {
             }
             (Some(_), Some(_)) => {
                 // `peek()` above returned `Some`, so `next()` cannot be `None`.
-                let ac = a_chars.next().expect("peeked char present").to_ascii_lowercase();
-                let bc = b_chars.next().expect("peeked char present").to_ascii_lowercase();
+                let ac = a_chars
+                    .next()
+                    .expect("peeked char present")
+                    .to_ascii_lowercase();
+                let bc = b_chars
+                    .next()
+                    .expect("peeked char present")
+                    .to_ascii_lowercase();
                 match ac.cmp(&bc) {
                     Ordering::Equal => {}
                     other => return other,

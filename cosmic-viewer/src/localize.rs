@@ -8,12 +8,13 @@ use rust_embed::RustEmbed;
 #[folder = "../i18n"]
 struct Localizations;
 
-pub static LANGUAGE_LOADER: std::sync::LazyLock<FluentLanguageLoader> = std::sync::LazyLock::new(|| {
-    let loader: FluentLanguageLoader = fluent_language_loader!();
-    let requested_languages = DesktopLanguageRequester::requested_languages();
-    let _result = i18n_embed::select(&loader, &Localizations, &requested_languages);
-    loader
-});
+pub static LANGUAGE_LOADER: std::sync::LazyLock<FluentLanguageLoader> =
+    std::sync::LazyLock::new(|| {
+        let loader: FluentLanguageLoader = fluent_language_loader!();
+        let requested_languages = DesktopLanguageRequester::requested_languages();
+        let _result = i18n_embed::select(&loader, &Localizations, &requested_languages);
+        loader
+    });
 
 #[macro_export]
 macro_rules! fl {

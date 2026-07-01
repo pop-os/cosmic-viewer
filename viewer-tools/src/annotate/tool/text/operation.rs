@@ -2,24 +2,26 @@ use crate::{
     ToolOperation,
     annotate::tool::text::{
         LINE_HEIGHT_FACTOR, TEXT_INSET, TextSpan, build_buffer_line, color_channel_u8, group_spans,
-        intern_str, span_attrs,
+        intern_str,
         preview::{TextEditState, TextPreview},
+        rotated_footprint, span_attrs,
     },
     rotate::RotateDirection,
 };
 use cosmic::{
     Renderer,
+    iced::advanced::graphics::text::{cosmic_text, font_system},
+    iced::advanced::text::{LineHeight, Shaping},
+    iced::widget::canvas::{self, Frame},
     iced::{
-        Color, Font, Point, Rectangle, Size,
+        Color, Font, Point, Radians, Rectangle, Size, Vector,
         alignment::{Horizontal, Vertical},
         font,
     },
-    iced::advanced::text::{LineHeight, Shaping},
-    iced::widget::canvas::{self, Frame},
-    iced::advanced::graphics::text::{cosmic_text, font_system},
 };
-use image::{DynamicImage, Rgba};
+use image::{DynamicImage, Rgba, RgbaImage, imageops};
 use std::any::Any;
+use std::f32::consts::FRAC_PI_2;
 
 #[derive(Debug, Clone)]
 pub struct TextOperation {
@@ -30,7 +32,10 @@ pub struct TextOperation {
     pub font_family: &'static str,
     pub alignment: Horizontal,
     pub bounding_box: Rectangle,
-    pub edit_scale: f32,
+    /// Number of 90° clockwise rotations applied (mod 4). The `bounding_box` is the
+    /// axis-aligned image-space footprint; the text is laid out in its reading orientation
+    /// (see `reading_size`) and rotated by this many quarter-turns at render/save time.
+    pub rotation_steps: u8,
 }
 
 /// A run of identically-styled glyphs, laid out for canvas rendering.
@@ -49,27 +54,14 @@ struct SpanRun {
 }
 
 impl TextOperation {
-    #[allow(clippy::too_many_arguments)]
+    /// Box dimensions in the text's reading (un-rotated) orientation. For odd quarter-turns
+    /// the image-space `bounding_box` has width/height swapped, so swap them back.
     #[must_use]
-    pub const fn new(
-        position: Point,
-        spans: Vec<TextSpan>,
-        color: Color,
-        font_size: f32,
-        font_family: &'static str,
-        alignment: Horizontal,
-        bounding_box: Rectangle,
-        edit_scale: f32,
-    ) -> Self {
-        Self {
-            position,
-            spans,
-            color,
-            font_size,
-            font_family,
-            alignment,
-            bounding_box,
-            edit_scale,
+    pub const fn reading_size(&self) -> Size {
+        if self.rotation_steps % 2 == 1 {
+            Size::new(self.bounding_box.height, self.bounding_box.width)
+        } else {
+            Size::new(self.bounding_box.width, self.bounding_box.height)
         }
     }
 }
@@ -103,8 +95,10 @@ impl TextOperation {
             false,
             self.alignment,
         );
-        preview.bounding_box = self.bounding_box;
-        preview.last_scale.set(self.edit_scale);
+        // Edit in the upright reading orientation; rotation is re-applied on commit and rendered
+        // live by the preview. The footprint→reading conversion is the same swap as reading→footprint.
+        preview.bounding_box = rotated_footprint(self.bounding_box, self.rotation_steps);
+        preview.rotation_steps = self.rotation_steps;
         preview.state = TextEditState::Editing;
 
         if let Some(last) = self.spans.last() {
@@ -125,7 +119,7 @@ impl TextOperation {
 }
 
 impl TextOperation {
-    fn build_buffer(&self, scale: f32) -> cosmic_text::Buffer {
+    fn build_buffer(&self) -> cosmic_text::Buffer {
         let metrics =
             cosmic_text::Metrics::new(self.font_size, self.font_size * LINE_HEIGHT_FACTOR);
         let default_attrs =
@@ -133,10 +127,7 @@ impl TextOperation {
 
         let mut font_sys = font_system().write().expect("Write font system");
         let mut buffer = cosmic_text::Buffer::new(font_sys.raw(), metrics);
-        buffer.set_size(
-            Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width) * scale),
-            None,
-        );
+        buffer.set_size(Some(TEXT_INSET.mul_add(-2.0, self.reading_size().width)), None);
         buffer.set_wrap(cosmic_text::Wrap::WordOrGlyph);
 
         let lines = group_spans(&self.spans);
@@ -146,7 +137,7 @@ impl TextOperation {
             let mut offset = 0;
             for span in line_spans {
                 let end = offset + span.text.len();
-                attrs_list.add_span(offset..end, &span_attrs(default_attrs.clone(), span, 1.0));
+                attrs_list.add_span(offset..end, &span_attrs(default_attrs.clone(), span));
                 offset = end;
             }
             buffer
@@ -158,8 +149,8 @@ impl TextOperation {
     }
 
     /// Lay the text out and collect runs of identically-styled glyphs for rendering.
-    fn layout_runs(&self, scale: f32) -> Vec<SpanRun> {
-        let buffer = self.build_buffer(scale);
+    fn layout_runs(&self) -> Vec<SpanRun> {
+        let buffer = self.build_buffer();
         let mut runs = Vec::new();
         for run in buffer.layout_runs() {
             if run.glyphs.is_empty() {
@@ -216,27 +207,40 @@ impl TextOperation {
 }
 
 impl ToolOperation for TextOperation {
-    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, _scale: f32) {
         if self.spans.is_empty() {
             return;
         }
 
-        let runs = self.layout_runs(scale);
+        let runs = self.layout_runs();
+        let reading = self.reading_size();
+        let center = self.bounding_box.center();
+        // The text is laid out in its reading orientation, centered on the footprint, then the
+        // frame is rotated about that center. For `rotation_steps == 0` this is exactly
+        // `(bounding_box.x + TEXT_INSET, bounding_box.y)`.
+        let origin = Point::new(
+            center.x - reading.width / 2.0 + TEXT_INSET,
+            center.y - reading.height / 2.0,
+        );
 
-        let inv = 1.0 / scale;
-        let inset = TEXT_INSET / scale;
-        let origin = Point::new(self.bounding_box.x + inset, self.bounding_box.y);
+        let steps = self.rotation_steps % 4;
+        if steps != 0 {
+            frame.push_transform();
+            frame.translate(Vector::new(center.x, center.y));
+            frame.rotate(Radians(f32::from(steps) * FRAC_PI_2));
+            frame.translate(Vector::new(-center.x, -center.y));
+        }
 
         for run in &runs {
             let text = canvas::Text {
                 content: run.content.clone(),
                 position: Point::new(
-                    run.x.mul_add(inv, origin.x),
-                    (run.line_top + run.font_size.mul_add(-LINE_HEIGHT_FACTOR, run.line_h))
-                        .mul_add(inv, origin.y),
+                    run.x + origin.x,
+                    run.line_top + run.font_size.mul_add(-LINE_HEIGHT_FACTOR, run.line_h)
+                        + origin.y,
                 ),
                 color: run.color,
-                size: (run.font_size / scale).into(),
+                size: run.font_size.into(),
                 font: Font {
                     family: font::Family::Name(run.family),
                     weight: if run.bold {
@@ -260,16 +264,18 @@ impl ToolOperation for TextOperation {
             frame.fill_text(text);
 
             if run.underline {
-                let uy = (run.line_top + run.line_h).mul_add(inv, origin.y) - 1.0 / scale;
-                let ux = run.x.mul_add(inv, origin.x);
-                let uw = (run.x_end - run.x) * inv;
+                let uy = run.line_top + run.line_h + origin.y - 1.0;
+                let ux = run.x + origin.x;
+                let uw = run.x_end - run.x;
                 frame.stroke(
                     &canvas::Path::line(Point::new(ux, uy), Point::new(ux + uw, uy)),
-                    canvas::Stroke::default()
-                        .with_color(run.color)
-                        .with_width(1.0 / scale),
+                    canvas::Stroke::default().with_color(run.color).with_width(1.0),
                 );
             }
+        }
+
+        if steps != 0 {
+            frame.pop_transform();
         }
     }
 
@@ -285,15 +291,15 @@ impl ToolOperation for TextOperation {
             return;
         }
 
-        let img_font = self.font_size / self.edit_scale;
+        let reading = self.reading_size();
+        let img_font = self.font_size;
         let img_metrics = cosmic_text::Metrics::new(img_font, img_font * LINE_HEIGHT_FACTOR);
         let default_attrs =
             cosmic_text::Attrs::new().family(cosmic_text::Family::Name(self.font_family));
-        let font_scale = 1.0 / self.edit_scale;
 
         let mut font_sys = font_system().write().expect("Write font system");
         let mut buffer = cosmic_text::Buffer::new(font_sys.raw(), img_metrics);
-        buffer.set_size(Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)), None);
+        buffer.set_size(Some(TEXT_INSET.mul_add(-2.0, reading.width)), None);
         buffer.set_wrap(cosmic_text::Wrap::WordOrGlyph);
 
         let lines = group_spans(&self.spans);
@@ -303,10 +309,7 @@ impl ToolOperation for TextOperation {
             let mut offset = 0;
             for span in line_spans {
                 let end = offset + span.text.len();
-                attrs_list.add_span(
-                    offset..end,
-                    &span_attrs(default_attrs.clone(), span, font_scale),
-                );
+                attrs_list.add_span(offset..end, &span_attrs(default_attrs.clone(), span));
                 offset = end;
             }
             buffer
@@ -315,8 +318,13 @@ impl ToolOperation for TextOperation {
         }
         buffer.shape_until_scroll(font_sys.raw(), false);
 
-        let rgba = image.as_mut_rgba8().expect("image should be RGBA");
-        let (img_w, img_h) = (rgba.width() as i32, rgba.height() as i32);
+        // Rasterize the text upright into a transparent layer the size of the reading box, then
+        // rotate that layer into the image's orientation. 90° turns stay exact and we avoid
+        // per-glyph bitmap rotation.
+        let layer_w = (reading.width.ceil() as u32).max(1);
+        let layer_h = (reading.height.ceil() as u32).max(1);
+        let mut layer = RgbaImage::new(layer_w, layer_h);
+        let layer_bounds = (layer_w as i32, layer_h as i32);
 
         let fallback_color = cosmic_text::Color::rgba(
             color_channel_u8(self.color.r),
@@ -326,7 +334,7 @@ impl ToolOperation for TextOperation {
         );
 
         let mut swash_cache = cosmic_text::SwashCache::new();
-        let origin = Point::new(self.bounding_box.x + TEXT_INSET, self.bounding_box.y);
+        let origin = Point::new(TEXT_INSET, 0.0);
         for run in buffer.layout_runs() {
             let line = &buffer.lines[run.line_i];
             let attrs_list = line.attrs_list();
@@ -349,21 +357,15 @@ impl ToolOperation for TextOperation {
                         let px = (gx as i32) + off_x;
                         let py = (gy as i32) + off_y;
 
-                        if px >= 0 && px < img_w && py >= 0 && py < img_h {
+                        if px >= 0 && px < layer_bounds.0 && py >= 0 && py < layer_bounds.1 {
                             let alpha = f32::from(color.a()) / 255.0;
                             if alpha > 0.0 {
-                                let existing = rgba.get_pixel(px as u32, py as u32);
-                                let out_alpha = 255.0f32
-                                    .mul_add(alpha, f32::from(existing[3]) * (1.0 - alpha))
-                                    .round()
-                                    .clamp(0.0, 255.0) as u8;
-                                let blended = Rgba([
-                                    blend_channel(existing[0], color.r(), alpha),
-                                    blend_channel(existing[1], color.g(), alpha),
-                                    blend_channel(existing[2], color.b(), alpha),
-                                    out_alpha,
-                                ]);
-                                rgba.put_pixel(px as u32, py as u32, blended);
+                                let dst = *layer.get_pixel(px as u32, py as u32);
+                                layer.put_pixel(
+                                    px as u32,
+                                    py as u32,
+                                    blend_over(dst, color.r(), color.g(), color.b(), alpha),
+                                );
                             }
                         }
                     },
@@ -376,13 +378,28 @@ impl ToolOperation for TextOperation {
                 origin,
                 img_font,
                 fallback_color,
-                rgba,
-                (img_w, img_h),
+                &mut layer,
+                layer_bounds,
             );
         }
         drop(font_sys);
 
-        *image = DynamicImage::ImageRgba8(rgba.clone());
+        // Rotate the upright layer into the image orientation (clockwise quarter-turns).
+        let layer = match self.rotation_steps % 4 {
+            1 => imageops::rotate90(&layer),
+            2 => imageops::rotate180(&layer),
+            3 => imageops::rotate270(&layer),
+            _ => layer,
+        };
+
+        // Composite the (rotated) layer onto the image at the footprint's top-left.
+        let rgba = image.as_mut_rgba8().expect("image should be RGBA");
+        composite_over(
+            rgba,
+            &layer,
+            self.bounding_box.x.round() as i32,
+            self.bounding_box.y.round() as i32,
+        );
     }
 
     fn commit(&self) -> Option<Box<dyn ToolOperation>> {
@@ -398,13 +415,25 @@ impl ToolOperation for TextOperation {
     }
 
     fn transform_rotate(&mut self, direction: RotateDirection, image_size: Size) {
-        let (width, height) = (image_size.width, image_size.height);
-        let (x, y) = (self.position.x, self.position.y);
-
-        self.position = match direction {
-            RotateDirection::Left => Point::new(y, width - x),
-            RotateDirection::Right => Point::new(height - y, x),
-        }
+        let (w, h) = (image_size.width, image_size.height);
+        let b = self.bounding_box;
+        // Map the axis-aligned footprint into the rotated image; a 90° turn swaps width/height.
+        // (`image_size` is the pre-rotation image size, matching the pixel rotate90/rotate270.)
+        self.bounding_box = match direction {
+            RotateDirection::Right => Rectangle::new(
+                Point::new(h - b.y - b.height, b.x),
+                Size::new(b.height, b.width),
+            ),
+            RotateDirection::Left => Rectangle::new(
+                Point::new(b.y, w - b.x - b.width),
+                Size::new(b.height, b.width),
+            ),
+        };
+        self.position = self.bounding_box.position();
+        self.rotation_steps = match direction {
+            RotateDirection::Right => (self.rotation_steps + 1) % 4,
+            RotateDirection::Left => (self.rotation_steps + 3) % 4,
+        };
     }
 
     fn transform_crop(&mut self, region: Rectangle) {
@@ -487,10 +516,52 @@ fn draw_run_underlines(
     }
 }
 
+/// Source-over composite of `src` onto `dst` with its top-left at `(ox, oy)` in `dst` space.
+// reason: layer/image pixel coordinates are within i32/u32 range; truncation is intended, bounds checked.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
+)]
+fn composite_over(dst: &mut RgbaImage, src: &RgbaImage, ox: i32, oy: i32) {
+    let (dw, dh) = (dst.width() as i32, dst.height() as i32);
+    for (lx, ly, px) in src.enumerate_pixels() {
+        let alpha = f32::from(px[3]) / 255.0;
+        if alpha <= 0.0 {
+            continue;
+        }
+        let dx = ox + lx as i32;
+        let dy = oy + ly as i32;
+        if dx >= 0 && dx < dw && dy >= 0 && dy < dh {
+            let under = *dst.get_pixel(dx as u32, dy as u32);
+            dst.put_pixel(
+                dx as u32,
+                dy as u32,
+                blend_over(under, px[0], px[1], px[2], alpha),
+            );
+        }
+    }
+}
+
+/// Straight-alpha source-over of an `(sr, sg, sb)` color with coverage `sa` (0.0..=1.0) onto `dst`.
+/// Reduces to a simple lerp when `dst` is opaque, but stays correct for a transparent destination
+/// (the rasterization layer), where a naive `src*a + dst*(1-a)` would premultiply the color twice.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // reason: clamped to 0.0..=255.0 then rounded, in-range for u8
-fn blend_channel(dst: u8, src: u8, alpha: f32) -> u8 {
-    f32::from(src)
-        .mul_add(alpha, f32::from(dst) * (1.0 - alpha))
-        .round()
-        .clamp(0.0, 255.0) as u8
+fn blend_over(dst: Rgba<u8>, sr: u8, sg: u8, sb: u8, sa: f32) -> Rgba<u8> {
+    let da = f32::from(dst[3]) / 255.0;
+    let out_a = sa + da * (1.0 - sa);
+    if out_a <= 0.0 {
+        return Rgba([0, 0, 0, 0]);
+    }
+    let chan = |s: u8, d: u8| -> u8 {
+        (f32::from(s).mul_add(sa, f32::from(d) * da * (1.0 - sa)) / out_a)
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
+    Rgba([
+        chan(sr, dst[0]),
+        chan(sg, dst[1]),
+        chan(sb, dst[2]),
+        (out_a * 255.0).round().clamp(0.0, 255.0) as u8,
+    ])
 }

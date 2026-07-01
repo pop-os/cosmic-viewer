@@ -6,8 +6,8 @@ pub use preview::ShapePreview;
 
 use cosmic::{
     Renderer,
-    iced::{Color, Point, Rectangle, Size},
     iced::widget::canvas::{Fill, Frame, LineCap, Path, Stroke, path::Builder},
+    iced::{Color, Point, Rectangle, Size},
     widget::canvas::LineJoin,
 };
 
@@ -29,7 +29,7 @@ pub fn draw_shape(
     color: Color,
     width: f32,
     frame: &mut Frame<Renderer>,
-    _scale: f32,
+    scale: f32,
 ) {
     let path = build_path(kind, start, end);
 
@@ -42,7 +42,7 @@ pub fn draw_shape(
             let shaft = Path::line(start, end);
             let stroke = Stroke::default()
                 .with_color(color)
-                .with_width(width)
+                .with_width(width * scale)
                 .with_line_cap(LineCap::Round)
                 .with_line_join(LineJoin::Round);
             frame.stroke(&shaft, stroke);
@@ -52,7 +52,7 @@ pub fn draw_shape(
         _ => {
             let stroke = Stroke::default()
                 .with_color(color)
-                .with_width(width)
+                .with_width(width * scale)
                 .with_line_cap(LineCap::Round)
                 .with_line_join(LineJoin::Round);
             frame.stroke(&path, stroke);
@@ -127,7 +127,10 @@ fn arrow_path(start: Point, end: Point) -> Path {
     let point_x = -unit_y;
     let point_y = unit_x;
 
-    let base = Point::new(unit_x.mul_add(-head_len, end.x), unit_y.mul_add(-head_len, end.y));
+    let base = Point::new(
+        unit_x.mul_add(-head_len, end.x),
+        unit_y.mul_add(-head_len, end.y),
+    );
     let left = Point::new(
         base.x + point_x * head_width / 2.0,
         base.y + point_y * head_width / 2.0,
@@ -164,7 +167,10 @@ fn arrow_head_path(start: Point, end: Point) -> Path {
     let perp_x = -unit_y;
     let perp_y = unit_x;
 
-    let base = Point::new(unit_x.mul_add(-head_len, end.x), unit_y.mul_add(-head_len, end.y));
+    let base = Point::new(
+        unit_x.mul_add(-head_len, end.x),
+        unit_y.mul_add(-head_len, end.y),
+    );
     let left = Point::new(
         base.x + perp_x * head_width / 2.0,
         base.y + perp_y * head_width / 2.0,
@@ -262,7 +268,10 @@ pub fn arrow_segments(start: Point, end: Point) -> Vec<(Point, Point)> {
     let point_x = -unit_y;
     let point_y = unit_x;
 
-    let base = Point::new(unit_x.mul_add(-head_len, end.x), unit_y.mul_add(-head_len, end.y));
+    let base = Point::new(
+        unit_x.mul_add(-head_len, end.x),
+        unit_y.mul_add(-head_len, end.y),
+    );
     let left = Point::new(
         base.x + point_x * head_width / 2.0,
         base.y + point_y * head_width / 2.0,

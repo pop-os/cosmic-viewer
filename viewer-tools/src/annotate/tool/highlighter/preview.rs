@@ -4,8 +4,8 @@ use super::HighlighterOperation;
 use crate::ToolOperation;
 use cosmic::{
     Renderer,
-    iced::{Color, Point, Size, mouse},
     iced::widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
+    iced::{Color, Point, Size, mouse},
     widget::canvas::LineJoin,
 };
 use image::DynamicImage;
@@ -41,7 +41,7 @@ impl HighlighterPreview {
 }
 
 impl ToolOperation for HighlighterPreview {
-    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, _scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
         if self.points.len() < 2 {
             return;
         }
@@ -63,12 +63,20 @@ impl ToolOperation for HighlighterPreview {
                 for idx in 1..self.points.len() - 1 {
                     let control = self.points[idx];
                     let next = self.points[idx + 1];
-                    let end = Point::new(f32::midpoint(control.x, next.x), f32::midpoint(control.y, next.y));
+                    let end = Point::new(
+                        f32::midpoint(control.x, next.x),
+                        f32::midpoint(control.y, next.y),
+                    );
                     builder.quadratic_curve_to(control, end);
                 }
 
                 // Final segment to last point
-                builder.line_to(*self.points.last().expect("points non-empty: len checked at entry"));
+                builder.line_to(
+                    *self
+                        .points
+                        .last()
+                        .expect("points non-empty: len checked at entry"),
+                );
             }
         });
 
@@ -76,7 +84,7 @@ impl ToolOperation for HighlighterPreview {
             &path,
             Stroke::default()
                 .with_color(self.highlight_color())
-                .with_width(self.width)
+                .with_width(self.width * scale)
                 .with_line_cap(LineCap::Square)
                 .with_line_join(LineJoin::Round),
         );

@@ -1,7 +1,7 @@
 use cosmic::iced::{Color, Point};
 use image::DynamicImage;
-use viewer_tools::annotate::{ShapeKind, ShapeOperation};
 use viewer_tools::ToolOperation;
+use viewer_tools::annotate::{ShapeKind, ShapeOperation};
 
 fn make_blank_image(width: u32, height: u32) -> DynamicImage {
     DynamicImage::ImageRgba8(image::RgbaImage::new(width, height))
@@ -41,5 +41,8 @@ fn visual_regression_arrow_proportions() {
     op.apply(&mut actual);
 
     let blank = make_blank_image(400, 200);
-    assert!(compare_images(&actual, &blank) > 0.0, "Arrow should have rendered something");
+    assert!(
+        compare_images(&actual, &blank) > 0.0,
+        "Arrow should have rendered something"
+    );
 }

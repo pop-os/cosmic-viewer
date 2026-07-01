@@ -9,8 +9,8 @@ pub use crate::annotate::FONT_SIZE_PRESETS;
 use crate::rotate::RotateDirection;
 use cosmic::{
     Renderer,
-    iced::{Point, Rectangle, Size, mouse},
     iced::widget::canvas::Frame,
+    iced::{Point, Rectangle, Size, mouse},
 };
 use image::DynamicImage;
 use std::{any::Any, fmt::Debug};

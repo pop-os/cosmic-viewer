@@ -100,9 +100,7 @@ impl ImageCache {
 
     #[must_use]
     pub fn pending_thumbnail_count(&self) -> usize {
-        self.pending_thumbnails
-            .lock()
-            .map_or(0, |set| set.len())
+        self.pending_thumbnails.lock().map_or(0, |set| set.len())
     }
 
     #[must_use]
@@ -126,9 +124,7 @@ impl ImageCache {
 
     #[must_use]
     pub fn is_pending(&self, path: &PathBuf) -> bool {
-        self.pending
-            .lock()
-            .is_ok_and(|set| set.contains(path))
+        self.pending.lock().is_ok_and(|set| set.contains(path))
     }
 
     pub fn set_pending(&self, path: PathBuf) {

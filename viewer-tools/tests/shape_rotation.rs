@@ -1,7 +1,7 @@
 use cosmic::iced::{Color, Point, Size};
+use viewer_tools::ToolOperation;
 use viewer_tools::annotate::{ShapeKind, ShapeOperation};
 use viewer_tools::rotate::RotateDirection;
-use viewer_tools::ToolOperation;
 
 const RED: Color = Color {
     r: 1.0,
@@ -84,13 +84,7 @@ fn shape_transform_rotate_left() {
 fn shape_rotate_right_four_times_roundtrip() {
     let original_start = Point::new(10.0, 20.0);
     let original_end = Point::new(30.0, 40.0);
-    let mut op = ShapeOperation::new(
-        ShapeKind::Line,
-        original_start,
-        original_end,
-        RED,
-        2.0,
-    );
+    let mut op = ShapeOperation::new(ShapeKind::Line, original_start, original_end, RED, 2.0);
 
     let size = Size::new(100.0, 100.0);
     for _ in 0..4 {

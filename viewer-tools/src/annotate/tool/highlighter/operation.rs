@@ -7,8 +7,8 @@ use crate::{
 };
 use cosmic::{
     Renderer,
-    iced::{Color, Point, Rectangle, Size},
     iced::widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
+    iced::{Color, Point, Rectangle, Size},
     widget::canvas::LineJoin,
 };
 use image::DynamicImage;
@@ -36,7 +36,7 @@ impl HighlighterOperation {
 }
 
 impl ToolOperation for HighlighterOperation {
-    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, _scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
         if self.points.len() < 2 {
             return;
         }
@@ -57,12 +57,20 @@ impl ToolOperation for HighlighterOperation {
                 for idx in 1..self.points.len() - 1 {
                     let control = self.points[idx];
                     let next = self.points[idx + 1];
-                    let end = Point::new(f32::midpoint(control.x, next.x), f32::midpoint(control.y, next.y));
+                    let end = Point::new(
+                        f32::midpoint(control.x, next.x),
+                        f32::midpoint(control.y, next.y),
+                    );
 
                     builder.quadratic_curve_to(control, end);
                 }
 
-                builder.line_to(*self.points.last().expect("points non-empty: len checked at entry"));
+                builder.line_to(
+                    *self
+                        .points
+                        .last()
+                        .expect("points non-empty: len checked at entry"),
+                );
             }
         });
 
@@ -70,7 +78,7 @@ impl ToolOperation for HighlighterOperation {
             &path,
             Stroke::default()
                 .with_color(self.highlight_color())
-                .with_width(self.width)
+                .with_width(self.width * scale)
                 .with_line_cap(LineCap::Square)
                 .with_line_join(LineJoin::Round),
         );
@@ -101,7 +109,10 @@ impl ToolOperation for HighlighterOperation {
                     path_builder.quad_to(control.x, control.y, end_x, end_y);
                 }
 
-                let last = *self.points.last().expect("points non-empty: len checked at entry");
+                let last = *self
+                    .points
+                    .last()
+                    .expect("points non-empty: len checked at entry");
                 path_builder.line_to(last.x, last.y);
             }
         }) else {

@@ -889,6 +889,8 @@ impl CosmicViewer {
                     }
                 });
 
+            let popup = widget::mouse_area(popup).on_press(ViewerMessage::Cancelled);
+
             color_picker_popover = color_picker_popover
                 .popup(popup)
                 .position(popover::Position::Point(Point::new(-110.0, 0.0)))
@@ -917,20 +919,27 @@ impl CosmicViewer {
     }
 
     fn flatten_image(&self) -> Option<DynamicImage> {
-        let base = if let Some(working) = self.viewport.working_image() {
-            working.clone()
+        if let Some(working) = self.viewport.working_image() {
+            // `working_image` already has the geometric ops (rotate/crop) baked in by
+            // `rebuild_working_image`/`CropApply`. Re-applying them here would double-crop or
+            // double-rotate the saved file, so flatten only the overlay (annotation) ops on top.
+            let mut image = working.clone();
+            for op in self.viewport.operations() {
+                if op.as_any().is::<RotateOperation>() || op.as_any().is::<CropOperation>() {
+                    continue;
+                }
+                op.apply(&mut image);
+            }
+            Some(image)
         } else {
+            // No baked working image (nothing edited): flatten every op onto the cached original.
             let current = self.nav.current()?;
-            let cached = self.cache.get_full(current)?;
-            cached.image
-        };
-
-        let mut image = base;
-        for op in self.viewport.operations() {
-            op.apply(&mut image);
+            let mut image = self.cache.get_full(current)?.image;
+            for op in self.viewport.operations() {
+                op.apply(&mut image);
+            }
+            Some(image)
         }
-
-        Some(image)
     }
 
     fn build_shape_selector(&self) -> Element<'_, ViewerMessage> {
@@ -1950,6 +1959,13 @@ impl Application for CosmicViewer {
                     return Task::none();
                 }
 
+                // Picker open: Escape dismisses just the picker, not markup mode.
+                if self.color_picker.get_is_active() && matches!(key, Key::Named(Named::Escape)) {
+                    return self.update(ViewerMessage::Edit(EditMessage::ColorPicker(
+                        ToggleColorPicker,
+                    )));
+                }
+
                 if matches!(key, Key::Named(Named::Escape))
                     && self.viewport.active_tool() == Some(ToolKind::Annotate)
                     && !self.text_editing
@@ -2585,7 +2601,7 @@ impl Application for CosmicViewer {
                                 .viewport
                                 .preview_ref()
                                 .and_then(|p| p.as_any().downcast_ref::<TextPreview>())
-                                .is_some_and(|t| t.hit_test_handle(point) != TextDragHandle::None);
+                                .is_some_and(|t| t.handle_at(point) != TextDragHandle::None);
 
                             if on_box {
                                 if let Some(size) = self.viewport.image_size()
@@ -2707,18 +2723,8 @@ impl Application for CosmicViewer {
                         preview.on_release(Point::ORIGIN, size);
                     }
 
-                    if self.viewport.active_tool() == Some(ToolKind::Crop) {
-                        let crop_ratio = self.crop_ratio;
-                        tasks.push(future(async move {
-                            Action::App(ViewerMessage::Edit(EditMessage::CropApply))
-                        }));
-                        tasks.push(future(async move {
-                            Action::App(ViewerMessage::Edit(EditMessage::Crop))
-                        }));
-                        tasks.push(future(async move {
-                            Action::App(ViewerMessage::Edit(EditMessage::CropRatio(crop_ratio)))
-                        }));
-                    }
+                    // Crop is applied only via Apply/Enter, never on drag-release, so the frame
+                    // stays live for further adjust/pan and behaves the same in Custom and ratio modes.
 
                     // Set text_editing flag when text preview enters editing mode
                     if self.viewport.active_tool() == Some(ToolKind::Annotate)
@@ -3048,7 +3054,10 @@ impl Application for CosmicViewer {
                     }
                     EditMessage::RotateLeft => {
                         let is_cropping = self.viewport.active_tool() == Some(ToolKind::Crop);
-                        if !is_cropping {
+                        // Commit an in-progress annotation (e.g. a text box being edited) so it
+                        // rotates with the image instead of being discarded; `apply_tool` is a
+                        // no-op (returns false) for an empty preview, which then cancels.
+                        if !is_cropping && !self.viewport.apply_tool() {
                             self.viewport.cancel_tool();
                         }
                         let direction = RotateDirection::Left;
@@ -3078,7 +3087,10 @@ impl Application for CosmicViewer {
                     }
                     EditMessage::RotateRight => {
                         let is_cropping = self.viewport.active_tool() == Some(ToolKind::Crop);
-                        if !is_cropping {
+                        // Commit an in-progress annotation (e.g. a text box being edited) so it
+                        // rotates with the image instead of being discarded; `apply_tool` is a
+                        // no-op (returns false) for an empty preview, which then cancels.
+                        if !is_cropping && !self.viewport.apply_tool() {
                             self.viewport.cancel_tool();
                         }
                         let direction = RotateDirection::Right;

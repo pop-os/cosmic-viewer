@@ -1,8 +1,8 @@
 pub mod operation;
 pub mod preview;
 
-use cosmic::iced::mouse;
 use cosmic::iced::advanced::graphics::text::cosmic_text;
+use cosmic::iced::{Point, Rectangle, Size, mouse};
 pub use operation::TextOperation;
 pub use preview::TextPreview;
 use std::collections::HashSet;
@@ -10,6 +10,23 @@ use std::sync::Mutex;
 
 static INTERNED: Mutex<Option<HashSet<&'static str>>> = Mutex::new(None);
 pub const TEXT_INSET: f32 = 6.0;
+
+/// Convert between an upright (reading-oriented) box and its axis-aligned image-space footprint
+/// for `steps` clockwise quarter-turns. A 90°/270° turn swaps width/height about the box center;
+/// 0°/180° leave the footprint unchanged. The mapping is its own inverse (two swaps cancel), so it
+/// serves both directions — footprint→reading on re-edit and reading→footprint on commit.
+#[must_use]
+pub fn rotated_footprint(upright: Rectangle, steps: u8) -> Rectangle {
+    if steps % 2 == 1 {
+        let c = upright.center();
+        Rectangle::new(
+            Point::new(c.x - upright.height / 2.0, c.y - upright.width / 2.0),
+            Size::new(upright.height, upright.width),
+        )
+    } else {
+        upright
+    }
+}
 
 /// # Panics
 ///
@@ -51,6 +68,29 @@ impl TextDragHandle {
             Self::Left | Self::Right => mouse::Interaction::ResizingHorizontally,
             Self::Move => mouse::Interaction::Grabbing,
         }
+    }
+
+    /// The handle whose *visual* position equals this (logical) one after `steps` clockwise
+    /// quarter-turns. Used to pick a resize cursor that matches the on-screen rotated box.
+    #[must_use]
+    pub const fn rotated(self, steps: u8) -> Self {
+        let mut h = self;
+        let mut i = 0;
+        while i < steps % 4 {
+            h = match h {
+                Self::Top => Self::Right,
+                Self::Right => Self::Bottom,
+                Self::Bottom => Self::Left,
+                Self::Left => Self::Top,
+                Self::TopLeft => Self::TopRight,
+                Self::TopRight => Self::BottomRight,
+                Self::BottomRight => Self::BottomLeft,
+                Self::BottomLeft => Self::TopLeft,
+                other => other,
+            };
+            i += 1;
+        }
+        h
     }
 }
 
@@ -119,11 +159,7 @@ pub fn group_spans<'a>(spans: &'a [TextSpan]) -> Vec<SpanLine<'a>> {
     lines
 }
 
-pub fn span_attrs<'a>(
-    base: cosmic_text::Attrs<'a>,
-    span: &TextSpan,
-    font_scale: f32,
-) -> cosmic_text::Attrs<'a> {
+pub fn span_attrs<'a>(base: cosmic_text::Attrs<'a>, span: &TextSpan) -> cosmic_text::Attrs<'a> {
     let mut a = base
         .weight(if span.bold {
             cosmic_text::Weight::BOLD
@@ -145,11 +181,7 @@ pub fn span_attrs<'a>(
         ));
     }
     if let Some(fs) = span.font_size {
-        let scaled = fs * font_scale;
-        a = a.metrics(cosmic_text::Metrics::new(
-            scaled,
-            scaled * LINE_HEIGHT_FACTOR,
-        ));
+        a = a.metrics(cosmic_text::Metrics::new(fs, fs * LINE_HEIGHT_FACTOR));
     }
     if let Some(fam) = span.font_family {
         a = a.family(cosmic_text::Family::Name(fam));

@@ -1,10 +1,7 @@
 use cosmic::{
     Renderer, Theme,
-    iced::{
-        Color, Point, Rectangle, Size, border,
-        mouse::Cursor,
-    },
     iced::widget::canvas::{self, Frame, Geometry, LineDash, Path, Program, Stroke},
+    iced::{Color, Point, Rectangle, Size, border, mouse::Cursor},
 };
 
 #[derive(Debug, Clone, Copy)]

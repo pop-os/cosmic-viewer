@@ -3,8 +3,8 @@ use std::any::Any;
 use crate::ToolOperation;
 use cosmic::{
     Renderer,
-    iced::{Rectangle, Size},
     iced::widget::canvas::Frame,
+    iced::{Rectangle, Size},
 };
 use image::DynamicImage;
 
