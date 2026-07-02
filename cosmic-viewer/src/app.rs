@@ -2533,8 +2533,8 @@ impl Application for CosmicViewer {
                     }
                 }
                 CanvasMessage::Pan(pan) => {
+                    let bounds = self.viewport.last_bounds().get();
                     if self.viewport.active_tool() == Some(ToolKind::Crop) {
-                        let bounds = self.viewport.last_bounds().get();
                         let crop_region = self
                             .viewport
                             .preview_ref()
@@ -2554,6 +2554,16 @@ impl Application for CosmicViewer {
                                 pan.y.clamp(-max_y, max_y),
                             ));
                         }
+                    } else if let Some(size) = self.viewport.image_size() {
+                        let fit_scale = (bounds.width / size.width).min(bounds.height / size.height);
+                        let scale = self.viewport.zoom() * fit_scale;
+                        // Clamp so the zoomed image can't be dragged past the view edges.
+                        let max_x = size.width.mul_add(scale, -bounds.width).max(0.0) / 2.0;
+                        let max_y = size.height.mul_add(scale, -bounds.height).max(0.0) / 2.0;
+                        self.viewport.set_pan(Vector::new(
+                            pan.x.clamp(-max_x, max_x),
+                            pan.y.clamp(-max_y, max_y),
+                        ));
                     } else {
                         self.viewport.set_pan(pan);
                     }

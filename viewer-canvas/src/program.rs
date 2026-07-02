@@ -25,6 +25,19 @@ pub struct ViewerCanvas<'a> {
     pub overlay_only: bool,
 }
 
+impl ViewerCanvas<'_> {
+    // reason: image dimensions are pixel counts; f32 precision is ample for geometry.
+    #[allow(clippy::cast_precision_loss)]
+    fn image_exceeds_bounds(&self, bounds: Rectangle) -> bool {
+        self.image.is_some_and(|image| {
+            let fit_scale =
+                (bounds.width / image.width as f32).min(bounds.height / image.height as f32);
+            let scale = self.zoom * fit_scale;
+            image.width as f32 * scale > bounds.width || image.height as f32 * scale > bounds.height
+        })
+    }
+}
+
 impl Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'_> {
     type State = Interaction;
 
@@ -43,11 +56,22 @@ impl Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'_> {
                     Some(Action::publish(CanvasMessage::ContextMenu(Some(position))))
                 }
                 MouseEvent::ButtonPressed(Button::Left) => {
+                    if self.active_tool.is_none() && self.image_exceeds_bounds(bounds) {
+                        *state = Interaction::Panning {
+                            start: position,
+                            start_pan: self.pan,
+                        };
+                    }
                     Some(Action::publish(CanvasMessage::ContextMenu(None)))
                 }
                 MouseEvent::CursorMoved { .. } => {
-                    *state = Interaction::None;
-                    None
+                    if let Interaction::Panning { start, start_pan } = state {
+                        let delta = Vector::new(position.x - start.x, position.y - start.y);
+                        Some(Action::publish(CanvasMessage::Pan(*start_pan + delta)))
+                    } else {
+                        *state = Interaction::None;
+                        None
+                    }
                 }
                 MouseEvent::ButtonReleased(Button::Left) => {
                     *state = Interaction::None;
