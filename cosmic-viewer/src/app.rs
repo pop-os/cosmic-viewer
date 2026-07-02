@@ -2811,10 +2811,9 @@ impl Application for CosmicViewer {
                     EditMessage::Annotate => {
                         if self.viewport.active_tool() != Some(ToolKind::Annotate) {
                             self.viewport.set_active_tool(Some(ToolKind::Annotate));
-                            self.viewport.set_preview(Some(Box::new(PenPreview::new(
-                                self.annotate_color.0,
-                                self.annotate_stroke_size,
-                            ))));
+                            return self.update(ViewerMessage::Edit(EditMessage::AnnotateTool(
+                                self.annotate_tool,
+                            )));
                         }
                     }
                     EditMessage::AnnotateApply => {
