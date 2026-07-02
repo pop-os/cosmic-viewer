@@ -1,9 +1,11 @@
 use cosmic::widget::image::Handle;
 use fast_image_resize::{PixelType, ResizeAlg, ResizeOptions, Resizer, images::Image as FirImage};
 use image::{DynamicImage, RgbaImage};
+use libheif_rs::{ColorSpace as HeifColorSpace, HeifContext, LibHeif, RgbChroma};
+use resvg::{tiny_skia, usvg};
 use std::{
     fmt::{self, Debug, Formatter},
-    fs::File,
+    fs::{self, File},
     io::{BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
@@ -82,6 +84,13 @@ fn load_image_sync(path: &Path) -> Result<LoadedImage, LoadError> {
         .and_then(|ext| ext.to_str())
         .map(str::to_lowercase)
         .unwrap_or_default();
+
+    if extension == "svg" {
+        return load_svg_at(path, MAX_TEX);
+    }
+    if matches!(extension.as_str(), "heif" | "heic") {
+        return load_heif(path);
+    }
 
     // Use turbojpeg for JPEGs (faster than zune/image crate)
     if matches!(extension.as_str(), "jpg" | "jpeg")
@@ -250,6 +259,28 @@ fn load_thumbnail_sync(path: &Path, max_size: u32) -> Result<LoadedImage, LoadEr
         .and_then(|ext| ext.to_str())
         .map(str::to_lowercase)
         .unwrap_or_default();
+
+    if extension == "svg" {
+        return load_svg_at(path, max_size);
+    }
+    if matches!(extension.as_str(), "heif" | "heic") {
+        let loaded = load_heif(path)?;
+        if loaded.width <= max_size && loaded.height <= max_size {
+            return Ok(loaded);
+        }
+        let pixels = loaded.image.to_rgba8().into_raw();
+        let (w, h, resized) = fast_resize_rgba(&pixels, loaded.width, loaded.height, max_size)?;
+        let handle = Handle::from_rgba(w, h, resized.clone());
+        let rgba_image =
+            RgbaImage::from_raw(w, h, resized).expect("pixel buffer matches dimensions");
+        return Ok(LoadedImage {
+            handle,
+            image: DynamicImage::ImageRgba8(rgba_image),
+            width: w,
+            height: h,
+            path: path.to_path_buf(),
+        });
+    }
 
     // 1. For JPEGs, try EXIF thumbnail extraction (very fast, no full decode)
     if matches!(extension.as_str(), "jpg" | "jpeg") {
@@ -642,6 +673,126 @@ fn fast_resize_rgba(
         .map_err(|e| LoadError::UnsupportedFormat(e.to_string()))?;
 
     Ok((dst_width, dst_height, dst_image.into_vec()))
+}
+
+/// Scale an SVG to fill `max` in its larger dimension. SVG is vector, so
+/// rendering above natural size stays crisp — no pixel upscaling.
+// reason: vector sizes and the rounded fit result are small, non-negative f32s.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+fn svg_fit_dimensions(tree: &usvg::Tree, max: u32) -> (u32, u32) {
+    let size = tree.size();
+    let nat_w = size.width();
+    let nat_h = size.height();
+    let scale = (max as f32 / nat_w).min(max as f32 / nat_h);
+    let w = (nat_w * scale).round().max(1.0) as u32;
+    let h = (nat_h * scale).round().max(1.0) as u32;
+    (w, h)
+}
+
+/// Rasterize an SVG tree to straight-alpha RGBA at the given pixel size.
+// reason: un-premultiply arithmetic stays within u8 range by construction.
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+fn render_svg(tree: &usvg::Tree, w: u32, h: u32) -> Result<Vec<u8>, LoadError> {
+    let mut pixmap = tiny_skia::Pixmap::new(w, h)
+        .ok_or_else(|| LoadError::UnsupportedFormat("SVG: failed to create pixmap".into()))?;
+
+    let sx = w as f32 / tree.size().width();
+    let sy = h as f32 / tree.size().height();
+    resvg::render(tree, tiny_skia::Transform::from_scale(sx, sy), &mut pixmap.as_mut());
+
+    // tiny-skia pixels are premultiplied; `Handle::from_rgba` expects straight alpha.
+    let mut pixels = pixmap.take();
+    for chunk in pixels.chunks_exact_mut(4) {
+        let a = u32::from(chunk[3]);
+        if a > 0 && a < 255 {
+            chunk[0] = ((u32::from(chunk[0]) * 255) / a).min(255) as u8;
+            chunk[1] = ((u32::from(chunk[1]) * 255) / a).min(255) as u8;
+            chunk[2] = ((u32::from(chunk[2]) * 255) / a).min(255) as u8;
+        }
+    }
+
+    Ok(pixels)
+}
+
+fn load_svg_at(path: &Path, max: u32) -> Result<LoadedImage, LoadError> {
+    let data = fs::read(path)?;
+    let tree = usvg::Tree::from_data(&data, &usvg::Options::default())
+        .map_err(|e| LoadError::UnsupportedFormat(format!("SVG: {e}")))?;
+
+    let (w, h) = svg_fit_dimensions(&tree, max);
+    let pixels = render_svg(&tree, w, h)?;
+
+    let handle = Handle::from_rgba(w, h, pixels.clone());
+    let rgba_image = RgbaImage::from_raw(w, h, pixels).expect("pixel buffer matches dimensions");
+
+    Ok(LoadedImage {
+        handle,
+        image: DynamicImage::ImageRgba8(rgba_image),
+        width: w,
+        height: h,
+        path: path.to_path_buf(),
+    })
+}
+
+fn load_heif(path: &Path) -> Result<LoadedImage, LoadError> {
+    let name = path
+        .to_str()
+        .ok_or_else(|| LoadError::UnsupportedFormat("HEIF: non-UTF-8 path".into()))?;
+
+    let lib = LibHeif::new();
+    let ctx = HeifContext::read_from_file(name)
+        .map_err(|e| LoadError::UnsupportedFormat(format!("HEIF: {e}")))?;
+
+    let handle = ctx
+        .primary_image_handle()
+        .map_err(|e| LoadError::UnsupportedFormat(format!("HEIF: {e}")))?;
+
+    let img = lib
+        .decode(&handle, HeifColorSpace::Rgb(RgbChroma::Rgba), None)
+        .map_err(|e| LoadError::UnsupportedFormat(format!("HEIF: {e}")))?;
+
+    let plane = img
+        .planes()
+        .interleaved
+        .ok_or_else(|| LoadError::UnsupportedFormat("HEIF: no interleaved plane".into()))?;
+
+    // Use the DECODED image's dimensions, not the handle's: libheif applies
+    // rotation/mirror (irot/imir) during decode, so a phone photo's handle reports
+    // the pre-transform (ispe) size while the plane data is the post-transform size.
+    // Copying with the handle's size then reads the wrong bytes (or out of bounds).
+    let width = img.width();
+    let height = img.height();
+    if width == 0 || height == 0 {
+        return Err(LoadError::UnsupportedFormat("HEIF: invalid dimensions".into()));
+    }
+
+    let stride = plane.stride;
+    let row_bytes = width as usize * 4;
+    if stride < row_bytes || plane.data.len() < stride * height as usize {
+        return Err(LoadError::UnsupportedFormat("HEIF: truncated pixel data".into()));
+    }
+    // Copy row-by-row: the plane stride may exceed the packed row width.
+    let mut pixels = Vec::with_capacity(row_bytes * height as usize);
+    for y in 0..height as usize {
+        let row_start = y * stride;
+        pixels.extend_from_slice(&plane.data[row_start..row_start + row_bytes]);
+    }
+
+    let handle_rgba = Handle::from_rgba(width, height, pixels.clone());
+    let rgba_image =
+        RgbaImage::from_raw(width, height, pixels).expect("pixel buffer matches dimensions");
+
+    Ok(LoadedImage {
+        handle: handle_rgba,
+        image: DynamicImage::ImageRgba8(rgba_image),
+        width,
+        height,
+        path: path.to_path_buf(),
+    })
 }
 
 /// Read DPI from EXIF data (JPEG/TIFF only)

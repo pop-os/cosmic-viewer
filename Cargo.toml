@@ -17,8 +17,10 @@ nursery = { level = "warn", priority = -1 }
 fast_image_resize = { version = "6.0.0", features = ["image"] }
 image = { version = "0.25.9", features = ["png", "jpeg", "gif", "webp", "bmp", "tiff", "ico", "avif"] }
 kamadak-exif = "0.6.1"
+libheif-rs = { version = "2.7.0", features = ["embedded-libheif"] }
 lru = "0.16.3"
 rayon = "1.11.0"
+resvg = "0.47.0"
 serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2.0.18"
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "sync", "fs"] }

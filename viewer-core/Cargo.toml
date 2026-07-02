@@ -13,8 +13,10 @@ libcosmic.workspace = true
 fast_image_resize.workspace = true
 image.workspace = true
 kamadak-exif.workspace = true
+libheif-rs.workspace = true
 lru.workspace = true
 rayon.workspace = true
+resvg.workspace = true
 turbojpeg.workspace = true
 zune-image.workspace = true
 

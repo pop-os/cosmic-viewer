@@ -13,6 +13,13 @@ use cosmic::{
 };
 use viewer_tools::ToolOperation;
 
+/// Scale to fit an image within the frame, capped at 1.0: images smaller than the
+/// frame render at actual size rather than being upscaled to fill (fit never
+/// enlarges — so a tiny icon opens at 100%, not thousands of percent).
+pub(crate) fn fit_scale(frame_w: f32, frame_h: f32, img_w: f32, img_h: f32) -> f32 {
+    (frame_w / img_w).min(frame_h / img_h).min(1.0)
+}
+
 /// Per-frame view of the canvas state, built by `ViewportManger`.
 pub struct ViewerCanvas<'a> {
     pub image: Option<&'a CanvasImage>,
@@ -31,7 +38,7 @@ impl ViewerCanvas<'_> {
     fn image_exceeds_bounds(&self, bounds: Rectangle) -> bool {
         self.image.is_some_and(|image| {
             let fit_scale =
-                (bounds.width / image.width as f32).min(bounds.height / image.height as f32);
+                fit_scale(bounds.width, bounds.height, image.width as f32, image.height as f32);
             let scale = self.zoom * fit_scale;
             image.width as f32 * scale > bounds.width || image.height as f32 * scale > bounds.height
         })
@@ -111,7 +118,7 @@ impl Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'_> {
 
         if let Some(image) = self.image {
             let fit_scale =
-                (bounds.width / image.width as f32).min(bounds.height / image.height as f32);
+                fit_scale(bounds.width, bounds.height, image.width as f32, image.height as f32);
             let image_size = Size::new(image.width as f32, image.height as f32);
 
             let _ = renderer.load_image(&image.handle);

@@ -183,7 +183,7 @@ impl ViewportManager {
         self.image.as_ref().map_or(1.0, |image| {
             let bounds = self.last_bounds.get();
             let fit_scale =
-                (bounds.width / image.width as f32).min(bounds.height / image.height as f32);
+                super::fit_scale(bounds.width, bounds.height, image.width as f32, image.height as f32);
             let zx = frame_size.width / (image.width as f32 * fit_scale);
             let zy = frame_size.height / (image.height as f32 * fit_scale);
             zx.max(zy).max(1.0)
@@ -202,7 +202,7 @@ impl ViewportManager {
         };
 
         let fit_scale =
-            (viewport_size.width / img.width as f32).min(viewport_size.height / img.height as f32);
+            super::fit_scale(viewport_size.width, viewport_size.height, img.width as f32, img.height as f32);
 
         self.zoom * fit_scale * 100.0
     }
@@ -215,7 +215,7 @@ impl ViewportManager {
         };
 
         let fit_scale =
-            (viewport_size.width / img.width as f32).min(viewport_size.height / img.height as f32);
+            super::fit_scale(viewport_size.width, viewport_size.height, img.width as f32, img.height as f32);
 
         if fit_scale > 0.0 {
             self.zoom = percent / (fit_scale * 100.0);
@@ -322,7 +322,7 @@ impl ViewportManager {
     pub fn screen_to_image(&self, point: Point, bounds: Rectangle) -> Option<Point> {
         let image = self.image.as_ref()?;
         let fit_scale =
-            (bounds.width / image.width as f32).min(bounds.height / image.height as f32);
+            super::fit_scale(bounds.width, bounds.height, image.width as f32, image.height as f32);
         let effective_scale = self.zoom * fit_scale;
         let center_x = bounds.width / 2.0;
         let center_y = bounds.height / 2.0;
@@ -346,7 +346,7 @@ impl ViewportManager {
     pub fn screen_to_image_clamped(&self, point: Point, bounds: Rectangle) -> Option<Point> {
         let image = self.image.as_ref()?;
         let fit_scale =
-            (bounds.width / image.width as f32).min(bounds.height / image.height as f32);
+            super::fit_scale(bounds.width, bounds.height, image.width as f32, image.height as f32);
         let effective_scale = self.zoom * fit_scale;
         let center_x = bounds.width / 2.0;
         let center_y = bounds.height / 2.0;
@@ -364,7 +364,7 @@ impl ViewportManager {
     pub fn screen_to_image_fit(&self, point: Point, bounds: Rectangle) -> Option<Point> {
         let image = self.image.as_ref()?;
         let fit_scale =
-            (bounds.width / image.width as f32).min(bounds.height / image.height as f32);
+            super::fit_scale(bounds.width, bounds.height, image.width as f32, image.height as f32);
         let center_x = bounds.width / 2.0;
         let center_y = bounds.height / 2.0;
         let img_x = (point.x - center_x) / fit_scale + image.width as f32 / 2.0;
@@ -384,7 +384,7 @@ impl ViewportManager {
     pub fn screen_to_image_fit_unclamped(&self, point: Point, bounds: Rectangle) -> Option<Point> {
         let image = self.image.as_ref()?;
         let fit_scale =
-            (bounds.width / image.width as f32).min(bounds.height / image.height as f32);
+            super::fit_scale(bounds.width, bounds.height, image.width as f32, image.height as f32);
         let center_x = bounds.width / 2.0;
         let center_y = bounds.height / 2.0;
         Some(Point::new(

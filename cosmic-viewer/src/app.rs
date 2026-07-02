@@ -1625,7 +1625,13 @@ impl Application for CosmicViewer {
                                 .extension("avif")
                                 .extension("AVIF")
                                 .extension("hdr")
-                                .extension("HDR"),
+                                .extension("HDR")
+                                .extension("svg")
+                                .extension("SVG")
+                                .extension("heif")
+                                .extension("HEIF")
+                                .extension("heic")
+                                .extension("HEIC"),
                         )
                         .filter(
                             FileFilter::new("JPEG")
@@ -3496,6 +3502,8 @@ fn friendly_type_name(ext: &str) -> String {
         "pnm" => "PNM image",
         "qoi" => "QOI image",
         "ff" | "farbfeld" => "Farbfeld image",
+        "svg" => "SVG image",
+        "heif" | "heic" => "HEIF image",
         _ => "Image",
     }
     .to_string()

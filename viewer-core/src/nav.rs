@@ -8,7 +8,7 @@ use viewer_config::{SortMode, SortOrder};
 
 pub const EXTENSIONS: &[&str] = &[
     "jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "tif", "ico", "avif", "ppm", "pgm", "pbm",
-    "pnm", "qoi", "ff", "farbfeld", "hdr", "jxl",
+    "pnm", "qoi", "ff", "farbfeld", "hdr", "jxl", "svg", "heif", "heic",
 ];
 
 #[derive(Debug, Clone, Default)]
