@@ -152,6 +152,17 @@ impl CropSelection {
             DragHandle::None => return,
         };
 
+        // A corner/edge dragged past the opposite side — or a free-crop dragged up or
+        // left — yields negative extents; flip the origin so the rect stays valid.
+        if width < 0.0 {
+            x += width;
+            width = -width;
+        }
+        if height < 0.0 {
+            y += height;
+            height = -height;
+        }
+
         // Enforce min size
         width = width.max(MIN_SIZE);
         height = height.max(MIN_SIZE);
