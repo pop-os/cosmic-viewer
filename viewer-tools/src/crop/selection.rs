@@ -52,10 +52,10 @@ impl CropSelection {
         }
     }
 
-    /// Activate with a specific ratio.
+    /// Activate for a ratio. A fixed ratio shows a centered frame; Custom starts
+    /// with no frame — the user draws it from scratch with the reticle.
     pub fn activate(&mut self, ratio: CropRatio, image_size: Size) {
         self.ratio = ratio;
-        self.visible = true;
 
         if let Some(aspect) = ratio.resolve(image_size) {
             let width = image_size.width;
@@ -74,32 +74,17 @@ impl CropSelection {
                 ),
                 Size::new(width, height),
             );
+            self.visible = true;
         } else {
-            self.region = Rectangle::new(Point::ORIGIN, image_size);
+            self.region = Rectangle::default();
+            self.visible = false;
         }
     }
 
-    /// Change the ratio. Frame fills the viewport for the new ratio.
+    /// Change the ratio: fixed ratios fill a centered frame, Custom clears to
+    /// reticle free-draw.
     pub fn set_ratio(&mut self, ratio: CropRatio, image_size: Size) {
-        self.ratio = ratio;
-
-        if let Some(aspect) = ratio.resolve(image_size) {
-            let width = image_size.width;
-            let height = width / aspect;
-
-            let (width, height) = if height > image_size.height {
-                (image_size.height * aspect, image_size.height)
-            } else {
-                (width, height)
-            };
-
-            let x = (image_size.width - width) / 2.0;
-            let y = (image_size.height - height) / 2.0;
-
-            self.region = Rectangle::new(Point::new(x, y), Size::new(width, height));
-        } else {
-            self.region = Rectangle::new(Point::ORIGIN, image_size);
-        }
+        self.activate(ratio, image_size);
     }
 
     /// Begin a new selection from scratch at the given image-coordinate point
@@ -202,7 +187,7 @@ impl CropSelection {
         }
 
         let region = self.region;
-        let handle_size = HANDLE_SIZE;
+        let handle_size = HANDLE_SIZE.min(region.width / 3.0).min(region.height / 3.0);
 
         // Corners
         if Self::near(point, Point::new(region.x, region.y), handle_size) {
@@ -406,6 +391,13 @@ impl ToolOperation for CropSelection {
     }
 
     fn cursor_at(&self, point: Point) -> mouse::Interaction {
-        self.hit_test(point).cursor()
+        let handle = self.hit_test(point);
+        // Interior (not a handle) pans the image behind the frame — offer the grab
+        // affordance; outside the frame stays the reticle for drawing a new crop.
+        if handle == DragHandle::None && self.visible && self.region.contains(point) {
+            mouse::Interaction::Grab
+        } else {
+            handle.cursor()
+        }
     }
 }

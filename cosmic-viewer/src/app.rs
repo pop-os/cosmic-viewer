@@ -2995,12 +2995,9 @@ impl Application for CosmicViewer {
                                 self.viewport.set_pan(Vector::ZERO);
                             }
                             self.viewport.set_active_tool(Some(ToolKind::Crop));
-                            let mut selection = CropSelection::new();
-                            if let Some(img_size) = self.viewport.image_size() {
-                                selection.activate(CropRatio::Custom, img_size);
-                                self.crop_ratio = CropRatio::Custom;
-                            }
-                            self.viewport.set_preview(Some(Box::new(selection)));
+                            self.crop_ratio = CropRatio::Custom;
+                            self.viewport
+                                .set_preview(Some(Box::new(CropSelection::new())));
                         }
                     }
                     EditMessage::CropApply => {

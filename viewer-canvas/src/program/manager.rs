@@ -799,13 +799,24 @@ impl Widget<CanvasMessage, Theme, Renderer> for Viewport<'_> {
         let bounds = layout.bounds();
 
         if self.manager.active_tool.is_some() {
-            if let Some(position) = cursor.position_in(bounds)
-                && let Some(img_point) = self.manager.screen_to_image(position, bounds)
-            {
-                if let Some(preview) = self.manager.active_preview.as_deref() {
-                    return preview.cursor_at(img_point);
+            // An in-progress pan behind the crop frame is the closed-hand cursor.
+            if self.manager.crop_pan.get().is_some() {
+                return mouse::Interaction::Grabbing;
+            }
+            if let Some(position) = cursor.position_in(bounds) {
+                // The crop frame lives in fit space; hit-test the cursor there so the
+                // grab/handle zones line up when the image is zoomed or panned.
+                let img_point = if self.manager.active_tool == Some(ToolKind::Crop) {
+                    self.manager.screen_to_image_fit(position, bounds)
+                } else {
+                    self.manager.screen_to_image(position, bounds)
+                };
+                if let Some(img_point) = img_point {
+                    if let Some(preview) = self.manager.active_preview.as_deref() {
+                        return preview.cursor_at(img_point);
+                    }
+                    return mouse::Interaction::Crosshair;
                 }
-                return mouse::Interaction::Crosshair;
             }
 
             // Cursor is in the viewport but not over the image
