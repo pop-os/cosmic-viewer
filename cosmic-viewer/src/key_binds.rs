@@ -156,7 +156,7 @@ pub fn init_keybinds() -> HashMap<KeyBind, MenuAction> {
     binds.insert(
         KeyBind {
             modifiers: vec![Modifier::Ctrl],
-            key: Key::Character("d".into()),
+            key: Key::Character(" ".into()),
         },
         MenuAction::ImageDetails,
     );

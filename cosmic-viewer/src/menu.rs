@@ -79,11 +79,6 @@ fn build_file_menu(recent_folders: &[String]) -> Vec<menu::Item<MenuAction, Stri
     items.push(menu::Item::Divider);
 
     items.push(menu::Item::Button(
-        fl!("menu-image-details"),
-        None,
-        MenuAction::ImageDetails,
-    ));
-    items.push(menu::Item::Button(
         fl!("menu-print"),
         None,
         MenuAction::Print,
@@ -142,6 +137,8 @@ fn build_view_menu() -> Vec<menu::Item<MenuAction, String>> {
         menu::Item::Button(fl!("menu-actual-size"), None, MenuAction::ActualSize),
         menu::Item::Divider,
         menu::Item::Button(fl!("menu-fullscreen"), None, MenuAction::Fullscreen),
+        menu::Item::Divider,
+        menu::Item::Button(fl!("menu-image-details"), None, MenuAction::ImageDetails),
     ]
 }
 
