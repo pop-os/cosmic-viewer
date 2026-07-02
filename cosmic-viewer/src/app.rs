@@ -1051,7 +1051,8 @@ impl CosmicViewer {
                 .push(text("Aa"))
                 .push(icon::from_name("pan-down-symbolic").size(12).icon())
                 .align_y(Alignment::Center)
-                .spacing(2),
+                .spacing(2)
+                .height(Length::Fixed(16.0)),
         )
         .class(theme::Button::Icon)
         .on_press(ViewerMessage::Edit(EditMessage::ToggleTextFormatMenu));
