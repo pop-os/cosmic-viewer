@@ -2976,7 +2976,7 @@ impl Application for CosmicViewer {
                                 }
                             }
                         }
-                        self.viewport.rebuild_display();
+                        self.viewport.rebuild_display_preserve_view();
                     }
                     EditMessage::Crop => {
                         if self.viewport.active_tool() != Some(ToolKind::Crop) {
@@ -3070,6 +3070,9 @@ impl Application for CosmicViewer {
                         }
                     }
                     EditMessage::RotateLeft => {
+                        let bounds = self.viewport.last_bounds().get();
+                        let viewport_size = Size::new(bounds.width, bounds.height);
+                        let percent = self.viewport.actual_percent(viewport_size);
                         let is_cropping = self.viewport.active_tool() == Some(ToolKind::Crop);
                         // Commit an in-progress annotation (e.g. a text box being edited) so it
                         // rotates with the image instead of being discarded; `apply_tool` is a
@@ -3091,6 +3094,7 @@ impl Application for CosmicViewer {
                             *img = img.rotate270();
                         }
                         self.viewport.rebuild_display_preserve_view();
+                        self.viewport.set_actual_percent(percent, viewport_size);
 
                         if is_cropping {
                             let new_size = self.viewport.image_size().unwrap_or(Size::ZERO);
@@ -3103,6 +3107,9 @@ impl Application for CosmicViewer {
                         }
                     }
                     EditMessage::RotateRight => {
+                        let bounds = self.viewport.last_bounds().get();
+                        let viewport_size = Size::new(bounds.width, bounds.height);
+                        let percent = self.viewport.actual_percent(viewport_size);
                         let is_cropping = self.viewport.active_tool() == Some(ToolKind::Crop);
                         // Commit an in-progress annotation (e.g. a text box being edited) so it
                         // rotates with the image instead of being discarded; `apply_tool` is a
@@ -3124,6 +3131,7 @@ impl Application for CosmicViewer {
                             *img = img.rotate90();
                         }
                         self.viewport.rebuild_display_preserve_view();
+                        self.viewport.set_actual_percent(percent, viewport_size);
 
                         if is_cropping {
                             let new_size = self.viewport.image_size().unwrap_or(Size::ZERO);
