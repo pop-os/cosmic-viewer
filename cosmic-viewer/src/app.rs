@@ -2,7 +2,9 @@ use crate::{
     fl,
     key_binds::{self, MenuAction, keyboard_shortcut_handler},
     menu::menu_bar,
-    message::{ContextMessage, EditMessage, ImageMessage, NavMessage, UnsavedChoice, ViewerMessage},
+    message::{
+        ContextMessage, EditMessage, ImageMessage, NavMessage, UnsavedChoice, ViewerMessage,
+    },
     watcher::WatcherEvent,
 };
 use cosmic::{
@@ -469,7 +471,11 @@ impl CosmicViewer {
 
     // reason: zoom percent is rounded, non-negative, and well within u32 range.
     // reason: one builder call per toolbar item; the flat chain reads clearer unsplit.
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::too_many_lines)]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::too_many_lines
+    )]
     fn build_default_toolbar(&self) -> Element<'_, ViewerMessage> {
         // The toolbar measures its own fit and stacks only when the single row
         // overflows; force stacking only when the window is truly condensed.
@@ -1276,6 +1282,39 @@ impl CosmicViewer {
         }
 
         pop.into()
+    }
+    /// Multiply the current zoom by `factor`, preserving the fit/crop floor, the 500% celing,
+    /// and the snap-through-100% behavior the wheel zoom relied on.
+    fn zoom_by(&mut self, factor: f32) {
+        let bounds = self.viewport.last_bounds().get();
+        let viewport = Size::new(bounds.width, bounds.height);
+        let before = self.viewport.actual_percent(viewport);
+        let old_zoom = self.viewport.zoom();
+        let floor = if self.viewport.active_tool() == Some(ToolKind::Crop) {
+            1.0
+        } else {
+            0.1
+        };
+        let new_zoom = (old_zoom * factor).clamp(floor, 10.0);
+
+        if let Some(size) = self.viewport.image_size()
+            && let Some(preview) = self.viewport.preview_mut()
+        {
+            preview.on_zoom_changed(old_zoom, new_zoom, size);
+        }
+
+        self.viewport.set_zoom(new_zoom);
+
+        let after = self.viewport.actual_percent(viewport);
+
+        if (before < 99.9 && after > 100.0) || (before > 100.1 && after < 100.0) {
+            self.viewport.set_actual_percent(100.0, viewport);
+        }
+
+        // Cap zoom in at 500%
+        if factor > 1.0 && self.viewport.actual_percent(viewport) > 500.0 {
+            self.viewport.set_actual_percent(500.0, viewport);
+        }
     }
 }
 
@@ -2635,52 +2674,9 @@ impl Application for CosmicViewer {
                 CanvasMessage::ContextMenu(point) => {
                     self.context_menu_position = point;
                 }
-                CanvasMessage::ZoomIn => {
-                    let bounds = self.viewport.last_bounds().get();
-                    let viewport = Size::new(bounds.width, bounds.height);
-                    let before = self.viewport.actual_percent(viewport);
-                    let old_zoom = self.viewport.zoom();
-                    let new_zoom = (old_zoom * 1.25).min(10.0);
-
-                    if let Some(size) = self.viewport.image_size()
-                        && let Some(preview) = self.viewport.preview_mut()
-                    {
-                        preview.on_zoom_changed(old_zoom, new_zoom, size);
-                    }
-
-                    self.viewport.set_zoom(new_zoom);
-                    if before < 99.9 && self.viewport.actual_percent(viewport) > 100.0 {
-                        self.viewport.set_actual_percent(100.0, viewport);
-                    }
-
-                    // Cap zoom in to 500%
-                    if self.viewport.actual_percent(viewport) > 500.0 {
-                        self.viewport.set_actual_percent(500.0, viewport);
-                    }
-                }
-                CanvasMessage::ZoomOut => {
-                    let bounds = self.viewport.last_bounds().get();
-                    let viewport = Size::new(bounds.width, bounds.height);
-                    let before = self.viewport.actual_percent(viewport);
-                    let old_zoom = self.viewport.zoom();
-                    let floor = if self.viewport.active_tool() == Some(ToolKind::Crop) {
-                        // Crop floor = fit-to-screen, so the whole image stays visible.
-                        1.0
-                    } else {
-                        0.1
-                    };
-                    let new_zoom = (old_zoom / 1.25).max(floor);
-                    if let Some(size) = self.viewport.image_size()
-                        && let Some(preview) = self.viewport.preview_mut()
-                    {
-                        preview.on_zoom_changed(old_zoom, new_zoom, size);
-                    }
-
-                    self.viewport.set_zoom(new_zoom);
-                    if before > 100.1 && self.viewport.actual_percent(viewport) < 100.0 {
-                        self.viewport.set_actual_percent(100.0, viewport);
-                    }
-                }
+                CanvasMessage::ZoomIn => self.zoom_by(1.25),
+                CanvasMessage::ZoomOut => self.zoom_by(1.0 / 1.25),
+                CanvasMessage::ZoomBy(factor) => self.zoom_by(factor),
                 CanvasMessage::Pan(pan) => {
                     let bounds = self.viewport.last_bounds().get();
                     if self.viewport.active_tool() == Some(ToolKind::Crop) {
@@ -2704,7 +2700,8 @@ impl Application for CosmicViewer {
                             ));
                         }
                     } else if let Some(size) = self.viewport.image_size() {
-                        let fit_scale = (bounds.width / size.width).min(bounds.height / size.height);
+                        let fit_scale =
+                            (bounds.width / size.width).min(bounds.height / size.height);
                         let scale = self.viewport.zoom() * fit_scale;
                         // Clamp so the zoomed image can't be dragged past the view edges.
                         let max_x = size.width.mul_add(scale, -bounds.width).max(0.0) / 2.0;

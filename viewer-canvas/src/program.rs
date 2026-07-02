@@ -13,6 +13,9 @@ use cosmic::{
 };
 use viewer_tools::ToolOperation;
 
+/// Per-pixel touchpad zoom sensitivity. Lover = slower.
+const PIXEL_ZOOM_RATE: f32 = 0.0025;
+
 /// Scale to fit an image within the frame, capped at 1.0: images smaller than the
 /// frame render at actual size rather than being upscaled to fill (fit never
 /// enlarges — so a tiny icon opens at 100%, not thousands of percent).
@@ -37,8 +40,12 @@ impl ViewerCanvas<'_> {
     #[allow(clippy::cast_precision_loss)]
     fn image_exceeds_bounds(&self, bounds: Rectangle) -> bool {
         self.image.is_some_and(|image| {
-            let fit_scale =
-                fit_scale(bounds.width, bounds.height, image.width as f32, image.height as f32);
+            let fit_scale = fit_scale(
+                bounds.width,
+                bounds.height,
+                image.width as f32,
+                image.height as f32,
+            );
             let scale = self.zoom * fit_scale;
             image.width as f32 * scale > bounds.width || image.height as f32 * scale > bounds.height
         })
@@ -85,15 +92,17 @@ impl Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'_> {
                     Some(Action::capture())
                 }
                 MouseEvent::WheelScrolled { delta } => {
-                    let y = match delta {
-                        mouse::ScrollDelta::Lines { y, .. }
-                        | mouse::ScrollDelta::Pixels { y, .. } => y,
-                    };
-
-                    let msg = if *y < 0.0 {
-                        CanvasMessage::ZoomOut
-                    } else {
-                        CanvasMessage::ZoomIn
+                    let msg = match delta {
+                        mouse::ScrollDelta::Lines { y, .. } => {
+                            if *y < 0.0 {
+                                CanvasMessage::ZoomOut
+                            } else {
+                                CanvasMessage::ZoomIn
+                            }
+                        }
+                        mouse::ScrollDelta::Pixels { y, .. } => {
+                            CanvasMessage::ZoomBy((1.0 + y * PIXEL_ZOOM_RATE).clamp(0.5, 2.0))
+                        }
                     };
 
                     Some(Action::publish(msg))
@@ -117,8 +126,12 @@ impl Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'_> {
         let mut frame = Frame::new(renderer, bounds.size());
 
         if let Some(image) = self.image {
-            let fit_scale =
-                fit_scale(bounds.width, bounds.height, image.width as f32, image.height as f32);
+            let fit_scale = fit_scale(
+                bounds.width,
+                bounds.height,
+                image.width as f32,
+                image.height as f32,
+            );
             let image_size = Size::new(image.width as f32, image.height as f32);
 
             let _ = renderer.load_image(&image.handle);

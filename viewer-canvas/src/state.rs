@@ -32,6 +32,7 @@ pub enum CanvasMessage {
     ContextMenu(Option<Point>),
     ZoomIn,
     ZoomOut,
+    ZoomBy(f32),
     Pan(Vector),
     ActualSize,
     FitToView,
