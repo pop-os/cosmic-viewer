@@ -22,7 +22,6 @@ pub enum MenuAction {
     Save,
     SaveAs,
     ImageDetails,
-    Print,
     Quit,
     Undo,
     Redo,
@@ -59,7 +58,6 @@ impl MenuAction {
             Self::Paste => ViewerMessage::Paste,
             Self::Save => ViewerMessage::Save,
             Self::SaveAs => ViewerMessage::SaveAs,
-            Self::Print => ViewerMessage::Print,
             Self::Quit => ViewerMessage::Quit,
             // Context Actions
             Self::ImageDetails => ViewerMessage::Context(ContextMessage::ImageDetails),
@@ -159,14 +157,6 @@ pub fn init_keybinds() -> HashMap<KeyBind, MenuAction> {
             key: Key::Character(" ".into()),
         },
         MenuAction::ImageDetails,
-    );
-
-    binds.insert(
-        KeyBind {
-            modifiers: vec![Modifier::Ctrl],
-            key: Key::Character("p".into()),
-        },
-        MenuAction::Print,
     );
 
     binds.insert(

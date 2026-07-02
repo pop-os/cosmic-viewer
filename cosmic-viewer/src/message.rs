@@ -43,7 +43,6 @@ pub enum ViewerMessage {
     Save,
     SaveAs,
     SavedAs(PathBuf),
-    Print,
     SetWallpaper,
     SetWallpaperOn(PathBuf, WallpaperTarget),
     CloseWallpaperDialog,

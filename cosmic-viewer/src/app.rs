@@ -1597,7 +1597,6 @@ impl Application for CosmicViewer {
             ViewerMessage::Cut
             | ViewerMessage::Paste
             | ViewerMessage::CloseFile
-            | ViewerMessage::Print
             | ViewerMessage::Cancelled => {}
             ViewerMessage::OpenFileDialog => {
                 return future(async move {
