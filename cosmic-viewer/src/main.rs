@@ -11,7 +11,9 @@ use cosmic::{app::Settings, iced::Limits};
 use std::path::PathBuf;
 
 fn main() -> cosmic::iced::Result {
-    let settings = Settings::default().size_limits(Limits::NONE.min_width(360.0).min_height(300.0));
+    let settings = Settings::default()
+        .exit_on_close(false)
+        .size_limits(Limits::NONE.min_width(360.0).min_height(300.0));
 
     // Get the image if opened from the file manager or cli
     let mut optional_image = std::env::args().nth(1).map(PathBuf::from);

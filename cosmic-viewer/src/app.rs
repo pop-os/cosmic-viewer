@@ -2,7 +2,7 @@ use crate::{
     fl,
     key_binds::{self, MenuAction, keyboard_shortcut_handler},
     menu::menu_bar,
-    message::{ContextMessage, EditMessage, ImageMessage, NavMessage, ViewerMessage},
+    message::{ContextMessage, EditMessage, ImageMessage, NavMessage, UnsavedChoice, ViewerMessage},
     watcher::WatcherEvent,
 };
 use cosmic::{
@@ -63,6 +63,14 @@ use viewer_tools::{
 };
 use viewer_widgets::dashed_shape::DashedBorder;
 
+/// A deferred action that leaves the current (dirty) image, held until the
+/// unsaved-edits prompt is resolved. `Replay` re-dispatches the original message
+/// once the edits are saved or discarded; `Quit` closes the window.
+enum PendingAction {
+    Replay(Box<ViewerMessage>),
+    Quit,
+}
+
 // reason: independent UI toggle flags (text styles, popups, fullscreen, prefs);
 // grouping into a bitflags type would obscure their distinct meanings.
 #[allow(clippy::struct_excessive_bools)]
@@ -108,6 +116,8 @@ pub struct CosmicViewer {
     saved_nav_toggled: bool,
     wallpaper_dialog: Option<PathBuf>,
     delete_dialog: Option<PathBuf>,
+    /// Pending leave-action awaiting the unsaved-edits prompt's resolution.
+    unsaved_dialog: Option<PendingAction>,
     available_outputs: Vec<String>,
     watcher_rescan_pending: bool,
     was_narrow: bool,
@@ -115,6 +125,31 @@ pub struct CosmicViewer {
 }
 
 impl CosmicViewer {
+    /// The current image has committed edits (crop/rotate/annotations) not yet saved.
+    fn has_unsaved_edits(&self) -> bool {
+        !self.viewport.operations().is_empty()
+    }
+
+    /// If the current image is dirty, stash `replay` behind the unsaved-edits prompt
+    /// and return `true` (caller should abort). Otherwise return `false` (proceed).
+    fn guard_unsaved(&mut self, replay: ViewerMessage) -> bool {
+        if self.has_unsaved_edits() {
+            self.unsaved_dialog = Some(PendingAction::Replay(Box::new(replay)));
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Carry out the action deferred by the prompt once edits are saved/discarded.
+    fn resolve_pending(&mut self) -> Task<Action<ViewerMessage>> {
+        match self.unsaved_dialog.take() {
+            Some(PendingAction::Replay(msg)) => self.update(*msg),
+            Some(PendingAction::Quit) => self.update(ViewerMessage::Quit),
+            None => Task::none(),
+        }
+    }
+
     // reason: thumbnail dimension is a small pixel count, exact as f32.
     #[allow(clippy::cast_precision_loss)]
     fn is_narrow(&self) -> bool {
@@ -433,7 +468,8 @@ impl CosmicViewer {
     }
 
     // reason: zoom percent is rounded, non-negative, and well within u32 range.
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    // reason: one builder call per toolbar item; the flat chain reads clearer unsplit.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::too_many_lines)]
     fn build_default_toolbar(&self) -> Element<'_, ViewerMessage> {
         // The toolbar measures its own fit and stacks only when the single row
         // overflows; force stacking only when the window is truly condensed.
@@ -536,6 +572,22 @@ impl CosmicViewer {
                     fl!("toolbar-fullscreen"),
                     ViewerMessage::Canvas(CanvasMessage::Fullscreen),
                 ))
+                .priority(ItemPriority::Essential),
+            )
+            .end(
+                ToolbarItem::new(
+                    button::text(fl!("toolbar-save"))
+                        .tooltip(fl!("toolbar-save"))
+                        .on_press_maybe(self.has_unsaved_edits().then_some(ViewerMessage::Save)),
+                )
+                .priority(ItemPriority::Essential),
+            )
+            .end(
+                ToolbarItem::new(
+                    button::icon(icon::from_name("document-save-as-symbolic"))
+                        .tooltip(fl!("toolbar-save-as"))
+                        .on_press_maybe(self.has_unsaved_edits().then_some(ViewerMessage::SaveAs)),
+                )
                 .priority(ItemPriority::Essential),
             )
             .view()
@@ -1313,6 +1365,7 @@ impl Application for CosmicViewer {
             saved_nav_toggled: false,
             wallpaper_dialog: None,
             delete_dialog: None,
+            unsaved_dialog: None,
             available_outputs: Vec::new(),
             watcher_rescan_pending: false,
             was_narrow: false,
@@ -1560,6 +1613,59 @@ impl Application for CosmicViewer {
             return toaster(&self.toasts, stack![view, backdrop, dialog]);
         }
 
+        if self.unsaved_dialog.is_some() {
+            let spacing = cosmic::theme::active().cosmic().spacing;
+
+            let buttons = Row::new()
+                .push(
+                    button::text(fl!("unsaved-discard"))
+                        .on_press(ViewerMessage::Unsaved(UnsavedChoice::Discard)),
+                )
+                .push(Space::new().width(Length::Fill))
+                .push(
+                    button::text(fl!("unsaved-cancel"))
+                        .on_press(ViewerMessage::Unsaved(UnsavedChoice::Cancel)),
+                )
+                .push(
+                    button::standard(fl!("unsaved-save-as"))
+                        .on_press(ViewerMessage::Unsaved(UnsavedChoice::SaveAs)),
+                )
+                .push(
+                    button::suggested(fl!("unsaved-save"))
+                        .on_press(ViewerMessage::Unsaved(UnsavedChoice::Save)),
+                )
+                .spacing(spacing.space_xs)
+                .align_y(Alignment::Center);
+
+            let dialog: Element<'_, Self::Message> = container(
+                container(
+                    Column::new()
+                        .push(text::title4(fl!("unsaved-dialog-title")))
+                        .push(text::body(fl!("unsaved-dialog-body")))
+                        .push(buttons)
+                        .spacing(spacing.space_m)
+                        .width(Length::Fixed(420.0)),
+                )
+                .padding(spacing.space_m)
+                .class(cosmic::theme::Container::Dialog),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into();
+
+            let backdrop = cosmic::widget::mouse_area(
+                container(Space::new().width(Length::Fill).height(Length::Fill))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .class(cosmic::theme::Container::Transparent),
+            )
+            .on_press(ViewerMessage::Unsaved(UnsavedChoice::Cancel));
+
+            return toaster(&self.toasts, stack![view, backdrop, dialog]);
+        }
+
         toaster(&self.toasts, view)
     }
 
@@ -1599,6 +1705,9 @@ impl Application for CosmicViewer {
             | ViewerMessage::CloseFile
             | ViewerMessage::Cancelled => {}
             ViewerMessage::OpenFileDialog => {
+                if self.guard_unsaved(ViewerMessage::OpenFileDialog) {
+                    return Task::none();
+                }
                 return future(async move {
                     let dialog = file_chooser::open::Dialog::new()
                         .title("Open Image")
@@ -1671,6 +1780,9 @@ impl Application for CosmicViewer {
                 });
             }
             ViewerMessage::OpenFolderDialog => {
+                if self.guard_unsaved(ViewerMessage::OpenFolderDialog) {
+                    return Task::none();
+                }
                 return future(async move {
                     let dialog = file_chooser::open::Dialog::new().title("Open Folder");
 
@@ -1712,19 +1824,23 @@ impl Application for CosmicViewer {
                 }
             }
             ViewerMessage::SaveAs => {
-                let suggested = self
-                    .nav
-                    .current()
+                let current = self.nav.current();
+                let suggested = current
                     .and_then(|path| {
                         path.file_name()
                             .map(|name| name.to_string_lossy().to_string())
                     })
                     .unwrap_or_else(|| "image.png".to_string());
+                let directory =
+                    current.and_then(|path| path.parent().map(std::path::Path::to_path_buf));
 
                 return future(async move {
-                    let dialog = file_chooser::save::Dialog::new()
+                    let mut dialog = file_chooser::save::Dialog::new()
                         .title("Save Image As...".to_string())
                         .file_name(suggested);
+                    if let Some(directory) = directory {
+                        dialog = dialog.directory(directory);
+                    }
 
                     match dialog.save_file().await {
                         Ok(response) => response
@@ -1754,12 +1870,34 @@ impl Application for CosmicViewer {
 
                 self.viewport.cancel_tool();
                 self.viewport.revert_all();
+                return self.resolve_pending();
             }
             ViewerMessage::Quit => {
-                if let Some(id) = self.core.main_window_id() {
-                    return iced::window::close(id);
+                return iced::exit();
+            }
+            ViewerMessage::CloseRequested => {
+                if self.has_unsaved_edits() {
+                    self.unsaved_dialog = Some(PendingAction::Quit);
+                } else {
+                    return self.update(ViewerMessage::Quit);
                 }
             }
+            ViewerMessage::Unsaved(choice) => match choice {
+                UnsavedChoice::Save => {
+                    let save = self.update(ViewerMessage::Save);
+                    return Task::batch([save, self.resolve_pending()]);
+                }
+                UnsavedChoice::SaveAs => return self.update(ViewerMessage::SaveAs),
+                UnsavedChoice::Discard => {
+                    self.viewport.cancel_tool();
+                    self.viewport.revert_all();
+                    self.text_editing = false;
+                    return self.resolve_pending();
+                }
+                UnsavedChoice::Cancel => {
+                    self.unsaved_dialog = None;
+                }
+            },
             ViewerMessage::TextPaste(text) => {
                 if self.text_editing && !text.is_empty() {
                     if let Some(preview) = self.viewport.preview_mut()
@@ -2362,6 +2500,11 @@ impl Application for CosmicViewer {
                     }
                 }
                 NavMessage::GridActivate(idx) => {
+                    if self.nav.index() != Some(idx)
+                        && self.guard_unsaved(ViewerMessage::Nav(NavMessage::GridActivate(idx)))
+                    {
+                        return Task::none();
+                    }
                     if !self.text_editing
                         && let Some(path) = self.nav.select(idx)
                     {
@@ -3460,6 +3603,9 @@ impl Application for CosmicViewer {
             event::listen_with(|event, _status, _id| match event {
                 iced::Event::Window(iced::window::Event::Resized(size)) => {
                     Some(ViewerMessage::WindowResized(size))
+                }
+                iced::Event::Window(iced::window::Event::CloseRequested) => {
+                    Some(ViewerMessage::CloseRequested)
                 }
                 iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                     key,

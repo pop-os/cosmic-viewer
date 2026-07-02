@@ -57,6 +57,16 @@ toolbar-rotate-right = Rotate Right
 toolbar-zoom-in = Zoom in
 toolbar-zoom-out = Zoom out
 toolbar-fullscreen = Fullscreen
+toolbar-save = Save
+toolbar-save-as = Save as
+
+# Unsaved edits dialog
+unsaved-dialog-title = Unsaved edits
+unsaved-dialog-body = You have unsaved edits to this image. Save them before continuing?
+unsaved-save = Save
+unsaved-save-as = Save as
+unsaved-discard = Discard
+unsaved-cancel = Cancel
 
 # Shapes Tool
 shapes-rectangle = Rectangle

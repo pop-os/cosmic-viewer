@@ -27,6 +27,15 @@ pub enum WallpaperTarget {
     Output(String),
 }
 
+/// A user's choice in the unsaved-edits prompt shown when leaving a dirty image.
+#[derive(Debug, Clone, Copy)]
+pub enum UnsavedChoice {
+    Save,
+    SaveAs,
+    Discard,
+    Cancel,
+}
+
 #[derive(Debug, Clone)]
 pub enum ViewerMessage {
     Copy,
@@ -54,6 +63,8 @@ pub enum ViewerMessage {
     TrashResult(Result<(), String>),
     Cancelled,
     Quit,
+    CloseRequested,
+    Unsaved(UnsavedChoice),
     Nav(NavMessage),
     WindowResized(Size),
     KeyPressed(Key, Modifiers, Option<SmolStr>),
