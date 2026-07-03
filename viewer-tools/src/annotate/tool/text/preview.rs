@@ -604,7 +604,7 @@ impl TextPreview {
         }
     }
 
-    fn draw_bounding_box(&self, frame: &mut Frame<Renderer>, scale: f32) {
+    fn draw_bounding_box(&self, frame: &mut Frame<Renderer>, _scale: f32) {
         let r = self.bounding_box;
         let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
         let border_w = BORDER_WIDTH;

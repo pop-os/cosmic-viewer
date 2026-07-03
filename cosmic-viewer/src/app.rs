@@ -2979,6 +2979,7 @@ impl Application for CosmicViewer {
                         self.text_editing = false;
                         self.show_text_format_menu = false;
                         self.viewport.tool_dragging = false;
+                        self.move_mode = false;
                     }
                     EditMessage::AnnotateCancel => {
                         if self.text_editing {
@@ -2993,6 +2994,7 @@ impl Application for CosmicViewer {
                         self.viewport.revert_all();
                         self.viewport.set_active_tool(None);
                         self.viewport.set_preview(None);
+                        self.move_mode = false;
                         // Restore working image from cache so rotation etc. still works
                         if let Some(path) = self.nav.current().cloned()
                             && let Some(cached) = self.cache.get_full(&path)
@@ -3049,6 +3051,7 @@ impl Application for CosmicViewer {
                     EditMessage::AnnotateTool(tool) => {
                         self.annotate_tool = tool;
                         self.show_text_format_menu = false;
+                        self.move_mode = false;
                         match tool {
                             AnnotateTool::Highlighter => {
                                 self.viewport
