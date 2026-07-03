@@ -953,7 +953,7 @@ impl CosmicViewer {
                 .build("Recent colors", "Copy", "Copied!");
 
             let popup = container(picker)
-                .padding(theme::active().cosmic().spacing.space_s)
+                .padding([theme::active().cosmic().spacing.space_s, 0, 0, 0])
                 .max_width(260.0)
                 .style(|theme| {
                     let cosmic = theme.cosmic();
