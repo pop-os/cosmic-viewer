@@ -609,7 +609,6 @@ impl TextPreview {
         let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
         let border_w = BORDER_WIDTH;
 
-        // Scale handles to ~15% of the shorter box side, clamped
         let short_side = r.width.min(r.height);
         let bar_long = (short_side * 0.10).clamp(4.0, 24.0);
         let bar_short = (bar_long * 0.25).max(1.5);

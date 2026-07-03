@@ -858,7 +858,7 @@ impl CosmicViewer {
             );
 
         let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
-        let swatch_size = 14.0;
+        let swatch_size = 16.0;
 
         let colors = AnnotateColor::presets();
         for color in &colors {
@@ -923,7 +923,7 @@ impl CosmicViewer {
                 .width(Length::Fixed(swatch_size))
                 .height(Length::Fixed(swatch_size));
 
-            let add_icon = container(icon::from_name("list-add-symbolic").size(10).icon())
+            let add_icon = container(icon::from_name("list-add-symbolic").size(14).icon())
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .center_x(Length::Fill)
