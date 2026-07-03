@@ -134,7 +134,10 @@ impl TextPreview {
             let mut font_sys = font_system().write().expect("Write font system");
             cosmic_text::Buffer::new(font_sys.raw(), metrics)
         };
-        buffer.set_size(Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)), None);
+        buffer.set_size(
+            Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)),
+            None,
+        );
         buffer.set_wrap(cosmic_text::Wrap::WordOrGlyph);
         self.editor = Some(cosmic_text::Editor::new(buffer));
     }
@@ -381,7 +384,10 @@ impl TextPreview {
             self.bounding_box.height = content_h.max(min_h);
 
             editor.with_buffer_mut(|buf| {
-                buf.set_size(Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)), None);
+                buf.set_size(
+                    Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)),
+                    None,
+                );
                 buf.set_scroll(cosmic_text::Scroll::default());
             });
         }
@@ -404,7 +410,10 @@ impl TextPreview {
             self.bounding_box.height = content_h.max(min_h);
 
             editor.with_buffer_mut(|buf| {
-                buf.set_size(Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)), None);
+                buf.set_size(
+                    Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)),
+                    None,
+                );
                 buf.set_scroll(cosmic_text::Scroll::default());
             });
         }
@@ -568,7 +577,10 @@ impl TextPreview {
         if let Some(editor) = &mut self.editor {
             let mut font_sys = font_system().write().expect("Write font system");
             editor.with_buffer_mut(|buf| {
-                buf.set_size(Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)), None);
+                buf.set_size(
+                    Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)),
+                    None,
+                );
                 buf.set_scroll(cosmic_text::Scroll::default());
             });
             editor.shape_as_needed(font_sys.raw(), false);
@@ -595,7 +607,7 @@ impl TextPreview {
     fn draw_bounding_box(&self, frame: &mut Frame<Renderer>, scale: f32) {
         let r = self.bounding_box;
         let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
-        let border_w = BORDER_WIDTH / scale;
+        let border_w = BORDER_WIDTH;
 
         // Scale handles to ~15% of the shorter box side, clamped
         let short_side = r.width.min(r.height);

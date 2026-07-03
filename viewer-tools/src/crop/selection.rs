@@ -338,7 +338,7 @@ impl ToolOperation for CropSelection {
         }
 
         let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
-        self.draw_border(frame, BORDER_WIDTH / scale, accent);
+        self.draw_border(frame, BORDER_WIDTH, accent);
         self.draw_handles(frame, HANDLE_SIZE / scale, accent);
     }
 
