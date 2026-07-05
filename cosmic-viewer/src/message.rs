@@ -4,7 +4,7 @@ use cosmic::{
         alignment::Horizontal,
         keyboard::{Key, Modifiers},
     },
-    widget::{ToastId, color_picker::ColorPickerUpdate},
+    widget::{ToastId, color_picker::ColorPickerUpdate, segmented_button},
 };
 use smol_str::SmolStr;
 use std::{path::PathBuf, sync::Arc};
@@ -130,6 +130,8 @@ pub enum EditMessage {
     TextFontSize(usize),
     TextFontFamily(usize),
     TextAlignment(Horizontal),
+    TextStyleActivated(segmented_button::Entity),
+    TextAlignActivated(segmented_button::Entity),
     TextApply,
     TextCancel,
     ToggleTextFormatMenu,

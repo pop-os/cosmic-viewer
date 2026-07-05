@@ -30,11 +30,14 @@ use cosmic::{
     theme::{self, Button},
     widget::{
         self, Column, Id, Row, Space, Toasts, button, canvas,
-        color_picker::ColorPickerUpdate::{self, AppliedColor, Cancel, ToggleColorPicker},
+        color_picker::{
+            self,
+            ColorPickerUpdate::{self, AppliedColor, Cancel, ToggleColorPicker},
+        },
         container, divider, dropdown, icon,
         image::Handle,
         menu::{KeyBind, menu_button},
-        nav_bar, popover, scrollable,
+        mouse_area, nav_bar, popover, scrollable, segmented_button, segmented_control,
         space::horizontal,
         text, toaster,
     },
@@ -73,6 +76,13 @@ enum PendingAction {
     Quit,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TextStyle {
+    Bold,
+    Italic,
+    Underline,
+}
+
 // reason: independent UI toggle flags (text styles, popups, fullscreen, prefs);
 // grouping into a bitflags type would obscure their distinct meanings.
 #[allow(clippy::struct_excessive_bools)]
@@ -107,6 +117,8 @@ pub struct CosmicViewer {
     text_italic: bool,
     text_underline: bool,
     text_alignment: Horizontal,
+    text_style_model: segmented_button::MultiSelectModel,
+    text_align_model: segmented_button::SingleSelectModel,
     show_text_format_menu: bool,
     shape_popup: bool,
     stroke_popup: bool,
@@ -1101,6 +1113,33 @@ impl CosmicViewer {
         pop.into()
     }
 
+    fn sync_text_format_models(&mut self) {
+        let style_entities: Vec<_> = self.text_style_model.iter().collect();
+
+        for entity in style_entities {
+            let active = match self.text_style_model.data::<TextStyle>(entity).copied() {
+                Some(TextStyle::Bold) => self.text_bold,
+                Some(TextStyle::Italic) => self.text_italic,
+                Some(TextStyle::Underline) => self.text_underline,
+                None => continue,
+            };
+
+            if active && !self.text_style_model.is_active(entity) {
+                self.text_style_model.activate(entity);
+            } else if !active && self.text_style_model.is_active(entity) {
+                self.text_style_model.deactivate(entity);
+            }
+        }
+
+        let align_entity = self.text_align_model.iter().find(|&entity| {
+            self.text_align_model.data::<Horizontal>(entity).copied() == Some(self.text_alignment)
+        });
+
+        if let Some(entity) = align_entity {
+            self.text_align_model.activate(entity);
+        }
+    }
+
     // reason: single declarative widget tree; splitting would fragment the layout.
     #[allow(clippy::too_many_lines)]
     fn build_text_format_dropdown(&self) -> Element<'_, ViewerMessage> {
@@ -1135,61 +1174,23 @@ impl CosmicViewer {
                 .align_y(Alignment::Center)
                 .spacing(4);
 
-            let style_row = Row::new()
-                .push(
-                    button::icon(icon::from_name("format-text-bold-symbolic"))
-                        .selected(self.text_bold)
-                        .class(tool_toggle_class(self.text_bold))
-                        .on_press(ViewerMessage::Edit(EditMessage::TextBold)),
-                )
-                .push(
-                    button::icon(icon::from_name("format-text-italic-symbolic"))
-                        .selected(self.text_italic)
-                        .class(tool_toggle_class(self.text_italic))
-                        .on_press(ViewerMessage::Edit(EditMessage::TextItalic)),
-                )
-                .push(
-                    button::icon(icon::from_name("format-text-underline-symbolic"))
-                        .selected(self.text_underline)
-                        .class(tool_toggle_class(self.text_underline))
-                        .on_press(ViewerMessage::Edit(EditMessage::TextUnderline)),
-                )
-                .push(Space::new().width(8))
-                .push(
-                    button::icon(icon::from_name("format-justify-left-symbolic"))
-                        .selected(self.text_alignment == Horizontal::Left)
-                        .class(tool_toggle_class(self.text_alignment == Horizontal::Left))
-                        .on_press(ViewerMessage::Edit(EditMessage::TextAlignment(
-                            Horizontal::Left,
-                        ))),
-                )
-                .push(
-                    button::icon(icon::from_name("format-justify-center-symbolic"))
-                        .selected(self.text_alignment == Horizontal::Center)
-                        .class(tool_toggle_class(self.text_alignment == Horizontal::Center))
-                        .on_press(ViewerMessage::Edit(EditMessage::TextAlignment(
-                            Horizontal::Center,
-                        ))),
-                )
-                .push(
-                    button::icon(icon::from_name("format-justify-right-symbolic"))
-                        .selected(self.text_alignment == Horizontal::Right)
-                        .class(tool_toggle_class(self.text_alignment == Horizontal::Right))
-                        .on_press(ViewerMessage::Edit(EditMessage::TextAlignment(
-                            Horizontal::Right,
-                        ))),
-                )
-                .spacing(2);
+            let style_row = segmented_control::horizontal(&self.text_style_model)
+                .on_activate(|entity| ViewerMessage::Edit(EditMessage::TextStyleActivated(entity)));
+            let align_row = segmented_control::horizontal(&self.text_align_model)
+                .on_activate(|entity| ViewerMessage::Edit(EditMessage::TextAlignActivated(entity)));
 
             let popup = container(
                 Column::new()
                     .push(font_row)
                     .push(style_row)
+                    .push(align_row)
                     .spacing(6)
                     .padding(8),
             )
             .style(Self::popup_style)
             .width(Length::Shrink);
+
+            let popup = mouse_area(popup).on_press(ViewerMessage::Cancelled);
 
             format_popover = format_popover
                 .popup(popup)
@@ -1398,6 +1399,35 @@ impl Application for CosmicViewer {
             text_italic: false,
             text_underline: false,
             text_alignment: Horizontal::Left,
+            text_style_model: segmented_button::Model::builder()
+                .insert(|btn| {
+                    btn.icon(icon::from_name("format-text-bold-symbolic").icon())
+                        .data(TextStyle::Bold)
+                })
+                .insert(|btn| {
+                    btn.icon(icon::from_name("format-text-italic-symbolic").icon())
+                        .data(TextStyle::Italic)
+                })
+                .insert(|btn| {
+                    btn.icon(icon::from_name("format-text-underline-symbolic").icon())
+                        .data(TextStyle::Underline)
+                })
+                .build(),
+            text_align_model: segmented_button::Model::builder()
+                .insert(|btn| {
+                    btn.icon(icon::from_name("format-justify-left-symbolic").icon())
+                        .data(Horizontal::Left)
+                        .activate()
+                })
+                .insert(|btn| {
+                    btn.icon(icon::from_name("format-justify-center-symbolic").icon())
+                        .data(Horizontal::Center)
+                })
+                .insert(|btn| {
+                    btn.icon(icon::from_name("format-justify-right-symbolic").icon())
+                        .data(Horizontal::Right)
+                })
+                .build(),
             show_text_format_menu: false,
             window_width: Some(0.0),
             is_fullscreen: false,
@@ -2228,6 +2258,7 @@ impl Application for CosmicViewer {
                                         }
                                         t.bold = self.text_bold;
                                     }
+                                    self.sync_text_format_models();
                                     return Task::none();
                                 }
                                 "i" => {
@@ -2248,6 +2279,7 @@ impl Application for CosmicViewer {
                                         }
                                         t.italic = self.text_italic;
                                     }
+                                    self.sync_text_format_models();
                                     return Task::none();
                                 }
                                 "u" => {
@@ -2264,6 +2296,7 @@ impl Application for CosmicViewer {
                                         }
                                         t.underline = self.text_underline;
                                     }
+                                    self.sync_text_format_models();
                                     return Task::none();
                                 }
                                 "a" => {
@@ -2324,7 +2357,7 @@ impl Application for CosmicViewer {
                         Key::Named(Named::Enter | Named::Escape) => {
                             if self.color_picker.get_is_active() {
                                 _ = self.color_picker.update::<ViewerMessage>(
-                                    cosmic::widget::color_picker::ColorPickerUpdate::ToggleColorPicker,
+                                    color_picker::ColorPickerUpdate::ToggleColorPicker,
                                 );
                             }
                             self.viewport.apply_tool();
@@ -2342,6 +2375,7 @@ impl Application for CosmicViewer {
                                 false,
                                 self.text_alignment,
                             ))));
+                            self.sync_text_format_models();
                         }
                         Key::Named(Named::Backspace) => {
                             if let Some(preview) = preview {
@@ -2414,16 +2448,20 @@ impl Application for CosmicViewer {
                         && let Some(preview) = self.viewport.preview_mut()
                         && let Some(t) = preview.as_any_mut().downcast_mut::<TextPreview>()
                     {
-                        t.sync_format_at_cursor();
+                        if !t.sync_format_over_selection() {
+                            t.sync_format_at_cursor();
+                        }
                         self.text_bold = t.bold;
                         self.text_italic = t.italic;
                         self.text_underline = t.underline;
+                        self.text_alignment = t.alignment;
                         self.text_font_size = t.font_size;
                         self.text_font_family = t.font_family;
                         self.text_font_index =
                             self.font_families.iter().position(|&f| f == t.font_family);
                         self.annotate_color = AnnotateColor(t.color);
                     }
+                    self.sync_text_format_models();
                 } else if !self.core().nav_bar_active()
                     && matches!(key, Key::Named(Named::ArrowLeft))
                 {
@@ -2788,11 +2826,22 @@ impl Application for CosmicViewer {
                                     && let Some(t) =
                                         preview.as_any_mut().downcast_mut::<TextPreview>()
                                 {
-                                    t.sync_format_at_cursor();
+                                    if !t.sync_format_over_selection() {
+                                        t.sync_format_at_cursor();
+                                    }
                                     self.text_bold = t.bold;
                                     self.text_italic = t.italic;
                                     self.text_underline = t.underline;
+                                    self.text_alignment = t.alignment;
+                                    self.text_font_size = t.font_size;
+                                    self.text_font_family = t.font_family;
+                                    self.text_font_index = self
+                                        .font_families
+                                        .iter()
+                                        .position(|&font| font == t.font_family);
+                                    self.annotate_color = AnnotateColor(t.color);
                                 }
+                                self.sync_text_format_models();
                                 return Task::none();
                             }
 
@@ -2844,6 +2893,7 @@ impl Application for CosmicViewer {
                             self.text_editing = true;
                             self.viewport.set_preview(Some(Box::new(preview)));
                             self.viewport.rebuild_display();
+                            self.sync_text_format_models();
                             return Task::none();
                         }
 
@@ -2882,6 +2932,24 @@ impl Application for CosmicViewer {
                     {
                         preview.on_drag(point, size);
                     }
+
+                    let mut refreshed = false;
+                    if let Some(preview) = self.viewport.preview_mut()
+                        && let Some(t) = preview.as_any_mut().downcast_mut::<TextPreview>()
+                    {
+                        if !t.sync_format_over_selection() {
+                            t.sync_format_at_cursor();
+                        }
+                        self.text_bold = t.bold;
+                        self.text_italic = t.italic;
+                        self.text_underline = t.underline;
+                        self.text_alignment = t.alignment;
+                        refreshed = true;
+                    }
+
+                    if refreshed {
+                        self.sync_text_format_models();
+                    }
                 }
                 CanvasMessage::ToolEnd => {
                     if self.move_mode {
@@ -2895,6 +2963,24 @@ impl Application for CosmicViewer {
                         && let Some(preview) = self.viewport.preview_mut()
                     {
                         preview.on_release(Point::ORIGIN, size);
+                    }
+
+                    let mut refreshed = false;
+                    if let Some(preview) = self.viewport.preview_mut()
+                        && let Some(t) = preview.as_any_mut().downcast_mut::<TextPreview>()
+                    {
+                        if !t.sync_format_over_selection() {
+                            t.sync_format_at_cursor();
+                        }
+                        self.text_bold = t.bold;
+                        self.text_italic = t.italic;
+                        self.text_underline = t.underline;
+                        self.text_alignment = t.alignment;
+                        refreshed = true;
+                    }
+
+                    if refreshed {
+                        self.sync_text_format_models();
                     }
 
                     // Crop is applied only via Apply/Enter, never on drag-release, so the frame
@@ -3426,6 +3512,7 @@ impl Application for CosmicViewer {
                             text.bold = self.text_bold;
                         }
                         self.viewport.rebuild_display();
+                        self.sync_text_format_models();
                     }
                     EditMessage::TextItalic => {
                         self.text_italic = !self.text_italic;
@@ -3445,6 +3532,7 @@ impl Application for CosmicViewer {
                             text.italic = self.text_italic;
                         }
                         self.viewport.rebuild_display();
+                        self.sync_text_format_models();
                     }
                     EditMessage::TextUnderline => {
                         self.text_underline = !self.text_underline;
@@ -3460,6 +3548,7 @@ impl Application for CosmicViewer {
                             text.underline = self.text_underline;
                         }
                         self.viewport.rebuild_display();
+                        self.sync_text_format_models();
                     }
                     EditMessage::TextAlignment(alignment) => {
                         self.text_alignment = alignment;
@@ -3469,6 +3558,7 @@ impl Application for CosmicViewer {
                             text.set_line_alignment(alignment);
                         }
                         self.viewport.rebuild_display();
+                        self.sync_text_format_models();
                     }
                     EditMessage::TextFontSize(idx) => {
                         let sizes = [12.0_f32, 16.0, 20.0, 24.0, 32.0, 48.0, 64.0];
@@ -3498,6 +3588,27 @@ impl Application for CosmicViewer {
                             text.font_family = fam;
                         }
                         self.viewport.rebuild_display();
+                    }
+                    EditMessage::TextStyleActivated(entity) => {
+                        let msg = match self.text_style_model.data::<TextStyle>(entity).copied() {
+                            Some(TextStyle::Bold) => Some(EditMessage::TextBold),
+                            Some(TextStyle::Italic) => Some(EditMessage::TextItalic),
+                            Some(TextStyle::Underline) => Some(EditMessage::TextUnderline),
+                            None => None,
+                        };
+
+                        if let Some(msg) = msg {
+                            return self.update(ViewerMessage::Edit(msg));
+                        }
+                    }
+                    EditMessage::TextAlignActivated(entity) => {
+                        if let Some(alignment) =
+                            self.text_align_model.data::<Horizontal>(entity).copied()
+                        {
+                            return self.update(ViewerMessage::Edit(EditMessage::TextAlignment(
+                                alignment,
+                            )));
+                        }
                     }
                     EditMessage::TextCancel => {
                         self.viewport.cancel_tool();

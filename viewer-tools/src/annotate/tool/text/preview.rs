@@ -331,24 +331,77 @@ impl TextPreview {
                     self.bold = a.weight >= cosmic_text::Weight::BOLD;
                     self.italic = a.style == cosmic_text::Style::Italic;
                     self.underline = a.metadata == 1;
-                    if let Some(c) = a.color_opt {
+
+                    if let Some(color) = a.color_opt {
                         self.color = Color::from_rgba(
-                            f32::from(c.r()) / 255.0,
-                            f32::from(c.g()) / 255.0,
-                            f32::from(c.b()) / 255.0,
-                            f32::from(c.a()) / 255.0,
+                            f32::from(color.r()) / 255.0,
+                            f32::from(color.g()) / 255.0,
+                            f32::from(color.b()) / 255.0,
+                            f32::from(color.a()) / 255.0,
                         );
                     }
-                    if let Some(m) = a.metrics_opt {
-                        let metrics: cosmic_text::Metrics = m.into();
+
+                    if let Some(metrics) = a.metrics_opt {
+                        let metrics: cosmic_text::Metrics = metrics.into();
                         self.font_size = metrics.font_size;
                     }
-                    if let cosmic_text::Family::Name(n) = a.family {
-                        self.font_family = intern_str(n);
+
+                    if let cosmic_text::Family::Name(name) = a.family {
+                        self.font_family = intern_str(name);
                     }
+
+                    self.alignment = match line.align() {
+                        Some(cosmic_text::Align::Center) => Horizontal::Center,
+                        Some(cosmic_text::Align::Right) => Horizontal::Right,
+                        _ => Horizontal::Left,
+                    };
                 }
             });
         }
+    }
+
+    pub fn sync_format_over_selection(&mut self) -> bool {
+        let Some(editor) = &self.editor else {
+            return false;
+        };
+
+        let Some((start, end)) = editor.selection_bounds() else {
+            return false;
+        };
+
+        let mut all_bold = true;
+        let mut all_italic = true;
+        let mut all_underline = true;
+        let mut saw_any = false;
+
+        editor.with_buffer(|buf| {
+            for line_i in start.line..=end.line.min(buf.lines.len().saturating_sub(1)) {
+                let line = &buf.lines[line_i];
+                let text_len = line.text().len();
+                let from = if line_i == start.line { start.index } else { 0 };
+                let to = if line_i == end.line {
+                    end.index.min(text_len)
+                } else {
+                    text_len
+                };
+
+                for idx in from..to {
+                    let a = line.attrs_list().get_span(idx);
+                    all_bold &= a.weight >= cosmic_text::Weight::BOLD;
+                    all_italic &= a.style == cosmic_text::Style::Italic;
+                    all_underline &= a.metadata == 1;
+                    saw_any = true;
+                }
+            }
+        });
+
+        if saw_any {
+            self.bold = all_bold;
+            self.italic = all_italic;
+            self.underline = all_underline;
+        }
+
+        saw_any
     }
 
     fn current_attrs(&self) -> cosmic_text::Attrs<'static> {
