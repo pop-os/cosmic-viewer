@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use crate::ToolOperation;
 use cosmic::{Renderer, iced::Size, iced::widget::canvas::Frame};
 use image::DynamicImage;

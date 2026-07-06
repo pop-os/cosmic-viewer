@@ -1,9 +1,13 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use cosmic::{
     Renderer, Theme,
     iced::widget::canvas::{self, Frame, Geometry, LineDash, Path, Program, Stroke},
     iced::{Color, Point, Rectangle, Size, border, mouse::Cursor},
 };
 
+/// Border shapes for `DashedBorder`. Only `Circle` is used today; the rest are
+/// kept as public API for reuse and/or an eventual upstream to libcosmic widget.
 #[derive(Debug, Clone, Copy)]
 pub enum DashedShape {
     Circle,

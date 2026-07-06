@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use i18n_embed::{
     DesktopLanguageRequester,
     fluent::{FluentLanguageLoader, fluent_language_loader},

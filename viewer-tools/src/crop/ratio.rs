@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use cosmic::iced::Size;
 
 /// Aspect ratio constraint for the crop tool.
@@ -53,18 +55,6 @@ impl CropRatio {
     #[must_use]
     pub const fn label(&self, is_portrait: bool) -> &'static str {
         match self {
-            /* CropRatio::Custom => fl!("crop-custom"),
-            CropRatio::Original => fl!("crop-original"),
-            CropRatio::Fixed(width, height) => match (width, height) {
-                (1, 1) => fl!("crop-1-1"),
-                (16, 9) if !is_portrait => fl!("crop-16-9"),
-                (16, 9) => fl!("crop-9-16"),
-                (7, 5) if !is_portrait => fl!("crop-7-5"),
-                (7, 5) => fl!("crop-5-7"),
-                (4, 3) if !is_portrait => fl!("crop-4-3"),
-                (4, 3) => fl!("crop-3-4"),
-                (3, 2) if !is_portrait => fl!("crop-3-2"),
-                (3, 2) => fl!("crop-2-3"), */
             Self::Custom => "Custom",
             Self::Original => "Original",
             Self::Fixed(width, height) => match (width, height) {

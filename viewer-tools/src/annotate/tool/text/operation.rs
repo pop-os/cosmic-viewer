@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use crate::{
     ToolOperation,
     annotate::tool::text::{
@@ -96,7 +98,7 @@ impl TextOperation {
             self.alignment,
         );
         // Edit in the upright reading orientation; rotation is re-applied on commit and rendered
-        // live by the preview. The footprint→reading conversion is the same swap as reading→footprint.
+        // live by the preview. The footprint->reading conversion is the same swap as reading->footprint.
         preview.bounding_box = rotated_footprint(self.bounding_box, self.rotation_steps);
         preview.rotation_steps = self.rotation_steps;
         preview.state = TextEditState::Editing;
@@ -127,7 +129,10 @@ impl TextOperation {
 
         let mut font_sys = font_system().write().expect("Write font system");
         let mut buffer = cosmic_text::Buffer::new(font_sys.raw(), metrics);
-        buffer.set_size(Some(TEXT_INSET.mul_add(-2.0, self.reading_size().width)), None);
+        buffer.set_size(
+            Some(TEXT_INSET.mul_add(-2.0, self.reading_size().width)),
+            None,
+        );
         buffer.set_wrap(cosmic_text::Wrap::WordOrGlyph);
 
         let lines = group_spans(&self.spans);
@@ -236,7 +241,8 @@ impl ToolOperation for TextOperation {
                 content: run.content.clone(),
                 position: Point::new(
                     run.x + origin.x,
-                    run.line_top + run.font_size.mul_add(-LINE_HEIGHT_FACTOR, run.line_h)
+                    run.line_top
+                        + run.font_size.mul_add(-LINE_HEIGHT_FACTOR, run.line_h)
                         + origin.y,
                 ),
                 color: run.color,
@@ -269,7 +275,9 @@ impl ToolOperation for TextOperation {
                 let uw = run.x_end - run.x;
                 frame.stroke(
                     &canvas::Path::line(Point::new(ux, uy), Point::new(ux + uw, uy)),
-                    canvas::Stroke::default().with_color(run.color).with_width(1.0),
+                    canvas::Stroke::default()
+                        .with_color(run.color)
+                        .with_width(1.0),
                 );
             }
         }
@@ -319,7 +327,7 @@ impl ToolOperation for TextOperation {
         buffer.shape_until_scroll(font_sys.raw(), false);
 
         // Rasterize the text upright into a transparent layer the size of the reading box, then
-        // rotate that layer into the image's orientation. 90° turns stay exact and we avoid
+        // rotate that layer into the image's orientation. 90° turns stay exact and avoid
         // per-glyph bitmap rotation.
         let layer_w = (reading.width.ceil() as u32).max(1);
         let layer_h = (reading.height.ceil() as u32).max(1);

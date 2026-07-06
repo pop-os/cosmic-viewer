@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use std::any::Any;
 
 use super::{handle::DragHandle, ratio::CropRatio};
@@ -53,7 +55,7 @@ impl CropSelection {
     }
 
     /// Activate for a ratio. A fixed ratio shows a centered frame; Custom starts
-    /// with no frame — the user draws it from scratch with the reticle.
+    /// with no frame - the user draws it from scratch with the reticle.
     pub fn activate(&mut self, ratio: CropRatio, image_size: Size) {
         self.ratio = ratio;
 
@@ -137,8 +139,8 @@ impl CropSelection {
             DragHandle::None => return,
         };
 
-        // A corner/edge dragged past the opposite side — or a free-crop dragged up or
-        // left — yields negative extents; flip the origin so the rect stays valid.
+        // A corner/edge dragged past the opposite side - or a free-crop dragged up or
+        // left - yields negative extents; flip the origin so the rect stays valid.
         if width < 0.0 {
             x += width;
             width = -width;
@@ -309,7 +311,7 @@ impl CropSelection {
         let mid_x = region.x + region.width / 2.0;
         let mid_y = region.y + region.height / 2.0;
 
-        // Corner handles — two bars each forming an L; edge handles — single bar.
+        // Corner handles - two bars each forming an L; edge handles - single bar.
         // Each entry: (center, bar_w, bar_h, anchor_x, anchor_y).
         let handles = [
             (Point::new(left, top), bar_long, bar_short, 0.0, 0.0),
@@ -392,7 +394,7 @@ impl ToolOperation for CropSelection {
 
     fn cursor_at(&self, point: Point) -> mouse::Interaction {
         let handle = self.hit_test(point);
-        // Interior (not a handle) pans the image behind the frame — offer the grab
+        // Interior (not a handle) pans the image behind the frame - offer the grab
         // affordance; outside the frame stays the reticle for drawing a new crop.
         if handle == DragHandle::None && self.visible && self.region.contains(point) {
             mouse::Interaction::Grab

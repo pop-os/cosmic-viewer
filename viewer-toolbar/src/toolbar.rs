@@ -1,12 +1,11 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use cosmic::{
     Element, Theme,
     iced::{
         Event, Length, Limits, Point, Rectangle, Renderer, Size, Vector,
         advanced::{
-            Clipboard, Layout, Shell,
-            layout::Node,
-            overlay,
-            renderer as iced_renderer,
+            Clipboard, Layout, Shell, layout::Node, overlay, renderer as iced_renderer,
             widget::Tree,
         },
         mouse::{self, Cursor},
@@ -113,7 +112,7 @@ pub fn responsive_toolbar<'a, Message: Clone + 'static>(
 /// Children are stored flat in `[start.., center.., end..]` order so the list
 /// maps 1:1 onto `tree.children` for event/draw/overlay delegation. `layout()`
 /// measures each section's natural width with the same flex layout a `row`
-/// uses, sums them, and stacks only when the single row would overflow — so it
+/// uses, sums them, and stacks only when the single row would overflow - so it
 /// never clips and never stacks prematurely.
 struct ReflowToolbar<'a, Message> {
     children: Vec<Element<'a, Message>>,
@@ -174,11 +173,7 @@ fn place_run(nodes: &mut [Node], x0: f32, y0: f32, row_height: f32, spacing: f32
         node.move_to_mut(Point::new(x, y0 + (row_height - height) / 2.0));
         x += node.size().width + spacing;
     }
-    if nodes.is_empty() {
-        x0
-    } else {
-        x - spacing
-    }
+    if nodes.is_empty() { x0 } else { x - spacing }
 }
 
 /// Two-row design: `start | end` on the top row, `center` centered below.
@@ -270,7 +265,7 @@ impl<Message> Widget<Message, Theme, Renderer> for ReflowToolbar<'_, Message> {
     }
 
     fn layout(&mut self, tree: &mut Tree, renderer: &Renderer, limits: &Limits) -> Node {
-        // `limits.max().width` is the true available width — the layout system
+        // `limits.max().width` is the true available width - the layout system
         // has already excluded the nav bar and window chrome, so no manual
         // subtraction is needed here.
         let available = limits.max().width;
@@ -279,7 +274,7 @@ impl<Message> Widget<Message, Theme, Renderer> for ReflowToolbar<'_, Message> {
         let n_start = self.n_start;
         let center_end = n_start + self.n_center;
 
-        // Lay out every item at its natural size so we can measure the fit.
+        // Lay out every item at its natural size to measure the fit.
         let child_limits = limits.loose();
         let mut nodes: Vec<Node> = self
             .children
@@ -297,8 +292,10 @@ impl<Message> Widget<Message, Theme, Renderer> for ReflowToolbar<'_, Message> {
         let has_end = nodes.len() > center_end;
 
         let present = u16::from(has_start) + u16::from(has_center) + u16::from(has_end);
-        let single_w =
-            spacing.mul_add(f32::from(present.saturating_sub(1)), start_w + center_w + end_w);
+        let single_w = spacing.mul_add(
+            f32::from(present.saturating_sub(1)),
+            start_w + center_w + end_w,
+        );
 
         // Top row of the two-row design: `start | end`.
         let top_gap = if has_start && has_end { spacing } else { 0.0 };
@@ -310,7 +307,7 @@ impl<Message> Widget<Message, Theme, Renderer> for ReflowToolbar<'_, Message> {
             let width = place_run(&mut nodes, 0.0, 0.0, row_height, spacing);
             Size::new(width, row_height)
         } else if top_w <= available && center_w <= available {
-            // Two rows, per design — but only when each row actually fits.
+            // Two rows, per design - but only when each row actually fits.
             place_two_rows(&mut nodes, n_start, center_end, spacing, row_spacing)
         } else {
             // Fall back to a wrapping flow so nothing is ever clipped.

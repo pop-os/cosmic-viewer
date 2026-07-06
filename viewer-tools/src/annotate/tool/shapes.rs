@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 mod operation;
 mod preview;
 
@@ -55,7 +57,7 @@ pub fn draw_shape(
                 });
                 frame.fill(&head, Fill::from(color));
             } else {
-                // Degenerate (near-zero length): just the shaft line.
+                // Degenerate (near-zero length): the shaft line only.
                 frame.stroke(&Path::line(start, end), stroke);
             }
         }
@@ -127,7 +129,7 @@ const ARROW_HEAD_STROKE_LEN_MULTIPLE: f32 = 3.0;
 const ARROW_HEAD_STROKE_WIDTH_MULTIPLE: f32 = 2.5;
 
 /// Filled-arrowhead geometry for a `width`-thick arrow from `start` to `end`: the head `base`
-/// (center of the head's rear edge — where the shaft should stop so its round cap is hidden and
+/// (center of the head's rear edge - where the shaft should stop so its round cap is hidden and
 /// the tip stays sharp) plus the two base corners `left`/`right`. The tip is `end`. The head is
 /// sized **only from the stroke width** (so it's proportional to the shaft regardless of arrow
 /// length), clamped so it never exceeds the arrow itself. Returns `None` for a degenerate arrow.
@@ -236,7 +238,7 @@ pub fn arrow_segments(start: Point, end: Point, width: f32) -> Vec<(Point, Point
         return vec![(start, end)];
     };
     vec![
-        // shaft — stops at the head base so the sharp tip comes from the filled head
+        // shaft - stops at the head base so the sharp tip comes from the filled head
         (start, base),
         // left part of head (to the tip)
         (left, end),

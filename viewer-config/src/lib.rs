@@ -1,8 +1,10 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use cosmic::cosmic_config::{self, Config, ConfigGet, ConfigSet, CosmicConfigEntry};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-pub const CONFIG_VERSION: u64 = 1;
+pub const CONFIG_VERSION: u64 = 2;
 const APP_ID: &str = "com.system76.CosmicViewer";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -98,11 +100,6 @@ impl ThumbnailSize {
     }
 }
 
-/// Maximum number of recent folders to remember
-pub const MAX_RECENT_FOLDERS: usize = 10;
-/// Maximum number of recent colors to remember
-pub const MAX_RECENT_COLORS: usize = 20;
-
 // reason: each bool is an independent persisted user toggle, not state that
 // forms a machine; collapsing them into enums would distort the config schema.
 #[allow(clippy::struct_excessive_bools)]
@@ -119,7 +116,6 @@ pub struct ViewerConfig {
     pub wallpaper_behavior: WallpaperBehavior,
     pub sort_mode: SortMode,
     pub sort_order: SortOrder,
-    pub recent_folders: Vec<String>,
     pub last_color: Option<[f32; 4]>,
 }
 
@@ -137,20 +133,8 @@ impl Default for ViewerConfig {
             wallpaper_behavior: WallpaperBehavior::default(),
             sort_mode: SortMode::default(),
             sort_order: SortOrder::default(),
-            recent_folders: Vec::new(),
             last_color: None,
         }
-    }
-}
-
-impl ViewerConfig {
-    /// Add a folder to the recent folders list.
-    /// The most recent folder is at index 0.
-    /// Duplicates are moved to the front.
-    pub fn add_recent_folder(&mut self, folder: String) {
-        self.recent_folders.retain(|f| f != &folder);
-        self.recent_folders.insert(0, folder);
-        self.recent_folders.truncate(MAX_RECENT_FOLDERS);
     }
 }
 
@@ -169,7 +153,6 @@ impl CosmicConfigEntry for ViewerConfig {
         config.set("wallpaper_behavior", self.wallpaper_behavior)?;
         config.set("sort_mode", self.sort_mode)?;
         config.set("sort_order", self.sort_order)?;
-        config.set("recent_folders", self.recent_folders.clone())?;
         config.set("last_color", self.last_color)?;
         Ok(())
     }
@@ -200,7 +183,6 @@ impl CosmicConfigEntry for ViewerConfig {
         get_field!("wallpaper_behavior", wallpaper_behavior, WallpaperBehavior);
         get_field!("sort_mode", sort_mode, SortMode);
         get_field!("sort_order", sort_order, SortOrder);
-        get_field!("recent_folders", recent_folders, Vec<String>);
         get_field!("last_color", last_color, Option<[f32; 4]>);
 
         if errors.is_empty() {
@@ -267,7 +249,7 @@ impl CosmicConfigEntry for ViewerConfig {
 ///
 /// # Errors
 ///
-/// Returns a [`cosmic_config::Error`] if the configuration context cannot be
+/// Returns a `cosmic_config::Error` if the configuration context cannot be
 /// created (for example, when the config directory is inaccessible).
 pub fn config() -> Result<Config, cosmic_config::Error> {
     Config::new(APP_ID, CONFIG_VERSION)

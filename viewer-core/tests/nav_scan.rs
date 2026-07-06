@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -29,7 +31,7 @@ async fn scan_name_ascending_is_sorted() {
     let images = scan_dir(&dir, false, SortMode::Name, SortOrder::Ascending).await;
     assert!(!images.is_empty());
 
-    // Verify the list has at least two entries, confirming it scanned real files
+    // Needs more than one entry to compare against the reversed order below.
     assert!(images.len() > 1);
 
     // Verify ascending and descending produce inverse orderings
@@ -176,7 +178,7 @@ async fn scan_handles_symlinks_gracefully() {
 
 #[test]
 fn is_supported_image_consistency() {
-    // Every file from a scan should pass is_supported_image, and vice versa
+    // Supported extensions are accepted; unsupported ones are rejected.
     assert!(is_supported_image(Path::new("photo.jpg")));
     assert!(is_supported_image(Path::new("photo.jpeg")));
     assert!(is_supported_image(Path::new("photo.png")));
@@ -186,9 +188,9 @@ fn is_supported_image_consistency() {
     assert!(is_supported_image(Path::new("photo.tiff")));
     assert!(is_supported_image(Path::new("photo.ico")));
     assert!(is_supported_image(Path::new("photo.avif")));
-    // assert!(is_supported_image(Path::new("photo.svg")));
-    // assert!(is_supported_image(Path::new("photo.heif")));
-    // assert!(is_supported_image(Path::new("photo.heic")));
+    assert!(is_supported_image(Path::new("photo.svg")));
+    assert!(is_supported_image(Path::new("photo.heif")));
+    assert!(is_supported_image(Path::new("photo.heic")));
 
     assert!(!is_supported_image(Path::new("file.txt")));
     assert!(!is_supported_image(Path::new("file.mp4")));

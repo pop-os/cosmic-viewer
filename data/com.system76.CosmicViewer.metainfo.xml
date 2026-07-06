@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<component type="desktop-application">
+    <id>com.system76.CosmicViewer</id>
+    <metadata_license>CC0-1.0</metadata_license>
+    <project_license>GPL-3.0-only</project_license>
+    <project_group>COSMIC</project_group>
+    <developer id="com.system76">
+        <name>System76</name>
+    </developer>
+    <update_contact>bryan.hyland32@gmail.com</update_contact>
+    <url type="homepage">https://github.com/pop-os/cosmic-viewer</url>
+    <url type="bugtracker">https://github.com/pop-os/cosmic-viewer/issues</url>
+    <name>COSMIC Viewer</name>
+    <summary>Image viewer for the COSMIC desktop</summary>
+    <description>
+        <p>
+            COSMIC Viewer is an image viewer and markup tool for the COSMIC desktop environment.
+            It opens a wide range of formats and provides quick navigation, non-destructive editing, and markup tools.
+        </p>
+        <p
+        >COSMIC Viewer opens a wide range of formats and provides quick navigation, non-destructive editing, and markup tools</p>
+        <ul>
+            <li
+            >Opens JPEG, PNG, GIF, WebP, BMP, TIFF, ICO, AVIF, HEIF/HEIC, JPEG XL, SVG and the netpbm and Farbfeld families</li>
+            <li>Zoom, pan, and fit-to-window viewer with EXIF-aware display</li>
+            <li>Thumbnail navigation through a folder</li>
+            <li>Crop and rotate</li>
+            <li>Markup with pen, highlighter, shapes, and text</li>
+            <li>Set an image as the desktop wallpaper</li>
+            <li
+            >Copy an image to system clipboard and paste it in another application</li>
+        </ul>
+    </description>
+    <keywords>
+        <keyword>Image</keyword>
+        <keyword>Photo</keyword>
+        <keyword>Picture</keyword>
+        <keyword>Viewer</keyword>
+        <keyword>Annotate</keyword>
+        <keyword>Markup</keyword>
+    </keywords>
+    <launchable type="desktop-id">com.system76.CosmicViewer.desktop</launchable>
+    <icon
+        type="remote"
+        height="256"
+        width="256"
+    >https://github.com/pop-os/cosmic-viewer/raw/branch/main/data/icons/com.system76.CosmicViewer-256.svg</icon>
+    <screenshots>
+        <screenshot type="default">
+            <caption>Browsing a folder with the thumbnail sidebar</caption>
+            <image
+            >https://github.com/pop-os/cosmic-viewer/raw/branch/main/screenshots/viewing.png</image>
+        </screenshot>
+        <screenshot>
+            <caption
+            >Marking up an image with pen, highlighter, shapes, and text</caption>
+            <image
+            >https://github.com/pop-os/cosmic-viewer/raw/branch/main/screenshots/markup-complete.png</image>
+        </screenshot>
+        <screenshot>
+            <caption>Non-destructive cropping with custom crop ratio</caption>
+            <image
+            >https://github.com/pop-os/cosmic-viewer/raw/branch/main/screenshots/custom-crop.png</image>
+        </screenshot>
+        <screenshot>
+            <caption
+            >Shape tools: rectangle, ellipse, arrow, line, start, and polygon</caption>
+            <image
+            >https://github.com/pop-os/cosmic-viewer/raw/branch/main/screenshots/markup-shape-picker.png</image>
+        </screenshot>
+        <screenshot>
+            <caption>Custom colors with a hex and RGB picker</caption>
+            <image
+            >https://github.com/pop-os/cosmic-viewer/raw/branch/main/screenshots/markup-custom-color-picker.png</image>
+        </screenshot>
+        <screenshot>
+            <caption>Set any supported image as the desktop wallpaper</caption>
+            <image
+            >https://github.com/pop-os/cosmic-viewer/raw/branch/main/screenshots/after-set-as-wallpaper.png</image>
+        </screenshot>
+    </screenshots>
+    <releases>
+        <release version="1.0.0" date="2026-07-06">
+            <description>
+                <p>Initial release.</p>
+            </description>
+        </release>
+    </releases>
+    <content_rating type="oars-1.1" />
+    <provides>
+        <id>com.system76.CosmicApplication</id>
+        <mediatype>image/jpeg</mediatype>
+        <mediatype>image/png</mediatype>
+        <mediatype>image/gif</mediatype>
+        <mediatype>image/webp</mediatype>
+        <mediatype>image/bmp</mediatype>
+        <mediatype>image/tiff</mediatype>
+        <mediatype>image/x-icon</mediatype>
+        <mediatype>image/avif</mediatype>
+        <mediatype>image/heif</mediatype>
+        <mediatype>image/heic</mediatype>
+        <mediatype>image/jxl</mediatype>
+        <mediatype>image/svg+xml</mediatype>
+        <mediatype>image/x-portable-pixmap</mediatype>
+        <mediatype>image/x-portable-graymap</mediatype>
+        <mediatype>image/x-portable-bitmap</mediatype>
+        <mediatype>image/x-portable-anymap</mediatype>
+        <mediatype>image/x-qoi</mediatype>
+        <mediatype>image/vnd.radiance</mediatype>
+        <binary>cosmic-viewer</binary>
+    </provides>
+</component>

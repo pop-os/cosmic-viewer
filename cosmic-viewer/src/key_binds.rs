@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use crate::message::{ContextMessage, EditMessage, ViewerMessage};
 use cosmic::{
     iced::keyboard::{Key, Modifiers},
@@ -58,7 +60,7 @@ impl MenuAction {
             Self::Paste => ViewerMessage::Paste,
             Self::Save => ViewerMessage::Save,
             Self::SaveAs => ViewerMessage::SaveAs,
-            Self::Quit => ViewerMessage::Quit,
+            Self::Quit => ViewerMessage::CloseRequested,
             // Context Actions
             Self::ImageDetails => ViewerMessage::Context(ContextMessage::ImageDetails),
             Self::About => ViewerMessage::Context(ContextMessage::About),

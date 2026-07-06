@@ -1,4 +1,4 @@
-# viewer-canvas — the image canvas widget: rendering, zoom/pan, coordinate
+# viewer-canvas - the image canvas widget: rendering, zoom/pan, coordinate
 # transforms, and tool-overlay composition. Owns the on-screen view of an
 # image and drives viewer-tools' previews; sits below the app shell.
 [package]
@@ -7,6 +7,8 @@ name = "viewer-canvas"
 description.workspace = true
 edition.workspace = true
 authors.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
 libcosmic.workspace = true

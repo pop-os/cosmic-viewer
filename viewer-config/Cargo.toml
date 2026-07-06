@@ -1,4 +1,4 @@
-# viewer-config — user-facing configuration model and persistence.
+# viewer-config - user-facing configuration model and persistence.
 # Leaf crate: owns the settings types and their on-disk representation;
 # knows nothing about image data, rendering, or the app shell.
 [package]
@@ -7,6 +7,8 @@ name = "viewer-config"
 description.workspace = true
 edition.workspace = true
 authors.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
 libcosmic.workspace = true

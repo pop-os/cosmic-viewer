@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use crate::{
     fl,
     key_binds::{self, MenuAction, keyboard_shortcut_handler},
@@ -93,7 +95,6 @@ pub struct CosmicViewer {
     nav: NavState,
     nav_bar_model: nav_bar::Model,
     cache: ImageCache,
-    //grid: ImageGrid<'static, Action<ViewerMessage>>,
     nav_handles: Vec<Option<Handle>>,
     scroll_id: Id,
     viewport: ViewportManager,
@@ -164,8 +165,6 @@ impl CosmicViewer {
         }
     }
 
-    // reason: thumbnail dimension is a small pixel count, exact as f32.
-    #[allow(clippy::cast_precision_loss)]
     fn is_narrow(&self) -> bool {
         // Tie "narrow" to libcosmic's own condensed breakpoint (the point it would hide the main
         // content, ~360px content width). A separate, narrower threshold left a gap band where the
@@ -265,7 +264,7 @@ impl CosmicViewer {
                 *img = base;
             }
 
-            self.viewport.rebuild_display_preserve_view();
+            self.viewport.rebuild_display();
         }
     }
 
@@ -1284,7 +1283,7 @@ impl CosmicViewer {
 
         pop.into()
     }
-    /// Multiply the current zoom by `factor`, preserving the fit/crop floor, the 500% celing,
+    /// Multiply the current zoom by `factor`, preserving the fit/crop floor, the 500% ceiling,
     /// and the snap-through-100% behavior the wheel zoom relied on.
     fn zoom_by(&mut self, factor: f32) {
         let bounds = self.viewport.last_bounds().get();
@@ -1334,6 +1333,7 @@ impl Application for CosmicViewer {
         &mut self.core
     }
 
+    #[allow(clippy::too_many_lines)]
     fn init(core: Core, flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
         let mut tasks = vec![];
 
@@ -1363,7 +1363,6 @@ impl Application for CosmicViewer {
             nav: NavState::new(),
             nav_bar_model: nav_bar::Model::default(),
             cache: ImageCache::with_defaults(),
-            //grid,
             nav_handles: Vec::new(),
             scroll_id,
             viewport: ViewportManager::default(),
@@ -1452,7 +1451,6 @@ impl Application for CosmicViewer {
         vec![menu_bar(
             &self.core,
             &self.key_binds,
-            &[],
             self.viewport.can_undo(),
             self.viewport.can_redo(),
         )]
@@ -1482,9 +1480,7 @@ impl Application for CosmicViewer {
         }
 
         let thumbnail_size = self.config.thumbnail_size.pixels();
-        //let col_spacing: f32 = 8.0;
         let space_xxs = f32::from(theme::active().cosmic().spacing.space_xxs);
-        //let panel_width = thumbnail_size as f32 + col_spacing * 2.0 + 36.;
         let panel_width = space_xxs.mul_add(2.0, thumbnail_size as f32) + 36.0;
 
         let active = self.nav.index().unwrap_or(0);
@@ -1516,7 +1512,6 @@ impl Application for CosmicViewer {
                     .on_hide(Action::App(ViewerMessage::Nav(
                         NavMessage::NavThumbnailHide(img),
                     )))
-                    //.anticipate(thumbnail_size as f32 * 2.0)
                     .into()
             })
             .collect::<Vec<Element<'_, Action<ViewerMessage>>>>();
@@ -2501,19 +2496,13 @@ impl Application for CosmicViewer {
                         self.nav.select(0);
                     }
 
-                    //self.rebuild_grid_items();
                     self.rebuild_nav_handles();
                     if !self.nav.is_empty() {
                         let idx = self.nav.index().unwrap_or(0);
                         tasks.push(self.load_nearby_thumbnails(idx, 10));
                     }
 
-                    // If no image is selected on load, start loading from image 1 (idx = 0)
-                    /*if !self.nav.is_empty() {
-                        tasks.push(self.load_remaining_thumbnails());
-                    }*/
-
-                    // Load the selected image and the 40 images around it (20 up and 20 down)
+                    // Load the selected image at full resolution.
                     if let Some(idx) = self.nav.index() {
                         if let Some(path) = self.nav.current().cloned() {
                             tasks.push(self.load_full_image(path));
@@ -2586,8 +2575,6 @@ impl Application for CosmicViewer {
                         && let Some(path) = self.nav.select(idx)
                     {
                         let path = path.clone();
-                        // self.grid.set_focused(Some(idx));
-                        //self.grid.set_selected(vec![idx]);
 
                         self.viewport.cancel_tool();
                         self.text_editing = false;
@@ -2608,7 +2595,7 @@ impl Application for CosmicViewer {
                                 Some(cached.image),
                             );
                         }
-                        // Don't clear the viewport — keep the previous image
+                        // Don't clear the viewport - keep the previous image
                         // visible until the new one loads
 
                         tasks.push(self.load_full_image(path));
@@ -2933,7 +2920,6 @@ impl Application for CosmicViewer {
                         preview.on_drag(point, size);
                     }
 
-                    let mut refreshed = false;
                     if let Some(preview) = self.viewport.preview_mut()
                         && let Some(t) = preview.as_any_mut().downcast_mut::<TextPreview>()
                     {
@@ -2944,10 +2930,7 @@ impl Application for CosmicViewer {
                         self.text_italic = t.italic;
                         self.text_underline = t.underline;
                         self.text_alignment = t.alignment;
-                        refreshed = true;
-                    }
-
-                    if refreshed {
+                    } else {
                         self.sync_text_format_models();
                     }
                 }
@@ -2965,7 +2948,6 @@ impl Application for CosmicViewer {
                         preview.on_release(Point::ORIGIN, size);
                     }
 
-                    let mut refreshed = false;
                     if let Some(preview) = self.viewport.preview_mut()
                         && let Some(t) = preview.as_any_mut().downcast_mut::<TextPreview>()
                     {
@@ -2976,10 +2958,7 @@ impl Application for CosmicViewer {
                         self.text_italic = t.italic;
                         self.text_underline = t.underline;
                         self.text_alignment = t.alignment;
-                        refreshed = true;
-                    }
-
-                    if refreshed {
+                    } else {
                         self.sync_text_format_models();
                     }
 
@@ -3221,14 +3200,12 @@ impl Application for CosmicViewer {
                                 }
                             }
                         }
-                        self.viewport.rebuild_display_preserve_view();
+                        self.viewport.rebuild_display();
                     }
                     EditMessage::Crop => {
                         if self.viewport.active_tool() != Some(ToolKind::Crop) {
-                            if self.viewport.zoom() < 1.0 {
-                                self.viewport.set_zoom(1.0);
-                                self.viewport.set_pan(Vector::ZERO);
-                            }
+                            self.viewport.set_zoom(1.0);
+                            self.viewport.set_pan(Vector::ZERO);
                             self.viewport.set_active_tool(Some(ToolKind::Crop));
                             self.crop_ratio = CropRatio::Custom;
                             self.viewport
@@ -3288,6 +3265,8 @@ impl Application for CosmicViewer {
                                 *img = crop_to_region(img, region);
                             }
                             self.viewport.rebuild_display();
+                            self.viewport.set_zoom(1.0);
+                            self.viewport.set_pan(Vector::ZERO);
                         }
                     }
                     EditMessage::CropCancel => {
@@ -3335,7 +3314,7 @@ impl Application for CosmicViewer {
                         if let Some(img) = self.viewport.working_image_mut() {
                             *img = img.rotate270();
                         }
-                        self.viewport.rebuild_display_preserve_view();
+                        self.viewport.rebuild_display();
                         self.viewport.set_actual_percent(percent, viewport_size);
 
                         if is_cropping {
@@ -3372,7 +3351,7 @@ impl Application for CosmicViewer {
                         if let Some(img) = self.viewport.working_image_mut() {
                             *img = img.rotate90();
                         }
-                        self.viewport.rebuild_display_preserve_view();
+                        self.viewport.rebuild_display();
                         self.viewport.set_actual_percent(percent, viewport_size);
 
                         if is_cropping {
@@ -3421,7 +3400,7 @@ impl Application for CosmicViewer {
                                 }
                             }
                             ToggleColorPicker => {
-                                // Closing via toggle — apply the color
+                                // Closing via toggle - apply the color
                                 if was_active
                                     && let Some(color) = self.color_picker.get_applied_color()
                                 {
@@ -3703,6 +3682,14 @@ impl Application for CosmicViewer {
         } else {
             Task::batch(tasks)
         }
+    }
+
+    fn on_app_exit(&mut self) -> Option<Self::Message> {
+        Some(ViewerMessage::CloseRequested)
+    }
+
+    fn on_close_requested(&self, id: window::Id) -> Option<Self::Message> {
+        (self.core().main_window_id() == Some(id)).then_some(ViewerMessage::Quit)
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {

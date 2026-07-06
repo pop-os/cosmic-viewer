@@ -1,4 +1,4 @@
-# viewer-tools — editing tool operations (crop, rotate, and the annotation
+# viewer-tools - editing tool operations (crop, rotate, and the annotation
 # tools) plus their canvas-preview and image-rasterization paths. Owns the
 # tool model and the draw/apply geometry; depends on no other workspace crate.
 [package]
@@ -7,6 +7,8 @@ name = "viewer-tools"
 description.workspace = true
 edition.workspace = true
 authors.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
 libcosmic.workspace = true

@@ -1,9 +1,11 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use cosmic::iced::mouse;
 
 /// Which part of the crop selection the user is dragging.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DragHandle {
-    /// No dragging any handle
+    /// Not dragging any handle.
     None,
     // Corners
     TopLeft,

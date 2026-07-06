@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use cosmic::iced::{Color, Point};
 use image::DynamicImage;
 use viewer_tools::ToolOperation;

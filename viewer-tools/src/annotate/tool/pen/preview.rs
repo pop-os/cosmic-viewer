@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use std::any::Any;
 
 use super::PenOperation;
@@ -86,6 +88,6 @@ impl ToolOperation for PenPreview {
     }
 
     fn on_release(&mut self, _point: Point, _image_size: Size) {
-        // Stroke complete
+        // Points already captured during drag; nothing to finalize.
     }
 }

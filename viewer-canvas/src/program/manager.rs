@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use super::ViewerCanvas;
 use crate::{CanvasImage, CanvasMessage, state::ToolKind};
 use cosmic::{
@@ -147,20 +149,6 @@ impl ViewportManager {
                 width,
                 height,
             });
-            self.zoom = 1.0;
-            self.pan = Vector::ZERO;
-        }
-    }
-
-    pub fn rebuild_display_preserve_view(&mut self) {
-        if let Some(ref working) = self.working_image {
-            let (width, height) = (working.width(), working.height());
-            let handle = display_handle(working);
-            self.image = Some(CanvasImage {
-                handle,
-                width,
-                height,
-            });
         }
     }
 
@@ -182,8 +170,12 @@ impl ViewportManager {
     pub fn fill_zoom(&self, frame_size: Size) -> f32 {
         self.image.as_ref().map_or(1.0, |image| {
             let bounds = self.last_bounds.get();
-            let fit_scale =
-                super::fit_scale(bounds.width, bounds.height, image.width as f32, image.height as f32);
+            let fit_scale = super::fit_scale(
+                bounds.width,
+                bounds.height,
+                image.width as f32,
+                image.height as f32,
+            );
             let zx = frame_size.width / (image.width as f32 * fit_scale);
             let zy = frame_size.height / (image.height as f32 * fit_scale);
             zx.max(zy).max(1.0)
@@ -201,8 +193,12 @@ impl ViewportManager {
             return 100.0;
         };
 
-        let fit_scale =
-            super::fit_scale(viewport_size.width, viewport_size.height, img.width as f32, img.height as f32);
+        let fit_scale = super::fit_scale(
+            viewport_size.width,
+            viewport_size.height,
+            img.width as f32,
+            img.height as f32,
+        );
 
         self.zoom * fit_scale * 100.0
     }
@@ -214,8 +210,12 @@ impl ViewportManager {
             return;
         };
 
-        let fit_scale =
-            super::fit_scale(viewport_size.width, viewport_size.height, img.width as f32, img.height as f32);
+        let fit_scale = super::fit_scale(
+            viewport_size.width,
+            viewport_size.height,
+            img.width as f32,
+            img.height as f32,
+        );
 
         if fit_scale > 0.0 {
             self.zoom = percent / (fit_scale * 100.0);
@@ -321,8 +321,21 @@ impl ViewportManager {
     #[allow(clippy::cast_precision_loss)]
     pub fn screen_to_image(&self, point: Point, bounds: Rectangle) -> Option<Point> {
         let image = self.image.as_ref()?;
-        let fit_scale =
-            super::fit_scale(bounds.width, bounds.height, image.width as f32, image.height as f32);
+        let fit_scale = if self.active_tool == Some(ToolKind::Crop) {
+            super::fit_scale_uncapped(
+                bounds.width,
+                bounds.height,
+                image.width as f32,
+                image.height as f32,
+            )
+        } else {
+            super::fit_scale(
+                bounds.width,
+                bounds.height,
+                image.width as f32,
+                image.height as f32,
+            )
+        };
         let effective_scale = self.zoom * fit_scale;
         let center_x = bounds.width / 2.0;
         let center_y = bounds.height / 2.0;
@@ -345,8 +358,12 @@ impl ViewportManager {
     #[allow(clippy::cast_precision_loss)]
     pub fn screen_to_image_clamped(&self, point: Point, bounds: Rectangle) -> Option<Point> {
         let image = self.image.as_ref()?;
-        let fit_scale =
-            super::fit_scale(bounds.width, bounds.height, image.width as f32, image.height as f32);
+        let fit_scale = super::fit_scale(
+            bounds.width,
+            bounds.height,
+            image.width as f32,
+            image.height as f32,
+        );
         let effective_scale = self.zoom * fit_scale;
         let center_x = bounds.width / 2.0;
         let center_y = bounds.height / 2.0;
@@ -363,8 +380,21 @@ impl ViewportManager {
     #[allow(clippy::cast_precision_loss)]
     pub fn screen_to_image_fit(&self, point: Point, bounds: Rectangle) -> Option<Point> {
         let image = self.image.as_ref()?;
-        let fit_scale =
-            super::fit_scale(bounds.width, bounds.height, image.width as f32, image.height as f32);
+        let fit_scale = if self.active_tool == Some(ToolKind::Crop) {
+            super::fit_scale_uncapped(
+                bounds.width,
+                bounds.height,
+                image.width as f32,
+                image.height as f32,
+            )
+        } else {
+            super::fit_scale(
+                bounds.width,
+                bounds.height,
+                image.width as f32,
+                image.height as f32,
+            )
+        };
         let center_x = bounds.width / 2.0;
         let center_y = bounds.height / 2.0;
         let img_x = (point.x - center_x) / fit_scale + image.width as f32 / 2.0;
@@ -383,8 +413,21 @@ impl ViewportManager {
     #[allow(clippy::cast_precision_loss)]
     pub fn screen_to_image_fit_unclamped(&self, point: Point, bounds: Rectangle) -> Option<Point> {
         let image = self.image.as_ref()?;
-        let fit_scale =
-            super::fit_scale(bounds.width, bounds.height, image.width as f32, image.height as f32);
+        let fit_scale = if self.active_tool == Some(ToolKind::Crop) {
+            super::fit_scale_uncapped(
+                bounds.width,
+                bounds.height,
+                image.width as f32,
+                image.height as f32,
+            )
+        } else {
+            super::fit_scale(
+                bounds.width,
+                bounds.height,
+                image.width as f32,
+                image.height as f32,
+            )
+        };
         let center_x = bounds.width / 2.0;
         let center_y = bounds.height / 2.0;
         Some(Point::new(

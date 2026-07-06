@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use super::{
     BORDER_WIDTH, DEFAULT_BOX_WIDTH, DRAG_THRESHOLD, LINE_HEIGHT_FACTOR, MIN_BOX_HEIGHT,
     MIN_BOX_WIDTH, TextDragHandle, TextOperation, TextSpan, build_buffer_line, color_channel_u8,
@@ -867,8 +869,8 @@ impl ToolOperation for TextPreview {
         // reading frame and rendered rotated about the box center, so a rotated text edits as it
         // will be saved. `rotation_steps == 0` skips the transform entirely.
         let steps = self.steps();
-        // While resizing, rotate about the fixed start-of-drag center — the same pivot the input
-        // un-rotation uses — so the box doesn't slide as its own center moves with the edge.
+        // While resizing, rotate about the fixed start-of-drag center - the same pivot the input
+        // un-rotation uses - so the box doesn't slide as its own center moves with the edge.
         let center = if self.state == TextEditState::Resizing {
             self.drag_start_box.center()
         } else {

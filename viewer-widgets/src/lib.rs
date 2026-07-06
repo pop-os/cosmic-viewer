@@ -1,5 +1,3 @@
-pub mod dashed_shape;
-pub mod image_grid;
+// SPDX-License-Identifier: GPL-3.0-only
 
-// Re-exports
-pub use image_grid::{GridItem, ImageGrid, calculate_scroll_offset, image_grid};
+pub mod dashed_shape;

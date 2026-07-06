@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use crate::{fl, key_binds::MenuAction, message::ViewerMessage};
 use cosmic::{
     Core, Element,
@@ -6,35 +8,17 @@ use cosmic::{
         responsive_menu_bar,
     },
 };
-use std::{collections::HashMap, path::Path, sync::LazyLock};
+use std::{collections::HashMap, sync::LazyLock};
 
 static MENU_ID: LazyLock<cosmic::widget::Id> =
     LazyLock::new(|| cosmic::widget::Id::new("responsive-menu"));
 
-fn build_file_menu(recent_folders: &[String]) -> Vec<menu::Item<MenuAction, String>> {
+fn build_file_menu() -> Vec<menu::Item<MenuAction, String>> {
     let mut items = vec![menu::Item::Button(
         fl!("menu-open-file"),
         None,
         MenuAction::OpenFile,
     )];
-
-    if !recent_folders.is_empty() {
-        let folder_items: Vec<menu::Item<MenuAction, String>> = recent_folders
-            .iter()
-            .enumerate()
-            .map(|(idx, folder)| {
-                let display_name = Path::new(folder)
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or(folder)
-                    .to_string();
-
-                menu::Item::Button(display_name, None, MenuAction::OpenRecent(idx))
-            })
-            .collect();
-
-        items.push(menu::Item::Folder(fl!("menu-open-recent"), folder_items));
-    }
 
     items.push(menu::Item::Button(
         fl!("menu-open-folder"),
@@ -140,11 +124,10 @@ fn build_view_menu() -> Vec<menu::Item<MenuAction, String>> {
 pub fn menu_bar<'a>(
     core: &Core,
     key_binds: &HashMap<KeyBind, MenuAction>,
-    recent_folders: &[String],
     can_undo: bool,
     can_redo: bool,
 ) -> Element<'a, ViewerMessage> {
-    let file_menu = build_file_menu(recent_folders);
+    let file_menu = build_file_menu();
     let edit_menu = build_edit_menu(can_undo, can_redo);
     let view_menu = build_view_menu();
 

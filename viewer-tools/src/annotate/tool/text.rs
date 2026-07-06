@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 pub mod operation;
 pub mod preview;
 
@@ -14,7 +16,7 @@ pub const TEXT_INSET: f32 = 6.0;
 /// Convert between an upright (reading-oriented) box and its axis-aligned image-space footprint
 /// for `steps` clockwise quarter-turns. A 90°/270° turn swaps width/height about the box center;
 /// 0°/180° leave the footprint unchanged. The mapping is its own inverse (two swaps cancel), so it
-/// serves both directions — footprint→reading on re-edit and reading→footprint on commit.
+/// serves both directions - footprint->reading on re-edit and reading->footprint on commit.
 #[must_use]
 pub fn rotated_footprint(upright: Rectangle, steps: u8) -> Rectangle {
     if steps % 2 == 1 {

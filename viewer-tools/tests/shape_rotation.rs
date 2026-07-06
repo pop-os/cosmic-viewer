@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use cosmic::iced::{Color, Point, Size};
 use viewer_tools::ToolOperation;
 use viewer_tools::annotate::{ShapeKind, ShapeOperation};

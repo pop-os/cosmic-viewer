@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 pub mod manager;
 
 use crate::state::{CanvasImage, CanvasMessage, Interaction, ToolKind};
@@ -13,17 +15,23 @@ use cosmic::{
 };
 use viewer_tools::ToolOperation;
 
-/// Per-pixel touchpad zoom sensitivity. Lover = slower.
+/// Per-pixel touchpad zoom sensitivity. Lower = slower.
 const PIXEL_ZOOM_RATE: f32 = 0.0025;
 
 /// Scale to fit an image within the frame, capped at 1.0: images smaller than the
 /// frame render at actual size rather than being upscaled to fill (fit never
-/// enlarges — so a tiny icon opens at 100%, not thousands of percent).
+/// enlarges - so a tiny icon opens at 100%, not thousands of percent).
 pub(crate) fn fit_scale(frame_w: f32, frame_h: f32, img_w: f32, img_h: f32) -> f32 {
     (frame_w / img_w).min(frame_h / img_h).min(1.0)
 }
 
-/// Per-frame view of the canvas state, built by `ViewportManger`.
+/// Fit scale without the 1.0 cap: images smaller than the frame enlarge to fill it.
+/// Used during crop so a small image fills the viewport and the crop frame spans it.
+pub(crate) fn fit_scale_uncapped(frame_w: f32, frame_h: f32, img_w: f32, img_h: f32) -> f32 {
+    (frame_w / img_w).min(frame_h / img_h)
+}
+
+/// Per-frame view of the canvas state, built by `ViewportManager`.
 pub struct ViewerCanvas<'a> {
     pub image: Option<&'a CanvasImage>,
     pub cache: &'a Cache,
@@ -126,12 +134,21 @@ impl Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'_> {
         let mut frame = Frame::new(renderer, bounds.size());
 
         if let Some(image) = self.image {
-            let fit_scale = fit_scale(
-                bounds.width,
-                bounds.height,
-                image.width as f32,
-                image.height as f32,
-            );
+            let fit_scale = if self.active_tool == Some(ToolKind::Crop) {
+                fit_scale_uncapped(
+                    bounds.width,
+                    bounds.height,
+                    image.width as f32,
+                    image.height as f32,
+                )
+            } else {
+                fit_scale(
+                    bounds.width,
+                    bounds.height,
+                    image.width as f32,
+                    image.height as f32,
+                )
+            };
             let image_size = Size::new(image.width as f32, image.height as f32);
 
             let _ = renderer.load_image(&image.handle);
@@ -162,7 +179,7 @@ impl Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'_> {
                 };
 
                 if self.active_tool == Some(ToolKind::Crop) {
-                    // Crop frame: never clip — the handles extend past the image edge by design.
+                    // Crop frame: never clip - the handles extend past the image edge by design.
                     render(&mut frame);
                 } else {
                     // Annotations: clip to the image rectangle so marks outside the (possibly

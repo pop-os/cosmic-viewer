@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use std::borrow::Cow;
 
 use cosmic::iced::clipboard::mime::AsMimeTypes;

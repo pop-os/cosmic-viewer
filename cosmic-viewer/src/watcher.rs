@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use cosmic::iced::Subscription;
 use cosmic::iced::futures::SinkExt;
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};

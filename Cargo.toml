@@ -4,14 +4,20 @@ resolver = "3"
 members = ["cosmic-viewer", "viewer-canvas", "viewer-config", "viewer-core", "viewer-widgets", "viewer-toolbar", "viewer-tools"]
 
 [workspace.package]
-version = "0.1.0"
+version = "1.0.0"
 description = "Image viewer for the COSMIC DE"
 edition = "2024"
-authors = ["Bryan Hyland <bryan.hyland32@gmail.com"]
+authors = ["Bryan Hyland <bryan.hyland32@gmail.com>"]
+license = "GPL-3.0-only"
+repository = "https://github.com/pop-os/cosmic-viewer"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
+
+[workspace.lints.rust]
+unused = { level = "warn", priority = -1 }
+dead_code = "warn"
 
 [workspace.dependencies]
 fast_image_resize = { version = "6.0.0", features = ["image"] }

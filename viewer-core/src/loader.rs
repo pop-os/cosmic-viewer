@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use cosmic::widget::image::Handle;
 use fast_image_resize::{PixelType, ResizeAlg, ResizeOptions, Resizer, images::Image as FirImage};
 use image::{DynamicImage, RgbaImage};
@@ -14,7 +16,8 @@ use turbojpeg::{Decompressor, Image, PixelFormat, ScalingFactor};
 use zune_image::codecs::bmp::zune_core::colorspace::ColorSpace;
 use zune_image::image::Image as ZuneImage;
 
-// Temporary fix until I can get a patch into upstream
+// Cap texture uploads at 2048px on the long edge; the full-resolution image
+// is kept separately so edits and saves operate on the real pixels, not the texture.
 const MAX_TEX: u32 = 2048;
 
 #[derive(Debug, Error)]
@@ -282,7 +285,7 @@ fn load_thumbnail_sync(path: &Path, max_size: u32) -> Result<LoadedImage, LoadEr
         });
     }
 
-    // 1. For JPEGs, try EXIF thumbnail extraction (very fast, no full decode)
+    // 1. For JPEGs, try EXIF thumbnail extraction (no full decode)
     if matches!(extension.as_str(), "jpg" | "jpeg") {
         if let Ok((width, height, pixels)) = extract_exif_thumbnail(path, max_size) {
             let handle = Handle::from_rgba(width, height, pixels.clone());
@@ -343,8 +346,8 @@ fn load_thumbnail_sync(path: &Path, max_size: u32) -> Result<LoadedImage, LoadEr
     })
 }
 
-/// Extract embedded EXIF thumbnail from JPEG files
-/// This is extremely fast as it only reads a small portion of the file
+/// Extract embedded EXIF thumbnail from JPEG files.
+/// Reads only a small portion of the file rather than decoding it fully.
 fn extract_exif_thumbnail(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u8>), LoadError> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
@@ -362,8 +365,8 @@ fn extract_exif_thumbnail(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u
         return Err(LoadError::UnsupportedFormat("No EXIF thumbnail".into()));
     }
 
-    // The exif crate doesn't directly expose thumbnail bytes, so we need to
-    // re-read the file and extract the thumbnail using the offset/length
+    // The exif crate doesn't directly expose thumbnail bytes; re-read the
+    // file and extract the thumbnail using the offset/length.
     let thumb_bytes = extract_thumbnail_bytes(path, &exif)?;
 
     // Decode the embedded JPEG thumbnail
@@ -403,8 +406,8 @@ fn extract_thumbnail_bytes(path: &Path, exif: &exif::Exif) -> Result<Vec<u8>, Lo
     let mut file = File::open(path)?;
 
     // EXIF data starts after APP1 marker, typically at offset 12 from file start
-    // The offset in EXIF is relative to the TIFF header, which is inside APP1
-    // We need to find the actual file offset
+    // The offset in EXIF is relative to the TIFF header, which is inside APP1;
+    // resolve it to the actual file offset.
 
     // Read the APP1 segment to find the TIFF header offset
     let mut header = [0u8; 12];
@@ -573,8 +576,8 @@ fn calculate_jpeg_scale(width: u32, height: u32, target: u32) -> ScalingFactor {
     ];
 
     // Find the smallest scale that produces an image >= target size
-    // (we want to decode slightly larger, then resize down for quality)
-    for &(num, denom) in &ratios {
+    // (decode slightly larger, then resize down for quality)
+    for &(num, denom) in ratios.iter().rev() {
         let scaled = (max_dim as f32 * num as f32 / denom as f32) as u32;
         if scaled >= target {
             return ScalingFactor::new(num, denom);
@@ -676,7 +679,7 @@ fn fast_resize_rgba(
 }
 
 /// Scale an SVG to fill `max` in its larger dimension. SVG is vector, so
-/// rendering above natural size stays crisp — no pixel upscaling.
+/// rendering above natural size stays crisp - no pixel upscaling.
 // reason: vector sizes and the rounded fit result are small, non-negative f32s.
 #[allow(
     clippy::cast_precision_loss,
@@ -702,7 +705,11 @@ fn render_svg(tree: &usvg::Tree, w: u32, h: u32) -> Result<Vec<u8>, LoadError> {
 
     let sx = w as f32 / tree.size().width();
     let sy = h as f32 / tree.size().height();
-    resvg::render(tree, tiny_skia::Transform::from_scale(sx, sy), &mut pixmap.as_mut());
+    resvg::render(
+        tree,
+        tiny_skia::Transform::from_scale(sx, sy),
+        &mut pixmap.as_mut(),
+    );
 
     // tiny-skia pixels are premultiplied; `Handle::from_rgba` expects straight alpha.
     let mut pixels = pixmap.take();
@@ -767,13 +774,17 @@ fn load_heif(path: &Path) -> Result<LoadedImage, LoadError> {
     let width = img.width();
     let height = img.height();
     if width == 0 || height == 0 {
-        return Err(LoadError::UnsupportedFormat("HEIF: invalid dimensions".into()));
+        return Err(LoadError::UnsupportedFormat(
+            "HEIF: invalid dimensions".into(),
+        ));
     }
 
     let stride = plane.stride;
     let row_bytes = width as usize * 4;
     if stride < row_bytes || plane.data.len() < stride * height as usize {
-        return Err(LoadError::UnsupportedFormat("HEIF: truncated pixel data".into()));
+        return Err(LoadError::UnsupportedFormat(
+            "HEIF: truncated pixel data".into(),
+        ));
     }
     // Copy row-by-row: the plane stride may exceed the packed row width.
     let mut pixels = Vec::with_capacity(row_bytes * height as usize);

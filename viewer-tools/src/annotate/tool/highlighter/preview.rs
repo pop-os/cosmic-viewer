@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use std::any::Any;
 
 use super::HighlighterOperation;
@@ -59,7 +61,7 @@ impl ToolOperation for HighlighterPreview {
                 );
                 builder.line_to(mid);
 
-                // Quadratic curves though successive midpoints
+                // Quadratic curves through successive midpoints
                 for idx in 1..self.points.len() - 1 {
                     let control = self.points[idx];
                     let next = self.points[idx + 1];
@@ -135,6 +137,6 @@ impl ToolOperation for HighlighterPreview {
     }
 
     fn on_release(&mut self, _point: Point, _image_size: Size) {
-        // Stroke complete
+        // Points already captured during drag; nothing to finalize.
     }
 }
