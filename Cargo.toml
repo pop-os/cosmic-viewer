@@ -5,7 +5,7 @@ members = ["cosmic-viewer", "viewer-canvas", "viewer-config", "viewer-core", "vi
 
 [workspace.package]
 version = "1.0.0"
-description = "Image viewer for the COSMIC DE"
+description = "Image viewer for the COSMIC Desktop"
 edition = "2024"
 authors = ["Bryan Hyland <bryan.hyland32@gmail.com>"]
 license = "GPL-3.0-only"
@@ -23,7 +23,7 @@ dead_code = "warn"
 fast_image_resize = { version = "6.0.0", features = ["image"] }
 image = { version = "0.25.9", features = ["png", "jpeg", "gif", "webp", "bmp", "tiff", "ico", "avif"] }
 kamadak-exif = "0.6.1"
-libheif-rs = { version = "2.7.0", features = ["embedded-libheif"] }
+libheif-rs = { version = "2.7.0", default-features = false, features = ["embedded-libheif", "v1_17"] }
 lru = "0.16.3"
 rayon = "1.11.0"
 resvg = "0.47.0"
