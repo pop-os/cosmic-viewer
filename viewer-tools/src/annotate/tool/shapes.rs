@@ -96,6 +96,7 @@ fn build_path(kind: ShapeKind, start: Point, end: Point) -> Path {
     }
 }
 
+#[must_use]
 pub fn normalize_rect(a: Point, b: Point) -> Rectangle {
     Rectangle::new(
         Point::new(a.x.min(b.x), a.y.min(b.y)),
@@ -167,6 +168,7 @@ fn arrow_head_points(start: Point, end: Point, width: f32) -> Option<(Point, Poi
 }
 
 #[allow(clippy::cast_precision_loss)] // reason: point index/count are small (<=10), exact in f32
+#[must_use]
 pub fn star_vertices(start: Point, end: Point) -> Vec<Point> {
     let bounds = normalize_rect(start, end);
     let center_x = bounds.x + bounds.width / 2.0;
@@ -198,6 +200,7 @@ pub fn star_vertices(start: Point, end: Point) -> Vec<Point> {
 }
 
 #[allow(clippy::cast_precision_loss)] // reason: side index/count are small (typically <=12), exact in f32
+#[must_use]
 pub fn polygon_vertices(start: Point, end: Point, sides: usize) -> Vec<Point> {
     let bounds = normalize_rect(start, end);
     let center_x = bounds.x + bounds.width / 2.0;
@@ -233,6 +236,7 @@ fn closed_path(vertices: &[Point]) -> Path {
 /// Build line segments for an arrow (shaft + head), sized for a `width`-thick stroke. Used by
 /// `apply()`; `[1]` and `[2]` carry the head's left/right corners with the tip as their second
 /// point (see `shapes/operation.rs`).
+#[must_use]
 pub fn arrow_segments(start: Point, end: Point, width: f32) -> Vec<(Point, Point)> {
     let Some((base, left, right)) = arrow_head_points(start, end, width) else {
         return vec![(start, end)];

@@ -60,10 +60,11 @@ use viewer_core::{
 };
 use viewer_toolbar::{ItemPriority, ToolbarItem, ToolbarMode, responsive_toolbar};
 use viewer_tools::{
-    ToolOperation,
+    FONT_SIZE_PRESETS_PT, ToolOperation,
     annotate::{
-        AnnotateColor, AnnotateTool, HighlighterPreview, PenPreview, PencilPreview, ShapeKind,
-        ShapePreview, TextDragHandle, TextOperation, TextPreview,
+        AnnotateColor, AnnotateTool, HighlighterPreview, PenPreview, ShapeKind, ShapePreview,
+        TextDragHandle, TextOperation, TextPreview,
+        tool::{FONT_SIZE_LABELS, pt_to_px},
     },
     crop::{CropOperation, CropRatio, CropSelection},
     rotate::{RotateDirection, RotateOperation},
@@ -1156,18 +1157,16 @@ impl CosmicViewer {
         let mut format_popover = popover(trigger);
 
         if self.show_text_format_menu {
-            let font_sizes = vec!["12pt", "16pt", "20pt", "24pt", "32pt", "48pt", "64pt"];
-            let font_size_values = [12.0_f32, 16.0, 20.0, 24.0, 32.0, 48.0, 64.0];
             // presets are exact integer-valued floats; match the active size to one.
-            let font_size_selected = font_size_values
+            let font_size_selected = FONT_SIZE_PRESETS_PT
                 .iter()
-                .position(|s| (*s - self.text_font_size).abs() < f32::EPSILON);
+                .position(|pt| (pt_to_px(*pt) - self.text_font_size).abs() < 0.01);
 
             let font_row = Row::new()
                 .push(dropdown(&self.font_families, self.text_font_index, |idx| {
                     ViewerMessage::Edit(EditMessage::TextFontFamily(idx))
                 }))
-                .push(dropdown(font_sizes, font_size_selected, |idx| {
+                .push(dropdown(&FONT_SIZE_LABELS, font_size_selected, |idx| {
                     ViewerMessage::Edit(EditMessage::TextFontSize(idx))
                 }))
                 .align_y(Alignment::Center)
@@ -1393,7 +1392,7 @@ impl Application for CosmicViewer {
             selected_shape: AnnotateTool::Rectangle,
             text_font_family: default_family,
             text_font_index: font_index,
-            text_font_size: 24.0,
+            text_font_size: pt_to_px(24.0),
             text_bold: false,
             text_italic: false,
             text_underline: false,
@@ -3096,18 +3095,10 @@ impl Application for CosmicViewer {
                                         preview.as_any_mut().downcast_mut::<PenPreview>()
                                     {
                                         pen.width = size;
-                                    } else if let Some(pencil) =
-                                        preview.as_any_mut().downcast_mut::<PencilPreview>()
-                                    {
-                                        pencil.width = size;
                                     } else if let Some(shape) =
                                         preview.as_any_mut().downcast_mut::<ShapePreview>()
                                     {
                                         shape.width = size;
-                                    } else if let Some(text) =
-                                        preview.as_any_mut().downcast_mut::<TextPreview>()
-                                    {
-                                        text.font_size = size * 8.0;
                                     }
                                 }
                             }
@@ -3178,10 +3169,6 @@ impl Application for CosmicViewer {
                         if let Some(preview) = self.viewport.preview_mut() {
                             if let Some(pen) = preview.as_any_mut().downcast_mut::<PenPreview>() {
                                 pen.color = color.0;
-                            } else if let Some(pencil) =
-                                preview.as_any_mut().downcast_mut::<PencilPreview>()
-                            {
-                                pencil.color = color.0;
                             } else if let Some(highlighter) =
                                 preview.as_any_mut().downcast_mut::<HighlighterPreview>()
                             {
@@ -3454,10 +3441,6 @@ impl Application for CosmicViewer {
                                 preview.as_any_mut().downcast_mut::<PenPreview>()
                             {
                                 pen.color = self.annotate_color.0;
-                            } else if let Some(pencil) =
-                                preview.as_any_mut().downcast_mut::<PencilPreview>()
-                            {
-                                pencil.color = self.annotate_color.0;
                             } else if let Some(highlighter) =
                                 preview.as_any_mut().downcast_mut::<HighlighterPreview>()
                             {
@@ -3540,14 +3523,14 @@ impl Application for CosmicViewer {
                         self.sync_text_format_models();
                     }
                     EditMessage::TextFontSize(idx) => {
-                        let sizes = [12.0_f32, 16.0, 20.0, 24.0, 32.0, 48.0, 64.0];
-                        if let Some(&size) = sizes.get(idx) {
-                            self.text_font_size = size;
+                        if let Some(&size_pt) = FONT_SIZE_PRESETS_PT.get(idx) {
+                            let size_px = pt_to_px(size_pt);
+                            self.text_font_size = size_px;
                             if let Some(preview) = self.viewport.preview_mut()
                                 && let Some(text) =
                                     preview.as_any_mut().downcast_mut::<TextPreview>()
                             {
-                                text.update_font_size(size);
+                                text.update_font_size(size_px);
                             }
                             self.viewport.rebuild_display();
                         }

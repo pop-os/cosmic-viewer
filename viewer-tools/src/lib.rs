@@ -6,7 +6,7 @@ pub mod renderer;
 pub mod rotate;
 
 // Re-exports
-pub use crate::annotate::FONT_SIZE_PRESETS;
+pub use crate::annotate::FONT_SIZE_PRESETS_PT;
 
 use crate::rotate::RotateDirection;
 use cosmic::{
