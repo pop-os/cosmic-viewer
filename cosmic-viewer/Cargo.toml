@@ -15,9 +15,18 @@ authors.workspace = true
 repository.workspace = true
 license.workspace = true
 
+[features]
+default = ["wgpu", "wayland"]
+wgpu = ["libcosmic/wgpu"]
+wayland = ["libcosmic/wayland"]
+
+
 [dependencies]
 libcosmic.workspace = true
-i18n-embed = { version = "0.16.0", features = ["fluent-system", "desktop-requester"] }
+i18n-embed = { version = "0.16.0", features = [
+    "fluent-system",
+    "desktop-requester",
+] }
 i18n-embed-fl = "0.10.0"
 rust-embed = "8.11.0"
 open = "5.3.3"
