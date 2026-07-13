@@ -106,6 +106,7 @@ pub fn color_channel_u8(component: f32) -> u8 {
     (component * 255.0).round().clamp(0.0, 255.0) as u8
 }
 
+#[must_use]
 pub const fn encode_align(align: cosmic_text::Align) -> u8 {
     match align {
         cosmic_text::Align::Center => 1,
@@ -115,6 +116,7 @@ pub const fn encode_align(align: cosmic_text::Align) -> u8 {
     }
 }
 
+#[must_use]
 pub const fn decode_align(val: u8) -> cosmic_text::Align {
     match val {
         1 => cosmic_text::Align::Center,
@@ -126,8 +128,24 @@ pub const MIN_BOX_WIDTH: f32 = 40.0;
 pub const MIN_BOX_HEIGHT: f32 = 20.0;
 pub const DEFAULT_BOX_WIDTH: f32 = 200.0;
 pub const LINE_HEIGHT_FACTOR: f32 = 1.2;
-pub const FONT_SIZE_PRESETS: [f32; 7] = [12.0, 16.0, 20.0, 24.0, 32.0, 40.0, 64.0];
+pub const PT_TO_PX: f32 = 96.0 / 72.0;
+pub const FONT_SIZE_PRESETS_PT: [f32; 11] = [
+    12.0, 16.0, 20.0, 24.0, 32.0, 48.0, 64.0, 80.0, 96.0, 128.0, 256.0,
+];
+pub const FONT_SIZE_LABELS: [&str; 11] = [
+    "12pt", "16pt", "20pt", "24pt", "32pt", "48pt", "64pt", "80pt", "96pt", "128pt", "256pt",
+];
 const DRAG_THRESHOLD: f32 = 5.0;
+
+#[must_use]
+pub fn pt_to_px(pt: f32) -> f32 {
+    pt * PT_TO_PX
+}
+
+#[must_use]
+pub fn px_to_pt(px: f32) -> f32 {
+    px / PT_TO_PX
+}
 
 #[derive(Debug, Clone)]
 pub struct TextSpan {
@@ -143,6 +161,7 @@ pub struct TextSpan {
 
 pub type SpanLine<'a> = (String, Vec<&'a TextSpan>, Option<u8>);
 
+#[must_use]
 pub fn group_spans<'a>(spans: &'a [TextSpan]) -> Vec<SpanLine<'a>> {
     let mut lines: Vec<SpanLine<'a>> = vec![(String::new(), Vec::new(), None)];
     for span in spans {
@@ -161,6 +180,7 @@ pub fn group_spans<'a>(spans: &'a [TextSpan]) -> Vec<SpanLine<'a>> {
     lines
 }
 
+#[must_use]
 pub fn span_attrs<'a>(base: cosmic_text::Attrs<'a>, span: &TextSpan) -> cosmic_text::Attrs<'a> {
     let mut a = base
         .weight(if span.bold {
@@ -191,6 +211,7 @@ pub fn span_attrs<'a>(base: cosmic_text::Attrs<'a>, span: &TextSpan) -> cosmic_t
     a
 }
 
+#[must_use]
 pub fn build_buffer_line(
     text: &str,
     attrs_list: cosmic_text::AttrsList,
@@ -208,15 +229,20 @@ pub fn build_buffer_line(
     line
 }
 
+#[must_use]
 pub fn content_height(buf: &cosmic_text::Buffer) -> f32 {
     buf.layout_runs()
         .fold(0.0, |h, run| (run.line_top + run.line_height).max(h))
 }
 
-pub fn snap_font_size(target: f32) -> f32 {
-    FONT_SIZE_PRESETS
+#[must_use]
+pub fn snap_font_size(target_px: f32) -> f32 {
+    let target_pt = px_to_pt(target_px);
+    let snapped_pt = FONT_SIZE_PRESETS_PT
         .iter()
         .copied()
-        .min_by(|a, b| (a - target).abs().total_cmp(&(b - target).abs()))
-        .unwrap_or(24.0)
+        .min_by(|a, b| (a - target_pt).abs().total_cmp(&(b - target_pt).abs()))
+        .unwrap_or(24.0);
+
+    pt_to_px(snapped_pt)
 }
