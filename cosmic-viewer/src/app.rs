@@ -441,7 +441,7 @@ impl CosmicViewer {
         .padding(1)
         .style(|theme| {
             let cosmic = theme.cosmic();
-            let component = &cosmic.background.component;
+            let component = &cosmic.background(theme.transparent).component;
             container::Style {
                 icon_color: Some(component.on.into()),
                 text_color: Some(component.on.into()),
@@ -460,7 +460,7 @@ impl CosmicViewer {
 
     fn popup_style(theme: &cosmic::Theme) -> container::Style {
         let cosmic = theme.cosmic();
-        let component = &cosmic.background.component;
+        let component = &cosmic.background(theme.transparent).component;
         container::Style {
             background: Some(Background::Color(component.base.into())),
             border: Border {
@@ -660,7 +660,7 @@ impl CosmicViewer {
 
             let popup = container(list).padding(8).style(|theme| {
                 let cosmic = theme.cosmic();
-                let component = &cosmic.background.component;
+                let component = &cosmic.background(theme.transparent).component;
                 container::Style {
                     icon_color: None,
                     text_color: None,
@@ -968,7 +968,7 @@ impl CosmicViewer {
                 .max_width(260.0)
                 .style(|theme| {
                     let cosmic = theme.cosmic();
-                    let component = &cosmic.background.component;
+                    let component = &cosmic.background(theme.transparent).component;
                     container::Style {
                         background: Some(Background::Color(component.base.into())),
                         border: Border {
@@ -1089,7 +1089,7 @@ impl CosmicViewer {
 
             let popup = container(list).padding(8).style(|theme| {
                 let cosmic = theme.cosmic();
-                let component = &cosmic.background.component;
+                let component = &cosmic.background(theme.transparent).component;
                 container::Style {
                     icon_color: None,
                     text_color: None,
@@ -1261,7 +1261,7 @@ impl CosmicViewer {
                 .width(Length::Fixed(100.0))
                 .style(|theme| {
                     let cosmic = theme.cosmic();
-                    let component = &cosmic.background.component;
+                    let component = &cosmic.background(theme.transparent).component;
                     container::Style {
                         icon_color: None,
                         text_color: None,
@@ -1658,7 +1658,7 @@ impl Application for CosmicViewer {
                         .align_x(Alignment::Center),
                 )
                 .padding(spacing.space_m)
-                .class(cosmic::theme::Container::Dialog),
+                .class(cosmic::theme::Container::Dialog(true)),
             )
             .width(Length::Fill)
             .height(Length::Fill)
@@ -1711,7 +1711,7 @@ impl Application for CosmicViewer {
                         .width(Length::Fixed(420.0)),
                 )
                 .padding(spacing.space_m)
-                .class(cosmic::theme::Container::Dialog),
+                .class(cosmic::theme::Container::Dialog(true)),
             )
             .width(Length::Fill)
             .height(Length::Fill)

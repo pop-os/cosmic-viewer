@@ -1,7 +1,15 @@
 [workspace]
 
 resolver = "3"
-members = ["cosmic-viewer", "viewer-canvas", "viewer-config", "viewer-core", "viewer-widgets", "viewer-toolbar", "viewer-tools"]
+members = [
+  "cosmic-viewer",
+  "viewer-canvas",
+  "viewer-config",
+  "viewer-core",
+  "viewer-widgets",
+  "viewer-toolbar",
+  "viewer-tools",
+]
 
 [workspace.package]
 version = "1.0.0"
@@ -21,9 +29,21 @@ dead_code = "warn"
 
 [workspace.dependencies]
 fast_image_resize = { version = "6.0.0", features = ["image"] }
-image = { version = "0.25.9", features = ["png", "jpeg", "gif", "webp", "bmp", "tiff", "ico", "avif"] }
+image = { version = "0.25.9", features = [
+  "png",
+  "jpeg",
+  "gif",
+  "webp",
+  "bmp",
+  "tiff",
+  "ico",
+  "avif",
+] }
 kamadak-exif = "0.6.1"
-libheif-rs = { version = "2.7.0", default-features = false, features = ["embedded-libheif", "v1_17"] }
+libheif-rs = { version = "2.7.0", default-features = false, features = [
+  "embedded-libheif",
+  "v1_17",
+] }
 lru = "0.16.3"
 rayon = "1.11.0"
 resvg = "0.47.0"
@@ -37,13 +57,4 @@ zune-image = "0.5.0"
 
 [workspace.dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"
-features = [
-  "autosize",
-  "tokio",
-  "winit",
-  "wgpu",
-  "a11y",
-  "surface-message",
-  "rfd",
-  "wayland"
-]
+features = ["autosize", "tokio", "winit", "a11y", "surface-message", "rfd"]
