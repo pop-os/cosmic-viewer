@@ -1698,62 +1698,41 @@ impl Application for CosmicViewer {
             return toaster(&self.toasts, stack![view, backdrop, dialog]);
         }
 
-        if self.unsaved_dialog.is_some() {
-            let spacing = cosmic::theme::active().cosmic().spacing;
-
-            let buttons = Row::new()
-                .push(
-                    button::text(fl!("unsaved-discard"))
-                        .on_press(ViewerMessage::Unsaved(UnsavedChoice::Discard)),
-                )
-                .push(Space::new().width(Length::Fill))
-                .push(
-                    button::text(fl!("unsaved-cancel"))
-                        .on_press(ViewerMessage::Unsaved(UnsavedChoice::Cancel)),
-                )
-                .push(
-                    button::standard(fl!("unsaved-save-as"))
-                        .on_press(ViewerMessage::Unsaved(UnsavedChoice::SaveAs)),
-                )
-                .push(
-                    button::suggested(fl!("unsaved-save"))
-                        .on_press(ViewerMessage::Unsaved(UnsavedChoice::Save)),
-                )
-                .spacing(spacing.space_xs)
-                .align_y(Alignment::Center);
-
-            let dialog: Element<'_, Self::Message> = container(
-                container(
-                    Column::new()
-                        .push(text::title4(fl!("unsaved-dialog-title")))
-                        .push(text::body(fl!("unsaved-dialog-body")))
-                        .push(buttons)
-                        .spacing(spacing.space_m)
-                        .width(Length::Fixed(420.0)),
-                )
-                .padding(spacing.space_m)
-                .class(cosmic::theme::Container::Dialog(true)),
-            )
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .into();
-
-            let backdrop = cosmic::widget::mouse_area(
-                container(Space::new().width(Length::Fill).height(Length::Fill))
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .class(cosmic::theme::Container::Transparent),
-            )
-            .on_press(ViewerMessage::Unsaved(UnsavedChoice::Cancel));
-
-            return toaster(&self.toasts, stack![view, backdrop, dialog]);
-        }
-
         toaster(&self.toasts, view)
     }
 
+    fn dialog(&self) -> Option<Element<'_, Self::Message>> {
+        if self.unsaved_dialog.is_some() {
+            let mut row = widget::row::with_capacity(3).align_y(Alignment::Center);
+            row = row.push(widget::text(
+                self.nav
+                    .current()
+                    .and_then(|d| Some(d.file_name()?.to_string_lossy().to_string()))
+                    .unwrap_or_default(),
+            ));
+            row = row.push(widget::space::horizontal());
+            row = row.push(
+                widget::button::standard(fl!("unsaved-save-as"))
+                    .on_press(ViewerMessage::Unsaved(UnsavedChoice::SaveAs)),
+            );
+            let save_button = widget::button::suggested(fl!("unsaved-save"))
+                .on_press(ViewerMessage::Unsaved(UnsavedChoice::Save));
+            let discard_button = widget::button::destructive(fl!("unsaved-discard"))
+                .on_press(ViewerMessage::Unsaved(UnsavedChoice::Discard));
+            let cancel_button = widget::button::text(fl!("unsaved-cancel"))
+                .on_press(ViewerMessage::Unsaved(UnsavedChoice::Cancel));
+            let dialog = widget::dialog()
+                .title(fl!("unsaved-dialog-title"))
+                .body(fl!("unsaved-dialog-body"))
+                .icon(icon::from_name("dialog-warning-symbolic").size(64))
+                .control(row)
+                .primary_action(save_button)
+                .secondary_action(discard_button)
+                .tertiary_action(cancel_button);
+            return Some(dialog.into());
+        }
+        None
+    }
     // reason: central message dispatch; one match arm per variant, kept colocated.
     #[allow(clippy::too_many_lines)]
     fn update(&mut self, message: Self::Message) -> Task<Action<Self::Message>> {
