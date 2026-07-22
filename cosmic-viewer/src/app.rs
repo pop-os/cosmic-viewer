@@ -20,7 +20,10 @@ use cosmic::{
         advanced::graphics::text::{cosmic_text, font_system},
         alignment::Horizontal,
         clipboard, event, font,
-        keyboard::key::{Key, Named},
+        keyboard::{
+            Modifiers,
+            key::{Key, Named},
+        },
         widget::{
             grid,
             scrollable::{AbsoluteOffset, scroll_to},
@@ -2454,15 +2457,21 @@ impl Application for CosmicViewer {
                         self.annotate_color = AnnotateColor(t.color);
                     }
                     self.sync_text_format_models();
-                } else if !self.core().nav_bar_active()
-                    && matches!(key, Key::Named(Named::ArrowLeft))
+                } else if modifiers == Modifiers::NONE
+                    && matches!(
+                        key,
+                        Key::Named(Named::ArrowLeft) | Key::Named(Named::ArrowUp)
+                    )
                 {
                     let idx = self.nav.index().unwrap_or(0);
                     if idx > 0 {
                         return self.update(ViewerMessage::Nav(NavMessage::GridActivate(idx - 1)));
                     }
-                } else if !self.core().nav_bar_active()
-                    && matches!(key, Key::Named(Named::ArrowRight))
+                } else if modifiers == Modifiers::NONE
+                    && matches!(
+                        key,
+                        Key::Named(Named::ArrowRight) | Key::Named(Named::ArrowDown)
+                    )
                 {
                     let idx = self.nav.index().unwrap_or(0);
                     if idx + 1 < self.nav.total() {
