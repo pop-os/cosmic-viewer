@@ -119,7 +119,7 @@ impl<'a, Message: Clone + 'static> ResponsiveToolbar<'a, Message> {
             ])
             .width(Length::Shrink)
             .height(Length::Shrink)
-            .class(theme::Container::Secondary)
+            .class(theme::Container::Primary)
             .into()
     }
 }
