@@ -201,7 +201,7 @@ impl CosmicViewer {
         Task::none()
     }
 
-    fn open_path(&self, path: PathBuf) -> Task<Action<ViewerMessage>> {
+    fn open_path(&mut self, path: PathBuf) -> Task<Action<ViewerMessage>> {
         let Some(dir) = get_image_dir(&path) else {
             return Task::none();
         };
@@ -212,12 +212,25 @@ impl CosmicViewer {
         let sort_order = self.config.sort_order;
         let dir_clone = dir.clone();
 
-        future(async move {
-            let images = scan_dir(&dir, include_hidden, sort_mode, sort_order).await;
-            Action::App(ViewerMessage::Nav(NavMessage::ScanComplete(
-                dir_clone, images, select,
-            )))
-        })
+        let title = match select.as_ref() {
+            Some(tab) => tab.to_string_lossy().to_string(),
+            None => "No Open File".to_string(),
+        };
+
+        let window_title = format!("{title} - {}", fl!("app-name"));
+        Task::batch([
+            if let Some(window_id) = self.core.main_window_id() {
+                self.set_window_title(window_title, window_id)
+            } else {
+                Task::none()
+            },
+            future(async move {
+                let images = scan_dir(&dir, include_hidden, sort_mode, sort_order).await;
+                Action::App(ViewerMessage::Nav(NavMessage::ScanComplete(
+                    dir_clone, images, select,
+                )))
+            }),
+        ])
     }
 
     // reason: thumbnail size and grid index are small in-range counts; exact as f32.
@@ -308,13 +321,20 @@ impl CosmicViewer {
         }
     }
 
-    fn load_full_image(&self, path: PathBuf) -> Task<Action<ViewerMessage>> {
+    fn load_full_image(&mut self, path: PathBuf) -> Task<Action<ViewerMessage>> {
+        let window_title = format!("{} - {}", path.to_string_lossy(), fl!("app-name"));
+        let window_title = if let Some(window_id) = self.core.main_window_id() {
+            self.set_window_title(window_title.clone(), window_id)
+        } else {
+            Task::none()
+        };
         if self.cache.get_full(&path).is_some() || self.cache.is_pending(&path) {
-            return Task::none();
+            return window_title;
         }
 
         self.cache.set_pending(path.clone());
         let cache = self.cache.clone();
+
         future(async move {
             match load_image(path.clone()).await {
                 Ok(loaded) => {
@@ -332,6 +352,7 @@ impl CosmicViewer {
                 Err(_) => Action::App(ViewerMessage::Image(ImageMessage::LoadError(path))),
             }
         })
+        .chain(window_title)
     }
 
     fn image_details_page(&self) -> Element<'_, ViewerMessage> {
@@ -1356,7 +1377,7 @@ impl Application for CosmicViewer {
             .last_color
             .map(|c| Color::from_rgba(c[0], c[1], c[2], c[3]));
 
-        let viewer = Self {
+        let mut viewer = Self {
             core,
             key_binds: key_binds::init_keybinds(),
             config,
