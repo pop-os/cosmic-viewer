@@ -1764,10 +1764,7 @@ impl Application for CosmicViewer {
                 }
             }
             // No-op messages: reserved menu actions with no current behavior.
-            ViewerMessage::Cut
-            | ViewerMessage::Paste
-            | ViewerMessage::CloseFile
-            | ViewerMessage::Cancelled => {}
+            ViewerMessage::Cut | ViewerMessage::Paste | ViewerMessage::Cancelled => {}
             ViewerMessage::OpenFileDialog => {
                 if self.guard_unsaved(ViewerMessage::OpenFileDialog) {
                     return Task::none();

@@ -32,12 +32,6 @@ fn build_file_menu() -> Vec<menu::Item<MenuAction, String>> {
         MenuAction::OpenContaining,
     ));
 
-    items.push(menu::Item::Button(
-        fl!("menu-close-file"),
-        None,
-        MenuAction::CloseFile,
-    ));
-
     items.push(menu::Item::Divider);
 
     items.push(menu::Item::Button(fl!("menu-save"), None, MenuAction::Save));
