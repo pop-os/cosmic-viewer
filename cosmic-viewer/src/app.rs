@@ -612,22 +612,22 @@ impl CosmicViewer {
                 ))
                 .priority(ItemPriority::Essential),
             )
-            .end(
+            .end_maybe(self.has_unsaved_edits().then(|| {
                 ToolbarItem::new(
                     button::text(fl!("toolbar-save"))
                         .tooltip(fl!("toolbar-save"))
-                        .on_press_maybe(self.has_unsaved_edits().then_some(ViewerMessage::Save)),
+                        .on_press(ViewerMessage::Save),
                 )
-                .priority(ItemPriority::Essential),
-            )
-            .end(
+                .priority(ItemPriority::Essential)
+            }))
+            .end_maybe(self.has_unsaved_edits().then(|| {
                 ToolbarItem::new(
                     button::icon(icon::from_name("document-save-as-symbolic"))
                         .tooltip(fl!("toolbar-save-as"))
-                        .on_press_maybe(self.has_unsaved_edits().then_some(ViewerMessage::SaveAs)),
+                        .on_press(ViewerMessage::SaveAs),
                 )
-                .priority(ItemPriority::Essential),
-            )
+                .priority(ItemPriority::Essential)
+            }))
             .view()
     }
 
