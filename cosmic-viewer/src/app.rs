@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use crate::{
-    fl,
+    fl, icon_cache_get,
     key_binds::{self, MenuAction, keyboard_shortcut_handler},
     menu::menu_bar,
     message::{
@@ -593,7 +593,7 @@ impl CosmicViewer {
             )
             .end(
                 ToolbarItem::new(icon_btn(
-                    "zoom-original-symbolic",
+                    "view-actual-size-symbolic",
                     fl!("menu-actual-size"),
                     ViewerMessage::Canvas(CanvasMessage::ActualSize),
                 ))
@@ -637,8 +637,8 @@ impl CosmicViewer {
     fn build_crop_ratio_selector(&self) -> Element<'_, ViewerMessage> {
         let trigger = button::custom(
             Row::new()
-                .push(icon::from_name("ratios-symbolic").size(16).icon())
-                .push(icon::from_name("pan-down-symbolic").size(12).icon())
+                .push(icon_cache_get("ratios-symbolic").icon().size(16))
+                .push(icon_cache_get("pan-down-symbolic").icon().size(12))
                 .align_y(Alignment::Center)
                 .spacing(2),
         )
@@ -814,7 +814,7 @@ impl CosmicViewer {
                         tooltip: String,
                         msg: ViewerMessage|
          -> button::IconButton<ViewerMessage> {
-            button::icon(icon::from_name(name))
+            button::icon(icon_cache_get(name))
                 .tooltip(tooltip)
                 .on_press(msg)
         };
@@ -871,7 +871,7 @@ impl CosmicViewer {
             .start(ToolbarItem::new({
                 let has_movable =
                     self.viewport.operations().iter().any(|op| op.movable()) && !self.text_editing;
-                let mut btn = button::icon(icon::from_name("object-move-symbolic"))
+                let mut btn = button::icon(icon_cache_get("object-move-symbolic"))
                     .tooltip(fl!("toolbar-move"));
                 if self.move_mode {
                     btn = btn.class(tool_toggle_class(self.move_mode));
@@ -1025,7 +1025,7 @@ impl CosmicViewer {
         );
 
         toolbar = toolbar.end(ToolbarItem::new(
-            button::icon(icon::from_name("object-select-symbolic"))
+            button::icon(icon_cache_get("object-select-symbolic"))
                 .tooltip(fl!("toolbar-apply"))
                 .on_press(ViewerMessage::Edit(EditMessage::AnnotateApply)),
         ));
@@ -1169,7 +1169,7 @@ impl CosmicViewer {
         let trigger = button::custom(
             Row::new()
                 .push(text("Aa"))
-                .push(icon::from_name("pan-down-symbolic").size(12).icon())
+                .push(icon_cache_get("pan-down-symbolic").icon().size(12))
                 .align_y(Alignment::Center)
                 .spacing(2)
                 .height(Length::Fixed(16.0)),
@@ -1227,8 +1227,8 @@ impl CosmicViewer {
     fn build_stroke_selector(&self) -> Element<'_, ViewerMessage> {
         let trigger = button::custom(
             Row::new()
-                .push(icon::from_name("stroke-width-symbolic").size(16).icon())
-                .push(icon::from_name("pan-down-symbolic").size(12).icon())
+                .push(icon_cache_get("stroke-width-symbolic").icon().size(16))
+                .push(icon_cache_get("pan-down-symbolic").icon().size(12))
                 .align_y(Alignment::Center)
                 .spacing(2),
         )
@@ -1424,15 +1424,15 @@ impl Application for CosmicViewer {
             text_alignment: Horizontal::Left,
             text_style_model: segmented_button::Model::builder()
                 .insert(|btn| {
-                    btn.icon(icon::from_name("format-text-bold-symbolic").icon())
+                    btn.icon(icon_cache_get("format-text-bold-symbolic").icon())
                         .data(TextStyle::Bold)
                 })
                 .insert(|btn| {
-                    btn.icon(icon::from_name("format-text-italic-symbolic").icon())
+                    btn.icon(icon_cache_get("format-text-italic-symbolic").icon())
                         .data(TextStyle::Italic)
                 })
                 .insert(|btn| {
-                    btn.icon(icon::from_name("format-text-underline-symbolic").icon())
+                    btn.icon(icon_cache_get("format-text-underline-symbolic").icon())
                         .data(TextStyle::Underline)
                 })
                 .build(),
@@ -1540,10 +1540,8 @@ impl Application for CosmicViewer {
             })
             .collect::<Vec<Element<'_, Action<ViewerMessage>>>>();
 
-        let nav_grid = grid(items)
-            .columns(1)
-            .height(Length::Shrink)
-            .spacing(space_xxs);
+        let nav_grid = container(grid(items).columns(1).height(Length::Shrink))
+            .padding([0., space_xxs, 0., 0.]);
 
         let scrollable =
             scrollable(container(nav_grid).padding(space_xxs)).id(self.scroll_id.clone());
