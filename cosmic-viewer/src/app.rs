@@ -868,7 +868,7 @@ impl CosmicViewer {
                 )),
             ))
             .start(ToolbarItem::new(self.build_shape_selector()).width_hint(120.0))
-            .start(ToolbarItem::new({
+            .start_maybe({
                 let has_movable =
                     self.viewport.operations().iter().any(|op| op.movable()) && !self.text_editing;
                 let mut btn = button::icon(icon_cache_get("object-move-symbolic"))
@@ -876,13 +876,14 @@ impl CosmicViewer {
                 if self.move_mode {
                     btn = btn.class(tool_toggle_class(self.move_mode));
                 }
-                let el: Element<'_, ViewerMessage> = btn
-                    .on_press_maybe(
-                        has_movable.then(|| ViewerMessage::Edit(EditMessage::ToggleMoveMode)),
-                    )
-                    .into();
+                let el = has_movable.then(|| {
+                    let btn: Element<'_, ViewerMessage> = btn
+                        .on_press(ViewerMessage::Edit(EditMessage::ToggleMoveMode))
+                        .into();
+                    ToolbarItem::new(btn)
+                });
                 el
-            }))
+            })
             .center(
                 ToolbarItem::new(if matches!(self.annotate_tool, AnnotateTool::Text) {
                     self.build_text_format_dropdown()
