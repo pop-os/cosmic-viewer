@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use crate::{
-    fl,
+    fl, icon_cache_get,
     key_binds::{self, MenuAction, keyboard_shortcut_handler},
     menu::menu_bar,
     message::{
@@ -20,7 +20,10 @@ use cosmic::{
         advanced::graphics::text::{cosmic_text, font_system},
         alignment::Horizontal,
         clipboard, event, font,
-        keyboard::key::{Key, Named},
+        keyboard::{
+            Modifiers,
+            key::{Key, Named},
+        },
         widget::{
             grid,
             scrollable::{AbsoluteOffset, scroll_to},
@@ -202,7 +205,7 @@ impl CosmicViewer {
         Task::none()
     }
 
-    fn open_path(&self, path: PathBuf) -> Task<Action<ViewerMessage>> {
+    fn open_path(&mut self, path: PathBuf) -> Task<Action<ViewerMessage>> {
         let Some(dir) = get_image_dir(&path) else {
             return Task::none();
         };
@@ -213,12 +216,25 @@ impl CosmicViewer {
         let sort_order = self.config.sort_order;
         let dir_clone = dir.clone();
 
-        future(async move {
-            let images = scan_dir(&dir, include_hidden, sort_mode, sort_order).await;
-            Action::App(ViewerMessage::Nav(NavMessage::ScanComplete(
-                dir_clone, images, select,
-            )))
-        })
+        let title = match select.as_ref() {
+            Some(tab) => tab.to_string_lossy().to_string(),
+            None => "No Open File".to_string(),
+        };
+
+        let window_title = format!("{title} - {}", fl!("app-name"));
+        Task::batch([
+            if let Some(window_id) = self.core.main_window_id() {
+                self.set_window_title(window_title, window_id)
+            } else {
+                Task::none()
+            },
+            future(async move {
+                let images = scan_dir(&dir, include_hidden, sort_mode, sort_order).await;
+                Action::App(ViewerMessage::Nav(NavMessage::ScanComplete(
+                    dir_clone, images, select,
+                )))
+            }),
+        ])
     }
 
     // reason: thumbnail size and grid index are small in-range counts; exact as f32.
@@ -309,13 +325,20 @@ impl CosmicViewer {
         }
     }
 
-    fn load_full_image(&self, path: PathBuf) -> Task<Action<ViewerMessage>> {
+    fn load_full_image(&mut self, path: PathBuf) -> Task<Action<ViewerMessage>> {
+        let window_title = format!("{} - {}", path.to_string_lossy(), fl!("app-name"));
+        let window_title = if let Some(window_id) = self.core.main_window_id() {
+            self.set_window_title(window_title.clone(), window_id)
+        } else {
+            Task::none()
+        };
         if self.cache.get_full(&path).is_some() || self.cache.is_pending(&path) {
-            return Task::none();
+            return window_title;
         }
 
         self.cache.set_pending(path.clone());
         let cache = self.cache.clone();
+
         future(async move {
             match load_image(path.clone()).await {
                 Ok(loaded) => {
@@ -333,6 +356,7 @@ impl CosmicViewer {
                 Err(_) => Action::App(ViewerMessage::Image(ImageMessage::LoadError(path))),
             }
         })
+        .chain(window_title)
     }
 
     fn image_details_page(&self) -> Element<'_, ViewerMessage> {
@@ -570,7 +594,7 @@ impl CosmicViewer {
             )
             .end(
                 ToolbarItem::new(icon_btn(
-                    "zoom-original-symbolic",
+                    "view-actual-size-symbolic",
                     fl!("menu-actual-size"),
                     ViewerMessage::Canvas(CanvasMessage::ActualSize),
                 ))
@@ -592,30 +616,30 @@ impl CosmicViewer {
                 ))
                 .priority(ItemPriority::Essential),
             )
-            .end(
+            .end_maybe(self.has_unsaved_edits().then(|| {
                 ToolbarItem::new(
                     button::text(fl!("toolbar-save"))
                         .tooltip(fl!("toolbar-save"))
-                        .on_press_maybe(self.has_unsaved_edits().then_some(ViewerMessage::Save)),
+                        .on_press(ViewerMessage::Save),
                 )
-                .priority(ItemPriority::Essential),
-            )
-            .end(
+                .priority(ItemPriority::Essential)
+            }))
+            .end_maybe(self.has_unsaved_edits().then(|| {
                 ToolbarItem::new(
                     button::icon(icon::from_name("document-save-as-symbolic"))
                         .tooltip(fl!("toolbar-save-as"))
-                        .on_press_maybe(self.has_unsaved_edits().then_some(ViewerMessage::SaveAs)),
+                        .on_press(ViewerMessage::SaveAs),
                 )
-                .priority(ItemPriority::Essential),
-            )
+                .priority(ItemPriority::Essential)
+            }))
             .view()
     }
 
     fn build_crop_ratio_selector(&self) -> Element<'_, ViewerMessage> {
         let trigger = button::custom(
             Row::new()
-                .push(icon::from_name("ratios-symbolic").size(16).icon())
-                .push(icon::from_name("pan-down-symbolic").size(12).icon())
+                .push(icon_cache_get("ratios-symbolic").icon().size(16))
+                .push(icon_cache_get("pan-down-symbolic").icon().size(12))
                 .align_y(Alignment::Center)
                 .spacing(2),
         )
@@ -791,7 +815,7 @@ impl CosmicViewer {
                         tooltip: String,
                         msg: ViewerMessage|
          -> button::IconButton<ViewerMessage> {
-            button::icon(icon::from_name(name))
+            button::icon(icon_cache_get(name))
                 .tooltip(tooltip)
                 .on_press(msg)
         };
@@ -845,21 +869,22 @@ impl CosmicViewer {
                 )),
             ))
             .start(ToolbarItem::new(self.build_shape_selector()).width_hint(120.0))
-            .start(ToolbarItem::new({
+            .start_maybe({
                 let has_movable =
                     self.viewport.operations().iter().any(|op| op.movable()) && !self.text_editing;
-                let mut btn = button::icon(icon::from_name("object-move-symbolic"))
+                let mut btn = button::icon(icon_cache_get("object-move-symbolic"))
                     .tooltip(fl!("toolbar-move"));
                 if self.move_mode {
                     btn = btn.class(tool_toggle_class(self.move_mode));
                 }
-                let el: Element<'_, ViewerMessage> = btn
-                    .on_press_maybe(
-                        has_movable.then(|| ViewerMessage::Edit(EditMessage::ToggleMoveMode)),
-                    )
-                    .into();
+                let el = has_movable.then(|| {
+                    let btn: Element<'_, ViewerMessage> = btn
+                        .on_press(ViewerMessage::Edit(EditMessage::ToggleMoveMode))
+                        .into();
+                    ToolbarItem::new(btn)
+                });
                 el
-            }))
+            })
             .center(
                 ToolbarItem::new(if matches!(self.annotate_tool, AnnotateTool::Text) {
                     self.build_text_format_dropdown()
@@ -1002,7 +1027,7 @@ impl CosmicViewer {
         );
 
         toolbar = toolbar.end(ToolbarItem::new(
-            button::icon(icon::from_name("object-select-symbolic"))
+            button::icon(icon_cache_get("object-select-symbolic"))
                 .tooltip(fl!("toolbar-apply"))
                 .on_press(ViewerMessage::Edit(EditMessage::AnnotateApply)),
         ));
@@ -1146,7 +1171,7 @@ impl CosmicViewer {
         let trigger = button::custom(
             Row::new()
                 .push(text("Aa"))
-                .push(icon::from_name("pan-down-symbolic").size(12).icon())
+                .push(icon_cache_get("pan-down-symbolic").icon().size(12))
                 .align_y(Alignment::Center)
                 .spacing(2)
                 .height(Length::Fixed(16.0)),
@@ -1202,8 +1227,8 @@ impl CosmicViewer {
     fn build_stroke_selector(&self) -> Element<'_, ViewerMessage> {
         let trigger = button::custom(
             Row::new()
-                .push(icon::from_name("stroke-width-symbolic").size(16).icon())
-                .push(icon::from_name("pan-down-symbolic").size(12).icon())
+                .push(icon_cache_get("stroke-width-symbolic").icon().size(16))
+                .push(icon_cache_get("pan-down-symbolic").icon().size(12))
                 .align_y(Alignment::Center)
                 .spacing(2),
         )
@@ -1355,7 +1380,7 @@ impl Application for CosmicViewer {
             .last_color
             .map(|c| Color::from_rgba(c[0], c[1], c[2], c[3]));
 
-        let viewer = Self {
+        let mut viewer = Self {
             core,
             key_binds: key_binds::init_keybinds(),
             config,
@@ -1399,15 +1424,15 @@ impl Application for CosmicViewer {
             text_alignment: Horizontal::Left,
             text_style_model: segmented_button::Model::builder()
                 .insert(|btn| {
-                    btn.icon(icon::from_name("format-text-bold-symbolic").icon())
+                    btn.icon(icon_cache_get("format-text-bold-symbolic").icon())
                         .data(TextStyle::Bold)
                 })
                 .insert(|btn| {
-                    btn.icon(icon::from_name("format-text-italic-symbolic").icon())
+                    btn.icon(icon_cache_get("format-text-italic-symbolic").icon())
                         .data(TextStyle::Italic)
                 })
                 .insert(|btn| {
-                    btn.icon(icon::from_name("format-text-underline-symbolic").icon())
+                    btn.icon(icon_cache_get("format-text-underline-symbolic").icon())
                         .data(TextStyle::Underline)
                 })
                 .build(),
@@ -1515,10 +1540,8 @@ impl Application for CosmicViewer {
             })
             .collect::<Vec<Element<'_, Action<ViewerMessage>>>>();
 
-        let nav_grid = grid(items)
-            .columns(1)
-            .height(Length::Shrink)
-            .spacing(space_xxs);
+        let nav_grid = container(grid(items).columns(1).height(Length::Shrink))
+            .padding([0., space_xxs, 0., 0.]);
 
         let scrollable =
             scrollable(container(nav_grid).padding(space_xxs)).id(self.scroll_id.clone());
@@ -1676,62 +1699,41 @@ impl Application for CosmicViewer {
             return toaster(&self.toasts, stack![view, backdrop, dialog]);
         }
 
-        if self.unsaved_dialog.is_some() {
-            let spacing = cosmic::theme::active().cosmic().spacing;
-
-            let buttons = Row::new()
-                .push(
-                    button::text(fl!("unsaved-discard"))
-                        .on_press(ViewerMessage::Unsaved(UnsavedChoice::Discard)),
-                )
-                .push(Space::new().width(Length::Fill))
-                .push(
-                    button::text(fl!("unsaved-cancel"))
-                        .on_press(ViewerMessage::Unsaved(UnsavedChoice::Cancel)),
-                )
-                .push(
-                    button::standard(fl!("unsaved-save-as"))
-                        .on_press(ViewerMessage::Unsaved(UnsavedChoice::SaveAs)),
-                )
-                .push(
-                    button::suggested(fl!("unsaved-save"))
-                        .on_press(ViewerMessage::Unsaved(UnsavedChoice::Save)),
-                )
-                .spacing(spacing.space_xs)
-                .align_y(Alignment::Center);
-
-            let dialog: Element<'_, Self::Message> = container(
-                container(
-                    Column::new()
-                        .push(text::title4(fl!("unsaved-dialog-title")))
-                        .push(text::body(fl!("unsaved-dialog-body")))
-                        .push(buttons)
-                        .spacing(spacing.space_m)
-                        .width(Length::Fixed(420.0)),
-                )
-                .padding(spacing.space_m)
-                .class(cosmic::theme::Container::Dialog(true)),
-            )
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .into();
-
-            let backdrop = cosmic::widget::mouse_area(
-                container(Space::new().width(Length::Fill).height(Length::Fill))
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .class(cosmic::theme::Container::Transparent),
-            )
-            .on_press(ViewerMessage::Unsaved(UnsavedChoice::Cancel));
-
-            return toaster(&self.toasts, stack![view, backdrop, dialog]);
-        }
-
         toaster(&self.toasts, view)
     }
 
+    fn dialog(&self) -> Option<Element<'_, Self::Message>> {
+        if self.unsaved_dialog.is_some() {
+            let mut row = widget::row::with_capacity(3).align_y(Alignment::Center);
+            row = row.push(widget::text(
+                self.nav
+                    .current()
+                    .and_then(|d| Some(d.file_name()?.to_string_lossy().to_string()))
+                    .unwrap_or_default(),
+            ));
+            row = row.push(widget::space::horizontal());
+            row = row.push(
+                widget::button::standard(fl!("unsaved-save-as"))
+                    .on_press(ViewerMessage::Unsaved(UnsavedChoice::SaveAs)),
+            );
+            let save_button = widget::button::suggested(fl!("unsaved-save"))
+                .on_press(ViewerMessage::Unsaved(UnsavedChoice::Save));
+            let discard_button = widget::button::destructive(fl!("unsaved-discard"))
+                .on_press(ViewerMessage::Unsaved(UnsavedChoice::Discard));
+            let cancel_button = widget::button::text(fl!("unsaved-cancel"))
+                .on_press(ViewerMessage::Unsaved(UnsavedChoice::Cancel));
+            let dialog = widget::dialog()
+                .title(fl!("unsaved-dialog-title"))
+                .body(fl!("unsaved-dialog-body"))
+                .icon(icon::from_name("dialog-warning-symbolic").size(64))
+                .control(row)
+                .primary_action(save_button)
+                .secondary_action(discard_button)
+                .tertiary_action(cancel_button);
+            return Some(dialog.into());
+        }
+        None
+    }
     // reason: central message dispatch; one match arm per variant, kept colocated.
     #[allow(clippy::too_many_lines)]
     fn update(&mut self, message: Self::Message) -> Task<Action<Self::Message>> {
@@ -1763,10 +1765,7 @@ impl Application for CosmicViewer {
                 }
             }
             // No-op messages: reserved menu actions with no current behavior.
-            ViewerMessage::Cut
-            | ViewerMessage::Paste
-            | ViewerMessage::CloseFile
-            | ViewerMessage::Cancelled => {}
+            ViewerMessage::Cut | ViewerMessage::Paste | ViewerMessage::Cancelled => {}
             ViewerMessage::OpenFileDialog => {
                 if self.guard_unsaved(ViewerMessage::OpenFileDialog) {
                     return Task::none();
@@ -2456,15 +2455,21 @@ impl Application for CosmicViewer {
                         self.annotate_color = AnnotateColor(t.color);
                     }
                     self.sync_text_format_models();
-                } else if !self.core().nav_bar_active()
-                    && matches!(key, Key::Named(Named::ArrowLeft))
+                } else if modifiers == Modifiers::NONE
+                    && matches!(
+                        key,
+                        Key::Named(Named::ArrowLeft) | Key::Named(Named::ArrowUp)
+                    )
                 {
                     let idx = self.nav.index().unwrap_or(0);
                     if idx > 0 {
                         return self.update(ViewerMessage::Nav(NavMessage::GridActivate(idx - 1)));
                     }
-                } else if !self.core().nav_bar_active()
-                    && matches!(key, Key::Named(Named::ArrowRight))
+                } else if modifiers == Modifiers::NONE
+                    && matches!(
+                        key,
+                        Key::Named(Named::ArrowRight) | Key::Named(Named::ArrowDown)
+                    )
                 {
                     let idx = self.nav.index().unwrap_or(0);
                     if idx + 1 < self.nav.total() {

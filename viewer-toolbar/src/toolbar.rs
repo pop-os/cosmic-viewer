@@ -48,14 +48,38 @@ impl<'a, Message: Clone + 'static> ResponsiveToolbar<'a, Message> {
     }
 
     #[must_use]
+    pub fn start_maybe(mut self, item: Option<ToolbarItem<'a, Message>>) -> Self {
+        if let Some(item) = item {
+            self.start.push(item);
+        }
+        self
+    }
+
+    #[must_use]
     pub fn center(mut self, item: ToolbarItem<'a, Message>) -> Self {
         self.center.push(item);
         self
     }
 
     #[must_use]
+    pub fn center_maybe(mut self, item: Option<ToolbarItem<'a, Message>>) -> Self {
+        if let Some(item) = item {
+            self.center.push(item);
+        }
+        self
+    }
+
+    #[must_use]
     pub fn end(mut self, item: ToolbarItem<'a, Message>) -> Self {
         self.end.push(item);
+        self
+    }
+
+    #[must_use]
+    pub fn end_maybe(mut self, item: Option<ToolbarItem<'a, Message>>) -> Self {
+        if let Some(item) = item {
+            self.end.push(item);
+        }
         self
     }
 
@@ -95,7 +119,7 @@ impl<'a, Message: Clone + 'static> ResponsiveToolbar<'a, Message> {
             ])
             .width(Length::Shrink)
             .height(Length::Shrink)
-            .class(theme::Container::Secondary)
+            .class(theme::Container::Primary)
             .into()
     }
 }

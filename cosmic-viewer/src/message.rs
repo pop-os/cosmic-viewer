@@ -50,7 +50,6 @@ pub enum ViewerMessage {
     OpenRecent(usize),
     OpenContaining,
     Paste,
-    CloseFile,
     Save,
     SaveAs,
     SavedAs(PathBuf),

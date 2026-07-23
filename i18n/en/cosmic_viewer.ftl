@@ -8,7 +8,6 @@ menu-open-file = Open file
 menu-open-recent = Open recent
 menu-open-folder = Open folder
 menu-open-containing = Open containing folder
-menu-close-file = Close file
 menu-save = Save
 menu-save-as = Save as
 menu-set-wallpaper = Set as wallpaper

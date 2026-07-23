@@ -20,7 +20,6 @@ pub enum MenuAction {
     OpenFolder,
     OpenRecent(usize),
     OpenContaining,
-    CloseFile,
     Save,
     SaveAs,
     ImageDetails,
@@ -53,7 +52,6 @@ impl MenuAction {
             Self::OpenFolder => ViewerMessage::OpenFolderDialog,
             Self::OpenRecent(idx) => ViewerMessage::OpenRecent(idx),
             Self::OpenContaining => ViewerMessage::OpenContaining,
-            Self::CloseFile => ViewerMessage::CloseFile,
             Self::Copy => ViewerMessage::Copy,
             Self::CopyToClipboard => ViewerMessage::CopyToClipboard,
             Self::Cut => ViewerMessage::Cut,
@@ -127,14 +125,6 @@ pub fn init_keybinds() -> HashMap<KeyBind, MenuAction> {
             key: Key::Character("c".into()),
         },
         MenuAction::OpenContaining,
-    );
-
-    binds.insert(
-        KeyBind {
-            modifiers: vec![Modifier::Ctrl],
-            key: Key::Character("w".into()),
-        },
-        MenuAction::CloseFile,
     );
 
     binds.insert(
