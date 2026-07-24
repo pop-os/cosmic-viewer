@@ -96,7 +96,7 @@ impl TextDragHandle {
     }
 }
 
-pub const BORDER_WIDTH: f32 = 1.5;
+pub const BORDER_WIDTH: f32 = 1.;
 
 /// Quantize a 0.0..=1.0 color component to an 8-bit channel, rounding to nearest
 /// and clamping so out-of-gamut inputs cannot wrap.

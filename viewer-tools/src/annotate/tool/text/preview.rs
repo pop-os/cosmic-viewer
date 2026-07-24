@@ -672,49 +672,25 @@ impl TextPreview {
 
     fn draw_bounding_box(&self, frame: &mut Frame<Renderer>, _scale: f32) {
         let r = self.bounding_box;
-        let accent: Color = cosmic::theme::active().cosmic().control_5().into();
+        let theme = cosmic::theme::active();
+        let theme = theme.cosmic();
+        let neutral: Color = theme.control_5().into();
+        let accent: Color = theme.accent_color().into();
         let border_w = BORDER_WIDTH;
 
-        let short_side = r.width.min(r.height);
-        let bar_long = (short_side * 0.10).clamp(4.0, 24.0);
-        let bar_short = (bar_long * 0.25).max(1.5);
-
         // Border
-        let inset = border_w / 2.0;
         frame.stroke(
-            &Path::rectangle(
-                Point::new(r.x + inset, r.y + inset),
-                Size::new(r.width - border_w, r.height - border_w),
-            ),
-            Stroke::default().with_color(accent).with_width(border_w),
+            &Path::rectangle(Point::new(r.x, r.y), Size::new(r.width, r.height)),
+            Stroke::default().with_color(neutral).with_width(border_w),
         );
 
-        let left = r.x;
         let right = r.x + r.width;
-        let top = r.y;
-        let bottom = r.y + r.height;
-        let mid_x = r.x + r.width / 2.0;
         let mid_y = r.y + r.height / 2.0;
+        let rad = 2.5;
 
-        // Corner handles are L-shaped (two bars); edge handles are a single bar.
-        // Each entry: (center, bar_w, bar_h, anchor_x, anchor_y).
-        let handles = [
-            (Point::new(left, top), bar_long, bar_short, 0.0, 0.0),
-            (Point::new(left, top), bar_short, bar_long, 0.0, 0.0),
-            (Point::new(right, top), bar_long, bar_short, 1.0, 0.0),
-            (Point::new(right, top), bar_short, bar_long, 1.0, 0.0),
-            (Point::new(left, bottom), bar_long, bar_short, 0.0, 1.0),
-            (Point::new(left, bottom), bar_short, bar_long, 0.0, 1.0),
-            (Point::new(right, bottom), bar_long, bar_short, 1.0, 1.0),
-            (Point::new(right, bottom), bar_short, bar_long, 1.0, 1.0),
-            (Point::new(mid_x, top), bar_long, bar_short, 0.5, 0.0),
-            (Point::new(mid_x, bottom), bar_long, bar_short, 0.5, 1.0),
-            (Point::new(left, mid_y), bar_short, bar_long, 0.0, 0.5),
-            (Point::new(right, mid_y), bar_short, bar_long, 1.0, 0.5),
-        ];
-        for (center, w, h, anchor_x, anchor_y) in handles {
-            draw_handle(frame, center, w, h, anchor_x, anchor_y, accent);
-        }
+        // draw the circular handle markers on left and right
+        frame.fill(&Path::circle(Point { x: r.x, y: mid_y }, rad), accent);
+        frame.fill(&Path::circle(Point { x: right, y: mid_y }, rad), accent);
     }
 
     fn draw_glyphs(
