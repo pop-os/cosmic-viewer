@@ -1505,7 +1505,10 @@ impl Application for CosmicViewer {
         }
 
         let thumbnail_size = self.config.thumbnail_size.pixels();
-        let space_xxs = f32::from(theme::active().cosmic().spacing.space_xxs);
+        let t = theme::active();
+        let t = t.cosmic();
+        let space_xxs = f32::from(t.spacing.space_xxs);
+        let space_s = f32::from(t.spacing.space_s);
         let panel_width = space_xxs.mul_add(2.0, thumbnail_size as f32) + 36.0;
 
         let active = self.nav.index().unwrap_or(0);
@@ -1541,8 +1544,13 @@ impl Application for CosmicViewer {
             })
             .collect::<Vec<Element<'_, Action<ViewerMessage>>>>();
 
-        let nav_grid = container(grid(items).columns(1).height(Length::Shrink))
-            .padding([0., space_xxs, 0., 0.]);
+        let nav_grid = container(
+            grid(items)
+                .spacing(space_s)
+                .columns(1)
+                .height(Length::Shrink),
+        )
+        .padding([0., space_xxs, 0., 0.]);
 
         let scrollable =
             scrollable(container(nav_grid).padding(space_xxs)).id(self.scroll_id.clone());
