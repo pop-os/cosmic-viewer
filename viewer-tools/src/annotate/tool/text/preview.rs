@@ -170,8 +170,10 @@ impl TextPreview {
             drop(font_sys);
 
             let content_h: f32 = editor.with_buffer(content_height);
+            let theme = cosmic::theme::active();
+            let space_xxxs = 2. * theme.cosmic().space_xxxs() as f32;
             if content_h > self.bounding_box.height {
-                self.bounding_box.height = content_h;
+                self.bounding_box.height = content_h + space_xxxs;
             }
         }
     }
@@ -203,7 +205,9 @@ impl TextPreview {
                 buf.shape_until_scroll(font_sys.raw(), false);
             });
 
-            let content_h = editor.with_buffer(content_height);
+            let theme = cosmic::theme::active();
+            let space_xxxs = 2. * theme.cosmic().space_xxxs() as f32;
+            let content_h = editor.with_buffer(content_height) + space_xxxs;
             if content_h > self.bounding_box.height {
                 self.bounding_box.height = content_h;
             }
@@ -435,12 +439,13 @@ impl TextPreview {
     fn sync_height(&mut self) {
         if let Some(editor) = &mut self.editor {
             let min_h = self.font_size * LINE_HEIGHT_FACTOR;
-            let content_h: f32 = editor.with_buffer(content_height);
+            let theme = cosmic::theme::active();
+            let space_xxxs = 2. * theme.cosmic().space_xxxs() as f32;
+            let content_h: f32 = editor.with_buffer(content_height) + space_xxxs;
             self.bounding_box.height = content_h.max(min_h);
-
             editor.with_buffer_mut(|buf| {
                 buf.set_size(
-                    Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)),
+                    Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width - space_xxxs)),
                     None,
                 );
                 buf.set_scroll(cosmic_text::Scroll::default());
@@ -462,11 +467,12 @@ impl TextPreview {
             // Fit box height to content
             let min_h = self.font_size * LINE_HEIGHT_FACTOR;
             let content_h: f32 = editor.with_buffer(content_height);
-            self.bounding_box.height = content_h.max(min_h);
-
+            let theme = cosmic::theme::active();
+            let space_xxxs = 2. * theme.cosmic().space_xxxs() as f32;
+            self.bounding_box.height = content_h.max(min_h) + space_xxxs;
             editor.with_buffer_mut(|buf| {
                 buf.set_size(
-                    Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)),
+                    Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width - space_xxxs)),
                     None,
                 );
                 buf.set_scroll(cosmic_text::Scroll::default());
@@ -631,9 +637,11 @@ impl TextPreview {
 
         if let Some(editor) = &mut self.editor {
             let mut font_sys = font_system().write().expect("Write font system");
+            let theme = cosmic::theme::active();
+            let space_xxxs = 2. * theme.cosmic().space_xxxs() as f32;
             editor.with_buffer_mut(|buf| {
                 buf.set_size(
-                    Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)),
+                    Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width - space_xxxs)),
                     None,
                 );
                 buf.set_scroll(cosmic_text::Scroll::default());
@@ -641,7 +649,9 @@ impl TextPreview {
             editor.shape_as_needed(font_sys.raw(), false);
             drop(font_sys);
 
-            let content_h: f32 = editor.with_buffer(content_height);
+            let theme = cosmic::theme::active();
+            let space_xxxs = 2. * theme.cosmic().space_xxxs() as f32;
+            let content_h: f32 = editor.with_buffer(content_height) + space_xxxs;
 
             let width_only = matches!(
                 self.active_handle,
@@ -651,6 +661,7 @@ impl TextPreview {
             if width_only {
                 // Width handles
                 let min_h = self.font_size * LINE_HEIGHT_FACTOR;
+
                 self.bounding_box.height = content_h.max(min_h);
             } else {
                 // Height handles
@@ -661,7 +672,7 @@ impl TextPreview {
 
     fn draw_bounding_box(&self, frame: &mut Frame<Renderer>, _scale: f32) {
         let r = self.bounding_box;
-        let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
+        let accent: Color = cosmic::theme::active().cosmic().control_5().into();
         let border_w = BORDER_WIDTH;
 
         let short_side = r.width.min(r.height);
@@ -892,7 +903,12 @@ impl ToolOperation for TextPreview {
         }
 
         if self.bounding_box.width >= 1.0 {
-            let origin = Point::new(self.bounding_box.x + TEXT_INSET, self.bounding_box.y);
+            let theme = cosmic::theme::active();
+            let space_xxxs = theme.cosmic().space_xxxs() as f32;
+            let origin = Point::new(
+                self.bounding_box.x + space_xxxs + TEXT_INSET,
+                self.bounding_box.y + space_xxxs,
+            );
 
             if self.state == TextEditState::Editing && self.is_empty() {
                 let placeholder = canvas::Text {
@@ -915,7 +931,6 @@ impl ToolOperation for TextPreview {
                 };
                 frame.fill_text(placeholder);
             }
-
             if let Some(editor) = &self.editor {
                 // Selection highlights
                 if let Some((start, end)) = editor.selection_bounds() {
@@ -1050,7 +1065,9 @@ impl ToolOperation for TextPreview {
     fn on_press(&mut self, point: Point, _image_size: Size) -> mouse::Interaction {
         match self.state {
             TextEditState::Placing => {
-                let h = TEXT_INSET.mul_add(2.0, self.font_size * LINE_HEIGHT_FACTOR);
+                let theme = cosmic::theme::active();
+                let space_xxxs = 2. * theme.cosmic().space_xxxs() as f32;
+                let h = TEXT_INSET.mul_add(2.0, space_xxxs + self.font_size * LINE_HEIGHT_FACTOR);
                 self.bounding_box = Rectangle::new(point, Size::new(DEFAULT_BOX_WIDTH, h));
                 self.drag_origin = point;
                 self.drag_start_box = self.bounding_box;

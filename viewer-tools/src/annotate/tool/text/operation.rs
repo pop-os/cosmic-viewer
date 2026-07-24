@@ -223,9 +223,11 @@ impl ToolOperation for TextOperation {
         // The text is laid out in its reading orientation, centered on the footprint, then the
         // frame is rotated about that center. For `rotation_steps == 0` this is exactly
         // `(bounding_box.x + TEXT_INSET, bounding_box.y)`.
+        let theme = cosmic::theme::active();
+        let space_xxxs = theme.cosmic().space_xxxs() as f32;
         let origin = Point::new(
-            center.x - reading.width / 2.0 + TEXT_INSET,
-            center.y - reading.height / 2.0,
+            center.x - reading.width / 2.0 + TEXT_INSET + space_xxxs,
+            center.y - reading.height / 2.0 + space_xxxs,
         );
 
         let steps = self.rotation_steps % 4;
@@ -342,7 +344,9 @@ impl ToolOperation for TextOperation {
         );
 
         let mut swash_cache = cosmic_text::SwashCache::new();
-        let origin = Point::new(TEXT_INSET, 0.0);
+        let theme = cosmic::theme::active();
+        let space_xxxs = theme.cosmic().space_xxxs() as f32;
+        let origin = Point::new(TEXT_INSET + space_xxxs, space_xxxs);
         for run in buffer.layout_runs() {
             let line = &buffer.lines[run.line_i];
             let attrs_list = line.attrs_list();
