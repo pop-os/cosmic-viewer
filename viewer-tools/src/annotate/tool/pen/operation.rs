@@ -93,4 +93,21 @@ impl ToolOperation for PenOperation {
             point.y -= region.y;
         }
     }
+
+    fn translate(&mut self, dx: f32, dy: f32) {
+        for point in &mut self.points {
+            point.x += dx;
+            point.y += dy;
+        }
+    }
+
+    fn movable(&self) -> bool {
+        true
+    }
+
+    fn hit_test(&self, point: Point) -> bool {
+        self.points
+            .iter()
+            .any(|p| point.distance(*p) < 4. * self.width)
+    }
 }
