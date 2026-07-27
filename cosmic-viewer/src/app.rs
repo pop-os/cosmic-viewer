@@ -216,7 +216,10 @@ impl CosmicViewer {
         let dir_clone = dir.clone();
 
         let title = match select.as_ref() {
-            Some(tab) => tab.to_string_lossy().to_string(),
+            Some(tab) => tab
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_default(),
             None => "No Open File".to_string(),
         };
 
@@ -325,7 +328,13 @@ impl CosmicViewer {
     }
 
     fn load_full_image(&mut self, path: PathBuf) -> Task<Action<ViewerMessage>> {
-        let window_title = format!("{} - {}", path.to_string_lossy(), fl!("app-name"));
+        let window_title = format!(
+            "{} - {}",
+            path.file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_default(),
+            fl!("app-name")
+        );
         let window_title = if let Some(window_id) = self.core.main_window_id() {
             self.set_window_title(window_title.clone(), window_id)
         } else {
