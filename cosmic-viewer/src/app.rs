@@ -12,7 +12,7 @@ use crate::{
 use cosmic::{
     Action, Application, ApplicationExt, Core, Element, Task, Theme,
     app::context_drawer,
-    cosmic_config::CosmicConfigEntry,
+    cosmic_config::{ConfigSet, CosmicConfigEntry},
     dialog::file_chooser::{self, FileFilter},
     iced::{
         self, Alignment, Background, Border, Color, Length, Point, Rectangle, Size, Subscription,
@@ -58,7 +58,7 @@ use std::{
     time::Duration,
 };
 use viewer_canvas::{CanvasImage, CanvasMessage, ToolKind, ViewportManager};
-use viewer_config::ViewerConfig;
+use viewer_config::{AppTheme, ViewerConfig};
 use viewer_core::{
     CachedImage, ClipboardImage, ImageCache, NavState, get_image_dir, image_mime_type, load_image,
     load_thumbnail, read_dpi, scan_dir,
@@ -97,6 +97,7 @@ pub struct CosmicViewer {
     core: Core,
     key_binds: HashMap<KeyBind, MenuAction>,
     config: ViewerConfig,
+    app_themes: Vec<String>,
     nav: NavState,
     nav_bar_model: nav_bar::Model,
     cache: ImageCache,
@@ -1352,6 +1353,32 @@ impl CosmicViewer {
             self.viewport.set_actual_percent(500.0, viewport);
         }
     }
+
+    fn settings(&self) -> Element<'_, ViewerMessage> {
+        let app_theme_selected = match self.config.app_theme {
+            AppTheme::Dark => 1,
+            AppTheme::Light => 2,
+            AppTheme::System => 0,
+        };
+        let appearance = widget::settings::section().title(fl!("appearance")).add(
+            widget::settings::item::builder(fl!("theme")).control(widget::dropdown(
+                &self.app_themes,
+                Some(app_theme_selected),
+                move |index| {
+                    ViewerMessage::AppTheme(match index {
+                        1 => AppTheme::Dark,
+                        2 => AppTheme::Light,
+                        _ => AppTheme::System,
+                    })
+                },
+            )),
+        );
+        let startup = widget::settings::section().title(fl!("startup")).add(
+            widget::settings::item::builder(fl!("show-navbar"))
+                .toggler(self.config.show_navbar, ViewerMessage::ShowNavbar),
+        );
+        widget::settings::view_column(vec![appearance.into(), startup.into()]).into()
+    }
 }
 
 impl Application for CosmicViewer {
@@ -1370,8 +1397,8 @@ impl Application for CosmicViewer {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn init(core: Core, flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
-        let mut tasks = vec![];
+    fn init(mut core: Core, flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
+        let mut tasks = Vec::new();
 
         let config = viewer_config::config()
             .ok()
@@ -1391,11 +1418,13 @@ impl Application for CosmicViewer {
         let initial_color = config
             .last_color
             .map(|c| Color::from_rgba(c[0], c[1], c[2], c[3]));
-
+        let app_themes = vec![fl!("match-desktop"), fl!("dark"), fl!("light")];
+        core.nav_bar_set_toggled(config.show_navbar);
         let mut viewer = Self {
             core,
             key_binds: key_binds::init_keybinds(),
             config,
+            app_themes,
             nav: NavState::new(),
             nav_bar_model: nav_bar::Model::default(),
             cache: ImageCache::with_defaults(),
@@ -1479,6 +1508,9 @@ impl Application for CosmicViewer {
         if let Some(path) = flags {
             tasks.push(viewer.open_path(path));
         }
+        let theme = viewer.config.app_theme.theme();
+
+        tasks.push(cosmic::command::set_theme(theme));
 
         (viewer, Task::batch(tasks))
     }
@@ -1497,6 +1529,14 @@ impl Application for CosmicViewer {
         let content = match page {
             ContextMessage::ImageDetails => self.image_details_page(),
             ContextMessage::About => return None,
+            ContextMessage::Settings => {
+                let content = self.settings();
+                return Some(
+                    context_drawer::context_drawer(content, ViewerMessage::Context(page))
+                        .title(fl!("settings"))
+                        .into(),
+                );
+            }
         };
 
         let drawer = context_drawer::context_drawer(content, ViewerMessage::Context(page))
@@ -1758,9 +1798,40 @@ impl Application for CosmicViewer {
     // reason: central message dispatch; one match arm per variant, kept colocated.
     #[allow(clippy::too_many_lines)]
     fn update(&mut self, message: Self::Message) -> Task<Action<Self::Message>> {
+        // Helper for updating config values efficiently
+        macro_rules! config_set {
+            ($name: ident, $value: expr) => {
+                match viewer_config::config() {
+                    Ok(config_handler) => {
+                        if let Err(err) =
+                            paste::paste! { self.config.[<set_ $name>](&config_handler, $value) }
+                        {
+                            tracing::warn!(
+                                "failed to save config {:?}: {}",
+                                stringify!($name),
+                                err
+                            );
+                        }
+                    }
+                    Err(err) => {
+                        self.config.$name = $value;
+                        tracing::warn!(
+                            "failed to save config {:?}: no config handler - {err:?}",
+                            stringify!($name)
+                        );
+                    }
+                }
+            };
+        }
         let mut tasks = vec![];
 
         match message {
+            ViewerMessage::AppTheme(app_theme) => {
+                config_set!(app_theme, app_theme);
+                let theme = self.config.app_theme.theme();
+
+                return cosmic::command::set_theme(theme);
+            }
             ViewerMessage::Copy => {
                 self.context_menu_position = None;
             }
@@ -3728,6 +3799,9 @@ impl Application for CosmicViewer {
             }
             ViewerMessage::Surface(action) => {
                 return cosmic::task::message(Action::Cosmic(cosmic::app::Action::Surface(action)));
+            }
+            ViewerMessage::ShowNavbar(show_navbar) => {
+                config_set!(show_navbar, show_navbar);
             }
         }
 

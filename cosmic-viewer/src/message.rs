@@ -12,6 +12,7 @@ use smol_str::SmolStr;
 use std::{path::PathBuf, sync::Arc};
 use trash::TrashItem;
 use viewer_canvas::CanvasMessage;
+use viewer_config::AppTheme;
 use viewer_tools::{
     annotate::{AnnotateColor, AnnotateTool},
     crop::CropRatio,
@@ -21,6 +22,7 @@ use viewer_tools::{
 pub enum ContextMessage {
     About,
     ImageDetails,
+    Settings,
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +42,7 @@ pub enum UnsavedChoice {
 
 #[derive(Debug, Clone)]
 pub enum ViewerMessage {
+    AppTheme(AppTheme),
     Copy,
     CopyToClipboard,
     CopyFilePath,
@@ -55,6 +58,7 @@ pub enum ViewerMessage {
     SavedAs(PathBuf),
     SetWallpaper,
     SetWallpaperOn(PathBuf, WallpaperTarget),
+    ShowNavbar(bool),
     CloseWallpaperDialog,
     WallpaperResult(Result<(), String>),
     CloseToast(ToastId),

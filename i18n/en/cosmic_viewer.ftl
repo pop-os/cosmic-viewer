@@ -104,3 +104,13 @@ image-accessed = Accessed:
 image-size = Image size:
 image-dpi = Image DPI:
 image-folder = Folder:
+
+# Settings
+settings = Settings
+appearance = Appearance
+theme = Theme
+match-desktop = Match desktop
+dark = Dark
+light = Light
+startup = Startup
+show-navbar = Show navigation bar on launch

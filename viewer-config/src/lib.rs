@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-use cosmic::cosmic_config::{self, Config, ConfigGet, ConfigSet, CosmicConfigEntry};
+use cosmic::{
+    cosmic_config::{self, Config, CosmicConfigEntry, cosmic_config_derive::CosmicConfigEntry},
+    theme,
+};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-pub const CONFIG_VERSION: u64 = 2;
 const APP_ID: &str = "com.system76.CosmicViewer";
+pub const COSMIC_THEME_DARK: &str = "COSMIC Dark";
+pub const COSMIC_THEME_LIGHT: &str = "COSMIC Light";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum WallpaperBehavior {
@@ -100,10 +104,35 @@ impl ThumbnailSize {
     }
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub enum AppTheme {
+    Dark,
+    Light,
+    System,
+}
+
+impl AppTheme {
+    pub fn theme(&self) -> theme::Theme {
+        match self {
+            Self::Dark => {
+                let mut t = theme::system_dark();
+                t.theme_type.prefer_dark(Some(true));
+                t
+            }
+            Self::Light => {
+                let mut t = theme::system_light();
+                t.theme_type.prefer_dark(Some(false));
+                t
+            }
+            Self::System => theme::system_preference(),
+        }
+    }
+}
 // reason: each bool is an independent persisted user toggle, not state that
 // forms a machine; collapsing them into enums would distort the config schema.
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(CosmicConfigEntry, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[version = 2]
 pub struct ViewerConfig {
     pub default_zoom: f32,
     pub fit_to_window: bool,
@@ -117,6 +146,8 @@ pub struct ViewerConfig {
     pub sort_mode: SortMode,
     pub sort_order: SortOrder,
     pub last_color: Option<[f32; 4]>,
+    pub app_theme: AppTheme,
+    pub show_navbar: bool,
 }
 
 impl Default for ViewerConfig {
@@ -134,114 +165,9 @@ impl Default for ViewerConfig {
             sort_mode: SortMode::default(),
             sort_order: SortOrder::default(),
             last_color: None,
+            app_theme: AppTheme::System,
+            show_navbar: true,
         }
-    }
-}
-
-impl CosmicConfigEntry for ViewerConfig {
-    const VERSION: u64 = CONFIG_VERSION;
-
-    fn write_entry(&self, config: &cosmic_config::Config) -> Result<(), cosmic_config::Error> {
-        config.set("default_zoom", self.default_zoom)?;
-        config.set("fit_to_window", self.fit_to_window)?;
-        config.set("remember_last_dir", self.remember_last_dir)?;
-        config.set("last_dir", self.last_dir.clone())?;
-        config.set("smooth_scaling", self.smooth_scaling)?;
-        config.set("thumbnail_size", self.thumbnail_size)?;
-        config.set("cache_size", self.cache_size)?;
-        config.set("show_hidden_files", self.show_hidden_files)?;
-        config.set("wallpaper_behavior", self.wallpaper_behavior)?;
-        config.set("sort_mode", self.sort_mode)?;
-        config.set("sort_order", self.sort_order)?;
-        config.set("last_color", self.last_color)?;
-        Ok(())
-    }
-
-    fn get_entry(
-        config: &cosmic_config::Config,
-    ) -> Result<Self, (Vec<cosmic_config::Error>, Self)> {
-        let mut errors = Vec::new();
-        let mut cfg = Self::default();
-
-        macro_rules! get_field {
-            ($name:literal, $field:ident, $type:ty) => {
-                match config.get::<$type>($name) {
-                    Ok(val) => cfg.$field = val,
-                    Err(e) => errors.push(e),
-                }
-            };
-        }
-
-        get_field!("default_zoom", default_zoom, f32);
-        get_field!("fit_to_window", fit_to_window, bool);
-        get_field!("remember_last_dir", remember_last_dir, bool);
-        get_field!("last_dir", last_dir, Option<String>);
-        get_field!("smooth_scaling", smooth_scaling, bool);
-        get_field!("thumbnail_size", thumbnail_size, ThumbnailSize);
-        get_field!("cache_size", cache_size, usize);
-        get_field!("show_hidden_files", show_hidden_files, bool);
-        get_field!("wallpaper_behavior", wallpaper_behavior, WallpaperBehavior);
-        get_field!("sort_mode", sort_mode, SortMode);
-        get_field!("sort_order", sort_order, SortOrder);
-        get_field!("last_color", last_color, Option<[f32; 4]>);
-
-        if errors.is_empty() {
-            Ok(cfg)
-        } else {
-            Err((errors, cfg))
-        }
-    }
-
-    fn update_keys<T: AsRef<str>>(
-        &mut self,
-        config: &cosmic_config::Config,
-        changed_keys: &[T],
-    ) -> (Vec<cosmic_config::Error>, Vec<&'static str>) {
-        let mut errors = Vec::new();
-        let mut updated = Vec::new();
-
-        for key in changed_keys {
-            match key.as_ref() {
-                "default_zoom" => match config.get::<f32>("default_zoom") {
-                    Ok(val) => {
-                        self.default_zoom = val;
-                        updated.push("default_zoom");
-                    }
-                    Err(e) => errors.push(e),
-                },
-                "fit_to_window" => match config.get::<bool>("fit_to_window") {
-                    Ok(val) => {
-                        self.fit_to_window = val;
-                        updated.push("fit_to_window");
-                    }
-                    Err(e) => errors.push(e),
-                },
-                "show_hidden_files" => match config.get::<bool>("show_hidden_files") {
-                    Ok(val) => {
-                        self.show_hidden_files = val;
-                        updated.push("show_hidden_files");
-                    }
-                    Err(e) => errors.push(e),
-                },
-                "sort_mode" => match config.get::<SortMode>("sort_mode") {
-                    Ok(val) => {
-                        self.sort_mode = val;
-                        updated.push("sort_mode");
-                    }
-                    Err(e) => errors.push(e),
-                },
-                "sort_order" => match config.get::<SortOrder>("sort_order") {
-                    Ok(val) => {
-                        self.sort_order = val;
-                        updated.push("sort_order");
-                    }
-                    Err(e) => errors.push(e),
-                },
-                _ => {}
-            }
-        }
-
-        (errors, updated)
     }
 }
 
@@ -252,5 +178,5 @@ impl CosmicConfigEntry for ViewerConfig {
 /// Returns a `cosmic_config::Error` if the configuration context cannot be
 /// created (for example, when the config directory is inaccessible).
 pub fn config() -> Result<Config, cosmic_config::Error> {
-    Config::new(APP_ID, CONFIG_VERSION)
+    Config::new(APP_ID, ViewerConfig::VERSION)
 }

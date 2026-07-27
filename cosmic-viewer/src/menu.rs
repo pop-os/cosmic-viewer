@@ -109,6 +109,8 @@ fn build_view_menu() -> Vec<menu::Item<MenuAction, String>> {
         menu::Item::Button(fl!("menu-fullscreen"), None, MenuAction::Fullscreen),
         menu::Item::Divider,
         menu::Item::Button(fl!("menu-image-details"), None, MenuAction::ImageDetails),
+        menu::Item::Divider,
+        menu::Item::Button(fl!("settings"), None, MenuAction::Settings),
     ]
 }
 

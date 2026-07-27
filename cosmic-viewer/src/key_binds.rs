@@ -22,6 +22,7 @@ pub enum MenuAction {
     OpenContaining,
     Save,
     SaveAs,
+    Settings,
     ImageDetails,
     Quit,
     Undo,
@@ -74,6 +75,7 @@ impl MenuAction {
             Self::Undo => ViewerMessage::Edit(EditMessage::Undo),
             Self::Redo => ViewerMessage::Edit(EditMessage::Redo),
             Self::RevertAll => ViewerMessage::Edit(EditMessage::RevertAll),
+            Self::Settings => ViewerMessage::Context(ContextMessage::Settings),
             Self::SetWallpaper => ViewerMessage::SetWallpaper,
             Self::MoveToTrash => ViewerMessage::MoveToTrash,
         }
@@ -295,6 +297,14 @@ pub fn init_keybinds() -> HashMap<KeyBind, MenuAction> {
             key: Key::Character("r".into()),
         },
         MenuAction::RotateLeft,
+    );
+
+    binds.insert(
+        KeyBind {
+            modifiers: vec![Modifier::Ctrl],
+            key: Key::Character(",".into()),
+        },
+        MenuAction::Settings,
     );
 
     binds

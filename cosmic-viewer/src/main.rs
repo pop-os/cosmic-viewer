@@ -6,7 +6,6 @@ pub mod key_binds;
 pub mod localize;
 pub mod menu;
 pub mod message;
-pub mod views;
 pub mod watcher;
 
 use app::CosmicViewer;

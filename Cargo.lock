@@ -1196,6 +1196,7 @@ dependencies = [
  "libcosmic",
  "notify",
  "open",
+ "paste",
  "rust-embed",
  "smol_str",
  "tokio",
