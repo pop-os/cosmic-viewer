@@ -56,7 +56,7 @@ pub enum TextDragHandle {
     Bottom,
     Left,
     Right,
-    Move,
+    Text,
 }
 
 impl TextDragHandle {
@@ -68,7 +68,7 @@ impl TextDragHandle {
             Self::TopRight | Self::BottomLeft => mouse::Interaction::ResizingDiagonallyUp,
             Self::Top | Self::Bottom => mouse::Interaction::ResizingVertically,
             Self::Left | Self::Right => mouse::Interaction::ResizingHorizontally,
-            Self::Move => mouse::Interaction::Grabbing,
+            Self::Text => mouse::Interaction::Text,
         }
     }
 

@@ -543,7 +543,7 @@ impl TextPreview {
             ),
         );
         if inner.contains(point) {
-            return TextDragHandle::Move;
+            return TextDragHandle::Text;
         }
 
         // Edges
@@ -562,7 +562,7 @@ impl TextPreview {
 
         // Outside but close enough to count
         if r.contains(point) {
-            return TextDragHandle::Move;
+            return TextDragHandle::Text;
         }
 
         TextDragHandle::None
@@ -599,8 +599,7 @@ impl TextPreview {
             TextDragHandle::Bottom => (reg.x, reg.y, reg.width, reg.height + delta_y),
             TextDragHandle::Left => (reg.x + delta_x, reg.y, reg.width - delta_x, reg.height),
             TextDragHandle::Right => (reg.x, reg.y, reg.width + delta_x, reg.height),
-            TextDragHandle::Move => (reg.x + delta_x, reg.y + delta_y, reg.width, reg.height),
-            TextDragHandle::None => return,
+            TextDragHandle::Text | TextDragHandle::None => return,
         };
 
         // Enforce minimums, adjust position to keep opposite edge fixed
@@ -1061,7 +1060,7 @@ impl ToolOperation for TextPreview {
                         // Outside box, app.rs will commit
                         mouse::Interaction::default()
                     }
-                    TextDragHandle::Move => {
+                    TextDragHandle::Text => {
                         self.blink_start.set(Instant::now());
                         let x = (lp.x - self.bounding_box.x) as i32;
                         let y = (lp.y - self.bounding_box.y) as i32;
