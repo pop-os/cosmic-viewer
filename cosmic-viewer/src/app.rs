@@ -34,7 +34,9 @@ use cosmic::{
     task::future,
     theme::{self, Button},
     widget::{
-        self, Column, Id, Row, Space, Toasts, button, canvas,
+        self, Column, Id, Row, Space, Toasts,
+        button::{self, focus},
+        canvas,
         color_picker::{
             self,
             ColorPickerUpdate::{self, AppliedColor, Cancel, ToggleColorPicker},
@@ -1527,7 +1529,7 @@ impl Application for CosmicViewer {
             .images()
             .iter()
             .enumerate()
-            .map(|(img, _)| {
+            .map(|(img, p)| {
                 let handle = self
                     .nav_handles
                     .get(img)
@@ -1538,6 +1540,7 @@ impl Application for CosmicViewer {
                     .selected(img == active)
                     .height(Length::Fixed(thumbnail_size as f32))
                     .width(Length::Fixed(thumbnail_size as f32))
+                    .id(Id::new(format!("img-{}-{img}", p.to_string_lossy())))
                     .on_press(Action::App(ViewerMessage::Nav(NavMessage::GridActivate(
                         img,
                     ))));
@@ -2474,24 +2477,51 @@ impl Application for CosmicViewer {
                     }
                     self.sync_text_format_models();
                 } else if modifiers == Modifiers::NONE
-                    && matches!(
-                        key,
-                        Key::Named(Named::ArrowLeft) | Key::Named(Named::ArrowUp)
-                    )
+                    && matches!(key, Key::Named(Named::ArrowLeft))
                 {
                     let idx = self.nav.index().unwrap_or(0);
                     if idx > 0 {
                         return self.update(ViewerMessage::Nav(NavMessage::GridActivate(idx - 1)));
                     }
+                } else if modifiers == Modifiers::NONE && matches!(key, Key::Named(Named::ArrowUp))
+                {
+                    let idx = self.nav.index().unwrap_or(0);
+                    if idx > 0 {
+                        let thumbnail_size = self.config.thumbnail_size.pixels();
+                        let t = theme::active();
+                        let t = t.cosmic();
+                        let space_s = f32::from(t.spacing.space_s);
+
+                        return Task::batch(vec![
+                            self.update(ViewerMessage::Nav(NavMessage::GridFocus(idx - 1))),
+                            self.update(ViewerMessage::Nav(NavMessage::GridScroll(
+                                (idx - 1) as f32 * (thumbnail_size as f32 + space_s),
+                            ))),
+                        ]);
+                    }
                 } else if modifiers == Modifiers::NONE
-                    && matches!(
-                        key,
-                        Key::Named(Named::ArrowRight) | Key::Named(Named::ArrowDown)
-                    )
+                    && matches!(key, Key::Named(Named::ArrowRight))
                 {
                     let idx = self.nav.index().unwrap_or(0);
                     if idx + 1 < self.nav.total() {
                         return self.update(ViewerMessage::Nav(NavMessage::GridActivate(idx + 1)));
+                    }
+                } else if modifiers == Modifiers::NONE
+                    && matches!(key, Key::Named(Named::ArrowDown))
+                {
+                    let idx = self.nav.index().unwrap_or(0);
+                    if idx + 1 < self.nav.total() {
+                        let thumbnail_size = self.config.thumbnail_size.pixels();
+                        let t = theme::active();
+                        let t = t.cosmic();
+                        let space_s = f32::from(t.spacing.space_s);
+
+                        return Task::batch(vec![
+                            self.update(ViewerMessage::Nav(NavMessage::GridFocus(idx + 1))),
+                            self.update(ViewerMessage::Nav(NavMessage::GridScroll(
+                                (idx + 1) as f32 * (thumbnail_size as f32 + space_s),
+                            ))),
+                        ]);
                     }
                 } else if let Some(msg) = keyboard_shortcut_handler(key, modifiers, text) {
                     return self.update(msg);
@@ -2639,7 +2669,9 @@ impl Application for CosmicViewer {
                     }
                 }
                 NavMessage::GridFocus(idx) => {
-                    self.nav.select(idx);
+                    if let Some(p) = self.nav.select(idx) {
+                        return focus(Id::new(format!("img-{}-{idx}", p.to_string_lossy())));
+                    }
                 }
                 NavMessage::GridScroll(offset) => {
                     tasks.push(scroll_to(
