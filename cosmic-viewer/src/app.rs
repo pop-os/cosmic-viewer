@@ -95,6 +95,7 @@ enum TextStyle {
 #[allow(clippy::struct_excessive_bools)]
 pub struct CosmicViewer {
     core: Core,
+    cur_scroll: Option<iced::widget::scrollable::Viewport>,
     key_binds: HashMap<KeyBind, MenuAction>,
     config: ViewerConfig,
     app_themes: Vec<String>,
@@ -1422,6 +1423,7 @@ impl Application for CosmicViewer {
         core.nav_bar_set_toggled(config.show_navbar);
         let mut viewer = Self {
             core,
+            cur_scroll: None,
             key_binds: key_binds::init_keybinds(),
             config,
             app_themes,
@@ -1604,8 +1606,9 @@ impl Application for CosmicViewer {
         )
         .padding([0., space_xxs, 0., 0.]);
 
-        let scrollable =
-            scrollable(container(nav_grid).padding(space_xxs)).id(self.scroll_id.clone());
+        let scrollable = scrollable(container(nav_grid).padding(space_xxs))
+            .on_scroll(|v| Action::App(ViewerMessage::NavScroll(v)))
+            .id(self.scroll_id.clone());
 
         let nav_width = if self.is_narrow() {
             // Narrow mode: overlay the view, filling window width minus a space_xxs gutter.
@@ -2745,13 +2748,26 @@ impl Application for CosmicViewer {
                     }
                 }
                 NavMessage::GridScroll(offset) => {
-                    tasks.push(scroll_to(
-                        self.scroll_id.clone(),
-                        AbsoluteOffset {
-                            x: Some(0.0),
-                            y: Some(offset),
-                        },
-                    ));
+                    let thumbnail_size = self.config.thumbnail_size.pixels();
+
+                    if let Some(cur_viewport) = self.cur_scroll.as_ref() {
+                        let mut bounds = cur_viewport.bounds();
+                        bounds.x = 0.;
+                        let abs_offset = cur_viewport.absolute_offset();
+                        bounds.y = abs_offset.y;
+
+                        if !bounds.contains(Point::new(1., offset))
+                            || !bounds.contains(Point::new(1., offset + thumbnail_size as f32))
+                        {
+                            tasks.push(scroll_to(
+                                self.scroll_id.clone(),
+                                AbsoluteOffset {
+                                    x: Some(0.0),
+                                    y: Some(offset),
+                                },
+                            ));
+                        }
+                    }
                 }
                 NavMessage::DirectoryRefreshed(images) => {
                     let selected = self.nav.current().cloned();
@@ -3802,6 +3818,9 @@ impl Application for CosmicViewer {
             }
             ViewerMessage::ShowNavbar(show_navbar) => {
                 config_set!(show_navbar, show_navbar);
+            }
+            ViewerMessage::NavScroll(viewport) => {
+                self.cur_scroll = Some(viewport);
             }
         }
 

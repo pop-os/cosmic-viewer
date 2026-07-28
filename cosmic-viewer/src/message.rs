@@ -5,6 +5,7 @@ use cosmic::{
         Size,
         alignment::Horizontal,
         keyboard::{Key, Modifiers},
+        widget::scrollable::Viewport,
     },
     widget::{ToastId, color_picker::ColorPickerUpdate, segmented_button},
 };
@@ -47,6 +48,7 @@ pub enum ViewerMessage {
     CopyToClipboard,
     CopyFilePath,
     Cut,
+    NavScroll(Viewport),
     Open(PathBuf),
     OpenFileDialog,
     OpenFolderDialog,
