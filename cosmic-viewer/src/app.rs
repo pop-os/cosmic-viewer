@@ -1099,7 +1099,7 @@ impl CosmicViewer {
             let make_btn = |tool: AnnotateTool, label: String| -> Element<'_, ViewerMessage> {
                 let is_selected = tool == self.selected_shape;
                 let item = Row::new()
-                    .push((icon::from_name(tool.icon_name())).size(16).icon())
+                    .push(icon(icon_cache_get(tool.icon_name())).size(16))
                     .push(text::body(label))
                     .push(if is_selected {
                         Element::from(icon::from_name("object-select-symbolic").size(16).icon())
@@ -1119,6 +1119,7 @@ impl CosmicViewer {
 
             let list = Column::new()
                 .push(make_btn(AnnotateTool::Rectangle, fl!("shapes-rectangle")))
+                .push(make_btn(AnnotateTool::Block, fl!("shapes-block")))
                 .push(make_btn(AnnotateTool::Ellipse, fl!("shapes-ellipse")))
                 .push(make_btn(AnnotateTool::Arrow, fl!("shapes-arrow")))
                 .push(make_btn(AnnotateTool::Line, fl!("shapes-line")))
@@ -1128,7 +1129,8 @@ impl CosmicViewer {
 
             let popup = container(list).padding(8).style(|theme| {
                 let cosmic = theme.cosmic();
-                let component = &cosmic.background(theme.transparent).component;
+                // force opaque because it is not a real popup.
+                let component = &cosmic.background(false).component;
                 container::Style {
                     icon_color: None,
                     text_color: None,
@@ -3268,12 +3270,14 @@ impl Application for CosmicViewer {
                             | AnnotateTool::Line
                             | AnnotateTool::Arrow
                             | AnnotateTool::Star
+                            | AnnotateTool::Block
                             | AnnotateTool::Polygon => {
                                 if self.shape_popup {
                                     self.shape_popup = false;
                                 }
                                 let kind = match tool {
                                     AnnotateTool::Rectangle => ShapeKind::Rectangle,
+                                    AnnotateTool::Block => ShapeKind::Block,
                                     AnnotateTool::Ellipse => ShapeKind::Ellipse,
                                     AnnotateTool::Line => ShapeKind::Line,
                                     AnnotateTool::Arrow => ShapeKind::Arrow,

@@ -35,6 +35,7 @@ impl IconCache {
         bundle!("ratios-symbolic");
         bundle!("insert-text2-symbolic");
         bundle!("insert-drawing-symbolic");
+        bundle!("insert-rectangle-filled-symbolic");
         bundle!("text-highlight-symbolic");
         bundle!("stroke-width-symbolic");
         bundle!("format-text-bold-symbolic");

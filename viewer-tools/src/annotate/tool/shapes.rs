@@ -16,6 +16,7 @@ use cosmic::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShapeKind {
     Rectangle,
+    Block,
     Ellipse,
     Line,
     Arrow,
@@ -37,6 +38,9 @@ pub fn draw_shape(
 
     match kind {
         ShapeKind::Star | ShapeKind::Polygon => {
+            frame.fill(&path, Fill::from(color));
+        }
+        ShapeKind::Block => {
             frame.fill(&path, Fill::from(color));
         }
         ShapeKind::Arrow => {
@@ -75,6 +79,10 @@ pub fn draw_shape(
 fn build_path(kind: ShapeKind, start: Point, end: Point) -> Path {
     match kind {
         ShapeKind::Rectangle => {
+            let rectangle = normalize_rect(start, end);
+            Path::rectangle(rectangle.position(), rectangle.size())
+        }
+        ShapeKind::Block => {
             let rectangle = normalize_rect(start, end);
             Path::rectangle(rectangle.position(), rectangle.size())
         }

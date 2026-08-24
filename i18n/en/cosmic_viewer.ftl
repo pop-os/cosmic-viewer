@@ -69,6 +69,7 @@ unsaved-cancel = Cancel
 
 # Shapes Tool
 shapes-rectangle = Rectangle
+shapes-block = Block
 shapes-line = Line
 shapes-arrow = Arrow
 shapes-ellipse = Ellipse

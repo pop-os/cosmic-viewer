@@ -15,6 +15,7 @@ pub enum AnnotateTool {
     Highlighter,
     Text,
     Rectangle,
+    Block,
     Ellipse,
     Arrow,
     Line,
@@ -33,6 +34,7 @@ impl AnnotateTool {
     pub const fn shape_tools() -> &'static [Self] {
         &[
             Self::Rectangle,
+            Self::Block,
             Self::Ellipse,
             Self::Arrow,
             Self::Line,
@@ -48,6 +50,7 @@ impl AnnotateTool {
             Self::Highlighter => "text-highlight-symbolic",
             Self::Text => "insert-text-symbolic",
             Self::Rectangle => "insert-rectangle-symbolic",
+            Self::Block => "insert-rectangle-filled-symbolic",
             Self::Ellipse => "insert-ellipse-symbolic",
             Self::Arrow => "insert-arrow-symbolic",
             Self::Line => "insert-line-symbolic",
