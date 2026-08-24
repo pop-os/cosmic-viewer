@@ -142,10 +142,18 @@ impl CropSelection {
         // A corner/edge dragged past the opposite side - or a free-crop dragged up or
         // left - yields negative extents; flip the origin so the rect stays valid.
         if width < 0.0 {
+            if width.abs() < MIN_SIZE {
+                width = -MIN_SIZE;
+            }
+
             x += width;
             width = -width;
         }
         if height < 0.0 {
+            if height.abs() < MIN_SIZE {
+                height = -MIN_SIZE;
+            }
+
             y += height;
             height = -height;
         }
