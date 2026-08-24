@@ -301,8 +301,12 @@ impl CropSelection {
 
     fn draw_handles(&self, frame: &mut Frame<Renderer>, handle_size: f32, accent: Color) {
         let region = self.region;
-        let bar_long = handle_size * HANDLE_BAR_RATIO;
+        let bar_long = (handle_size * HANDLE_BAR_RATIO);
         let bar_short = handle_size * HANDLE_THICKNESS_RATIO;
+        let bar_long_horz = bar_long.min(region.width);
+        let bar_long_vert = bar_long.min(region.height);
+        let bar_short_horz = bar_short.min(region.width);
+        let bar_short_vert = bar_short.min(region.height);
 
         let left = region.x;
         let right = region.x + region.width;
@@ -312,20 +316,92 @@ impl CropSelection {
         let mid_y = region.y + region.height / 2.0;
 
         // Corner handles - two bars each forming an L; edge handles - single bar.
-        // Each entry: (center, bar_w, bar_h, anchor_x, anchor_y).
+        // Each entry: (anchor point, bar_w, bar_h, anchor_x, anchor_y).
         let handles = [
-            (Point::new(left, top), bar_long, bar_short, 0.0, 0.0),
-            (Point::new(left, top), bar_short, bar_long, 0.0, 0.0),
-            (Point::new(right, top), bar_long, bar_short, 1.0, 0.0),
-            (Point::new(right, top), bar_short, bar_long, 1.0, 0.0),
-            (Point::new(left, bottom), bar_long, bar_short, 0.0, 1.0),
-            (Point::new(left, bottom), bar_short, bar_long, 0.0, 1.0),
-            (Point::new(right, bottom), bar_long, bar_short, 1.0, 1.0),
-            (Point::new(right, bottom), bar_short, bar_long, 1.0, 1.0),
-            (Point::new(mid_x, top), bar_long, bar_short, 0.5, 0.0),
-            (Point::new(mid_x, bottom), bar_long, bar_short, 0.5, 1.0),
-            (Point::new(left, mid_y), bar_short, bar_long, 0.0, 0.5),
-            (Point::new(right, mid_y), bar_short, bar_long, 1.0, 0.5),
+            (
+                Point::new(left, top),
+                bar_long_horz,
+                bar_short_vert,
+                0.0,
+                0.0,
+            ),
+            (
+                Point::new(left, top),
+                bar_short_horz,
+                bar_long_vert,
+                0.0,
+                0.0,
+            ),
+            (
+                Point::new(right, top),
+                bar_long_horz,
+                bar_short_vert,
+                1.0,
+                0.0,
+            ),
+            (
+                Point::new(right, top),
+                bar_short_horz,
+                bar_long_vert,
+                1.0,
+                0.0,
+            ),
+            (
+                Point::new(left, bottom),
+                bar_long_horz,
+                bar_short_vert,
+                0.0,
+                1.0,
+            ),
+            (
+                Point::new(left, bottom),
+                bar_short_horz,
+                bar_long_vert,
+                0.0,
+                1.0,
+            ),
+            (
+                Point::new(right, bottom),
+                bar_long_horz,
+                bar_short_vert,
+                1.0,
+                1.0,
+            ),
+            (
+                Point::new(right, bottom),
+                bar_short_horz,
+                bar_long_vert,
+                1.0,
+                1.0,
+            ),
+            (
+                Point::new(mid_x, top),
+                bar_long_horz,
+                bar_short_vert,
+                0.5,
+                0.0,
+            ),
+            (
+                Point::new(mid_x, bottom),
+                bar_long_horz,
+                bar_short_vert,
+                0.5,
+                1.0,
+            ),
+            (
+                Point::new(left, mid_y),
+                bar_short_horz,
+                bar_long_vert,
+                0.0,
+                0.5,
+            ),
+            (
+                Point::new(right, mid_y),
+                bar_short_horz,
+                bar_long_vert,
+                1.0,
+                0.5,
+            ),
         ];
         for (center, w, h, anchor_x, anchor_y) in handles {
             Self::draw_handle(frame, center, w, h, anchor_x, anchor_y, accent);
