@@ -175,8 +175,8 @@ impl CropSelection {
         }
 
         // Clamp to image bounds
-        x = x.clamp(0.0, (image_size.width - width).max(0.0));
-        y = y.clamp(0.0, (image_size.height - height).max(0.0));
+        x = x.clamp(0.0, (image_size.width - MIN_SIZE).max(0.0));
+        y = y.clamp(0.0, (image_size.height - MIN_SIZE).max(0.0));
         width = width.min(image_size.width - x);
         height = height.min(image_size.height - y);
 
