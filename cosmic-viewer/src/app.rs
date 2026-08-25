@@ -479,7 +479,8 @@ impl CosmicViewer {
         .padding(1)
         .style(|theme| {
             let cosmic = theme.cosmic();
-            let component = &cosmic.background(theme.transparent).component;
+            // force opaque because it is not a real popup.
+            let component = &cosmic.background(false).component;
             container::Style {
                 icon_color: Some(component.on.into()),
                 text_color: Some(component.on.into()),
@@ -498,7 +499,8 @@ impl CosmicViewer {
 
     fn popup_style(theme: &cosmic::Theme) -> container::Style {
         let cosmic = theme.cosmic();
-        let component = &cosmic.background(theme.transparent).component;
+        // force opaque because it is not a real popup.
+        let component = &cosmic.background(false).component;
         container::Style {
             background: Some(Background::Color(component.base.into())),
             border: Border {
@@ -698,7 +700,8 @@ impl CosmicViewer {
 
             let popup = container(list).padding(8).style(|theme| {
                 let cosmic = theme.cosmic();
-                let component = &cosmic.background(theme.transparent).component;
+                // force opaque because it is not a real popup.
+                let component = &cosmic.background(false).component;
                 container::Style {
                     icon_color: None,
                     text_color: None,
@@ -1007,7 +1010,8 @@ impl CosmicViewer {
                 .max_width(260.0)
                 .style(|theme| {
                     let cosmic = theme.cosmic();
-                    let component = &cosmic.background(theme.transparent).component;
+                    // force opaque because it is not a real popup.
+                    let component = &cosmic.background(false).component;
                     container::Style {
                         background: Some(Background::Color(component.base.into())),
                         border: Border {
@@ -1300,7 +1304,8 @@ impl CosmicViewer {
                 .width(Length::Fixed(100.0))
                 .style(|theme| {
                     let cosmic = theme.cosmic();
-                    let component = &cosmic.background(theme.transparent).component;
+                    // force opaque because it is not a real popup.
+                    let component = &cosmic.background(false).component;
                     container::Style {
                         icon_color: None,
                         text_color: None,
