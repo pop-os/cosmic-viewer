@@ -766,22 +766,6 @@ impl CosmicViewer {
         responsive_toolbar(mode)
             .start(ToolbarItem::new(undo_btn))
             .start(ToolbarItem::new(redo_btn))
-            .start(ToolbarItem::new(
-                divider::vertical::light().height(Length::Fixed(32.0)),
-            ))
-            .start(ToolbarItem::new(icon_btn(
-                "object-rotate-left-symbolic",
-                fl!("menu-rotate-left"),
-                ViewerMessage::Edit(EditMessage::RotateLeft),
-            )))
-            .start(ToolbarItem::new(icon_btn(
-                "object-rotate-right-symbolic",
-                fl!("menu-rotate-right"),
-                ViewerMessage::Edit(EditMessage::RotateRight),
-            )))
-            .start(ToolbarItem::new(
-                divider::vertical::light().height(Length::Fixed(32.0)),
-            ))
             .start(ToolbarItem::new(self.build_crop_ratio_selector()))
             .center(
                 // Zoom out / percentage / zoom in stay together as one atom so
