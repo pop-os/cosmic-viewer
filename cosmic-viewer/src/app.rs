@@ -1146,7 +1146,7 @@ impl CosmicViewer {
 
             pop = pop
                 .popup(popup)
-                .position(popover::Position::Center)
+                .position(popover::Position::Top)
                 .on_close(ViewerMessage::Edit(EditMessage::ShapePopupClose));
         }
 
