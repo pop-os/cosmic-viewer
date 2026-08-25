@@ -545,6 +545,11 @@ impl Viewport<'_> {
         shell: &mut Shell<'_, CanvasMessage>,
     ) -> bool {
         let mgr = self.manager;
+        if matches!(event, Event::Mouse(MouseEvent::CursorLeft)) && mgr.tool_dragging {
+            shell.publish(CanvasMessage::ToolEnd);
+            shell.capture_event();
+            return true;
+        }
 
         // Release crop pan even if cursor left the canvas
         if mgr.crop_pan.get().is_some()
@@ -645,6 +650,12 @@ impl Viewport<'_> {
         shell: &mut Shell<'_, CanvasMessage>,
     ) -> bool {
         let mgr = self.manager;
+
+        if matches!(event, Event::Mouse(MouseEvent::CursorLeft)) && mgr.tool_dragging {
+            shell.publish(CanvasMessage::ToolEnd);
+            shell.capture_event();
+            return true;
+        }
         let (Event::Mouse(mouse_event), Some(position)) = (event, cursor.position_in(bounds))
         else {
             return false;
