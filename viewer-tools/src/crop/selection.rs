@@ -162,23 +162,51 @@ impl CropSelection {
         width = width.max(MIN_SIZE);
         height = height.max(MIN_SIZE);
 
+        if matches!(self.active_handle, DragHandle::Move) {
+            x = x.clamp(0.0, (image_size.width - width).max(0.0));
+            y = y.clamp(0.0, (image_size.height - height).max(0.0));
+        } else {
+            x = x.clamp(0.0, (image_size.width - MIN_SIZE).max(0.0));
+            y = y.clamp(0.0, (image_size.height - MIN_SIZE).max(0.0));
+            width = width.min(image_size.width - x);
+            height = height.min(image_size.height - y);
+        }
+
+        // TODO maybe allow sliding more along edges?
         // Enforce aspect ratio constraint
         if let Some(aspect) = self.ratio.resolve(image_size)
             && !matches!(self.active_handle, DragHandle::Move)
         {
-            // Width-dominant: adjust height to match ratio
-            height = width / aspect;
-            if height > image_size.height {
-                height = image_size.height;
-                width = height * aspect;
+            match self.active_handle {
+                DragHandle::Top
+                | DragHandle::Bottom
+                | DragHandle::Left
+                | DragHandle::Right
+                | DragHandle::Move
+                | DragHandle::None => {}
+                DragHandle::TopLeft | DragHandle::TopRight => {
+                    let new_height = width / aspect;
+                    let dy = new_height - reg.height;
+                    let new_y = reg.y - dy;
+                    if new_y < 0. {
+                        y = 0.;
+                        height = new_height + new_y;
+                        width = height * aspect;
+                    } else {
+                        y = new_y;
+                        height = new_height;
+                    }
+                }
+                DragHandle::BottomLeft | DragHandle::BottomRight => {
+                    // Width-dominant: adjust height to match ratio
+                    height = width / aspect;
+                    if y + height > image_size.height {
+                        height = image_size.height - y;
+                        width = height * aspect;
+                    }
+                }
             }
         }
-
-        // Clamp to image bounds
-        x = x.clamp(0.0, (image_size.width - MIN_SIZE).max(0.0));
-        y = y.clamp(0.0, (image_size.height - MIN_SIZE).max(0.0));
-        width = width.min(image_size.width - x);
-        height = height.min(image_size.height - y);
 
         self.region = Rectangle::new(Point::new(x, y), Size::new(width, height));
     }
