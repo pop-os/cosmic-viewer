@@ -1079,7 +1079,7 @@ impl CosmicViewer {
 
         let mut trigger = button::custom(
             Row::new()
-                .push(icon::from_name(current_icon).size(16).icon())
+                .push(icon(icon_cache_get(current_icon)).size(16))
                 .push(icon::from_name("pan-down-symbolic").size(12).icon())
                 .align_y(Alignment::Center)
                 .spacing(2),
