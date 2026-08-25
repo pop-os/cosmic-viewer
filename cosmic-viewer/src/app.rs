@@ -717,9 +717,7 @@ impl CosmicViewer {
 
             pop = pop
                 .popup(popup)
-                // NOTE: libcosmic has no Position::Top, so this Point offset places the popup
-                // on top of the toolbar, centered on the button. Revisit if upstream adds it.
-                .position(popover::Position::Point(Point::new(-35.0, -10.0)))
+                .position(popover::Position::Top)
                 .on_close(ViewerMessage::Edit(EditMessage::CropRatioPopupToggle));
         }
 
@@ -1027,7 +1025,7 @@ impl CosmicViewer {
 
             color_picker_popover = color_picker_popover
                 .popup(popup)
-                .position(popover::Position::Point(Point::new(-110.0, 0.0)))
+                .position(popover::Position::Top)
                 .on_close(ViewerMessage::Edit(EditMessage::ColorPicker(
                     ToggleColorPicker,
                 )));
@@ -1236,7 +1234,7 @@ impl CosmicViewer {
 
             format_popover = format_popover
                 .popup(popup)
-                .position(popover::Position::Bottom)
+                .position(popover::Position::Top)
                 .on_close(ViewerMessage::Edit(EditMessage::ToggleTextFormatMenu));
         }
 
@@ -1321,7 +1319,7 @@ impl CosmicViewer {
 
             pop = pop
                 .popup(popup)
-                .position(popover::Position::Point(Point::new(-35.0, 0.0)))
+                .position(popover::Position::Top)
                 .on_close(ViewerMessage::Edit(EditMessage::StrokePopupToggle));
         }
 
