@@ -168,19 +168,53 @@ impl CropSelection {
 
         // A corner/edge dragged past the opposite side - or a free-crop dragged up or
         // left - yields negative extents; flip the origin so the rect stays valid.
-        if width < 0.0 {
+        if matches!(
+            self.active_handle,
+            DragHandle::BottomRight | DragHandle::Right | DragHandle::TopRight
+        ) && width < 0.0
+        {
             if width.abs() < MIN_SIZE {
                 width = -MIN_SIZE;
             }
 
             x += width;
             width = -width;
+        } else if matches!(
+            self.active_handle,
+            DragHandle::BottomLeft | DragHandle::Left | DragHandle::TopLeft
+        ) && width < MIN_SIZE
+        {
+            let r = x + width.abs();
+            if width.is_sign_positive() {
+                width = MIN_SIZE;
+                x = r - width;
+            }
+            x += width;
+            width = -width;
         }
-        if height < 0.0 {
+
+        if height < 0.0
+            && matches!(
+                self.active_handle,
+                DragHandle::BottomLeft | DragHandle::Bottom | DragHandle::BottomRight
+            )
+        {
             if height.abs() < MIN_SIZE {
                 height = -MIN_SIZE;
             }
 
+            y += height;
+            height = -height;
+        } else if matches!(
+            self.active_handle,
+            DragHandle::TopLeft | DragHandle::Top | DragHandle::TopRight
+        ) && height < MIN_SIZE
+        {
+            let r = y + height.abs();
+            if height.is_sign_positive() {
+                height = MIN_SIZE;
+                y = r - height;
+            }
             y += height;
             height = -height;
         }
