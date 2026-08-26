@@ -802,6 +802,8 @@ impl Widget<CanvasMessage, Theme, Renderer> for Viewport<'_> {
         viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
+        self.manager.last_bounds.set(bounds);
+
         let is_crop = self.manager.active_tool == Some(ToolKind::Crop);
 
         if is_crop {
