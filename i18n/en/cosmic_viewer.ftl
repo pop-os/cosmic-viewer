@@ -2,6 +2,11 @@
 app-name = COSMIC Viewer
 app-description = Image viewer for the COSMIC desktop
 
+## About
+menu-about = About COSMIC Viewer...
+repository = Repository
+support = Support
+
 # Menu - File
 menu-file = File
 menu-open-file = Open file

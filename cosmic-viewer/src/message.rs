@@ -48,6 +48,7 @@ pub enum ViewerMessage {
     CopyToClipboard,
     CopyFilePath,
     Cut,
+    LaunchUrl(String),
     NavScroll(Viewport),
     Open(PathBuf),
     OpenFileDialog,

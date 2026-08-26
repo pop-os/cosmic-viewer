@@ -35,6 +35,7 @@ use cosmic::{
     theme::{self, Button},
     widget::{
         self, Column, Id, Row, Space, Toasts,
+        about::About,
         button::{self, focus},
         canvas,
         color_picker::{
@@ -145,6 +146,7 @@ pub struct CosmicViewer {
     watcher_rescan_pending: bool,
     was_narrow: bool,
     toasts: Toasts<ViewerMessage>,
+    about: About,
 }
 
 impl CosmicViewer {
@@ -1509,6 +1511,21 @@ impl Application for CosmicViewer {
             watcher_rescan_pending: false,
             was_narrow: false,
             toasts: Toasts::new(ViewerMessage::CloseToast),
+            about: About::default()
+                .name(fl!("app-name"))
+                .icon(icon::from_name(Self::APP_ID))
+                .version(env!("CARGO_PKG_VERSION"))
+                .author("System76")
+                .comments(fl!("app-description"))
+                .license("GPL-3.0-only")
+                .developers([("System76", "info@system76.com")])
+                .links([
+                    (fl!("repository"), "https://github.com/pop-os/cosmic-viewer"),
+                    (
+                        fl!("support"),
+                        "https://github.com/pop-os/cosmic-viewer/issues",
+                    ),
+                ]),
         };
 
         if let Some(path) = flags {
@@ -1537,7 +1554,13 @@ impl Application for CosmicViewer {
         let page = self.context_page?;
         let content = match page {
             ContextMessage::ImageDetails => self.image_details_page(),
-            ContextMessage::About => return None,
+            ContextMessage::About => {
+                return Some(context_drawer::about(
+                    &self.about,
+                    |s| Self::Message::LaunchUrl(s.to_string()),
+                    Self::Message::Context(ContextMessage::About),
+                ));
+            }
             ContextMessage::Settings => {
                 let content = self.settings();
                 return Some(
@@ -3815,6 +3838,12 @@ impl Application for CosmicViewer {
             ViewerMessage::NavScroll(viewport) => {
                 self.cur_scroll = Some(viewport);
             }
+            ViewerMessage::LaunchUrl(url) => match open::that_detached(&url) {
+                Ok(()) => {}
+                Err(err) => {
+                    tracing::warn!("failed to open {:?}: {}", url, err);
+                }
+            },
         }
 
         if tasks.is_empty() {

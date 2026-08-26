@@ -56,5 +56,13 @@ zune-image = "0.5.0"
 
 
 [workspace.dependencies.libcosmic]
+features = [
+  "about",
+  "autosize",
+  "tokio",
+  "winit",
+  "a11y",
+  "surface-message",
+  "rfd",
+]
 git = "https://github.com/pop-os/libcosmic.git"
-features = ["autosize", "tokio", "winit", "a11y", "surface-message", "rfd"]
