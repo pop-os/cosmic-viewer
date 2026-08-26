@@ -38,6 +38,7 @@ pub struct CropSelection {
     /// delta from the origin that must be accounted for when bounds checking
     pub pan: Vector,
     last_image_size: Size,
+    zoom: f32,
 }
 
 impl Default for CropSelection {
@@ -58,6 +59,7 @@ impl CropSelection {
             visible: false,
             pan: Vector::ZERO,
             last_image_size: Size::ZERO,
+            zoom: 1.,
         }
     }
 
@@ -130,6 +132,7 @@ impl CropSelection {
 
     /// Update during drag. Enforces ratio constraint if active.
     pub fn update_drag(&mut self, pos: Point, image_size: Size) {
+        let zoomed_size_padding = (image_size * self.zoom - image_size) / 2.;
         self.last_image_size = image_size;
         let delta_x = pos.x - self.drag_origin.x;
         let delta_y = pos.y - self.drag_origin.y;
@@ -248,22 +251,25 @@ impl CropSelection {
         }
 
         if matches!(self.active_handle, DragHandle::Move) {
-            x = x.clamp(self.pan.x, (image_size.width - width).max(0.0) + self.pan.x);
+            x = x.clamp(
+                self.pan.x - zoomed_size_padding.width,
+                (image_size.width - width).max(0.0) + self.pan.x + zoomed_size_padding.width,
+            );
             y = y.clamp(
-                self.pan.y,
-                (image_size.height - height).max(0.0) + self.pan.y,
+                self.pan.y - zoomed_size_padding.height,
+                (image_size.height - height).max(0.0) + self.pan.y + zoomed_size_padding.height,
             );
         } else {
             x = x.clamp(
-                self.pan.x,
-                (image_size.width - MIN_SIZE).max(0.0) + self.pan.x,
+                self.pan.x - zoomed_size_padding.width,
+                (image_size.width - MIN_SIZE).max(0.0) + self.pan.x + zoomed_size_padding.width,
             );
             y = y.clamp(
-                self.pan.y,
-                (image_size.height - MIN_SIZE).max(0.0) + self.pan.y,
+                self.pan.y - zoomed_size_padding.height,
+                (image_size.height - MIN_SIZE).max(0.0) + self.pan.y + zoomed_size_padding.height,
             );
-            width = width.min(image_size.width - x + self.pan.x);
-            height = height.min(image_size.height - y + self.pan.y);
+            width = width.min(image_size.width - x + self.pan.x + zoomed_size_padding.width);
+            height = height.min(image_size.height - y + self.pan.y + zoomed_size_padding.height);
         }
 
         self.region = Rectangle::new(Point::new(x, y), Size::new(width, height));
@@ -577,5 +583,38 @@ impl ToolOperation for CropSelection {
         } else {
             handle.cursor()
         }
+    }
+
+    fn on_zoom_changed(&mut self, old_zoom: f32, new_zoom: f32, image_size: Size) {
+        let mut old_region = self.region;
+        let new_region = if new_zoom > old_zoom {
+            let ratio = new_zoom / old_zoom - 1.;
+            let s_size = old_region.size() * ratio;
+
+            let center = Point::new(image_size.width / 2., image_size.height / 2.);
+            let old_region_loc = old_region.position();
+            let dv = old_region_loc - center;
+
+            old_region.x += dv.x * ratio;
+            old_region.y += dv.y * ratio;
+            old_region.width += s_size.width;
+            old_region.height += s_size.height;
+
+            old_region
+        } else {
+            let ratio = 1. - new_zoom / old_zoom;
+            let s_size = old_region.size() * ratio;
+
+            let center = Point::new(image_size.width / 2., image_size.height / 2.);
+            let old_region_loc = old_region.position();
+            let dv = old_region_loc - center;
+            old_region.x -= dv.x * ratio;
+            old_region.y -= dv.y * ratio;
+            old_region.width -= s_size.width;
+            old_region.height -= s_size.height;
+            old_region
+        };
+        self.zoom = new_zoom;
+        self.region = new_region;
     }
 }
