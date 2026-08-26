@@ -1424,7 +1424,7 @@ impl Application for CosmicViewer {
             .last_color
             .map(|c| Color::from_rgba(c[0], c[1], c[2], c[3]));
         let app_themes = vec![fl!("match-desktop"), fl!("dark"), fl!("light")];
-        core.nav_bar_set_toggled(config.show_navbar);
+        core.nav_bar_set_toggled(config.show_navbar && flags.as_ref().is_none_or(|p| p.is_dir()));
         let mut viewer = Self {
             core,
             cur_scroll: None,
