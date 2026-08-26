@@ -603,7 +603,7 @@ impl Viewport<'_> {
                     // Interior press (not on a handle) pans the image behind the frame.
                     if let Some(crop) = crop
                         && crop.hit_test(pt) == DragHandle::None
-                        && crop.region.contains(pt)
+                        && crop.region().contains(pt)
                     {
                         mgr.crop_pan.set(Some((position, mgr.pan)));
                         shell.capture_event();

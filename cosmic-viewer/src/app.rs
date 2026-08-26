@@ -12,7 +12,7 @@ use crate::{
 use cosmic::{
     Action, Application, ApplicationExt, Core, Element, Task, Theme,
     app::context_drawer,
-    cosmic_config::{ConfigSet, CosmicConfigEntry},
+    cosmic_config::CosmicConfigEntry,
     dialog::file_chooser::{self, FileFilter},
     iced::{
         self, Alignment, Background, Border, Color, Length, Point, Rectangle, Size, Subscription,
@@ -2834,24 +2834,32 @@ impl Application for CosmicViewer {
                 CanvasMessage::Pan(pan) => {
                     let bounds = self.viewport.last_bounds().get();
                     if self.viewport.active_tool() == Some(ToolKind::Crop) {
-                        let crop_region = self
+                        let zoom = self.viewport.zoom();
+                        let size = self.viewport.image_size();
+                        let crop = self
                             .viewport
-                            .preview_ref()
-                            .and_then(|p| p.as_any().downcast_ref::<CropSelection>())
-                            .map(|c| c.region);
-                        if let Some(size) = self.viewport.image_size() {
+                            .preview_mut()
+                            .and_then(|p| p.as_any_mut().downcast_mut::<CropSelection>());
+
+                        if let Some(size) = size {
                             let fit_scale =
                                 (bounds.width / size.width).min(bounds.height / size.height);
-                            let zoom = self.viewport.zoom();
                             // Pan limit = how far the zoomed image extends past the static crop frame.
-                            let (rw, rh) = crop_region
-                                .map_or((size.width, size.height), |r| (r.width, r.height));
+                            let (rw, rh) =
+                                crop.as_ref().map_or((size.width, size.height), |crop| {
+                                    (crop.region().width, crop.region().height)
+                                });
                             let max_x = fit_scale * size.width.mul_add(zoom, -rw).max(0.0) / 2.0;
                             let max_y = fit_scale * size.height.mul_add(zoom, -rh).max(0.0) / 2.0;
-                            self.viewport.set_pan(Vector::new(
-                                pan.x.clamp(-max_x, max_x),
-                                pan.y.clamp(-max_y, max_y),
-                            ));
+
+                            let dx = pan.x.clamp(-max_x, max_x);
+                            let dy = pan.y.clamp(-max_y, max_y);
+                            let dv = Vector::new(dx, dy);
+                            if let Some(crop) = crop {
+                                crop.pan(dv / fit_scale);
+                            }
+
+                            self.viewport.set_pan(dv);
                         }
                     } else if let Some(size) = self.viewport.image_size() {
                         let fit_scale =
@@ -3338,7 +3346,7 @@ impl Application for CosmicViewer {
                             .and_then(|preview| {
                                 preview.as_any_mut().downcast_mut::<CropSelection>()
                             })
-                            .map(|sel| sel.region);
+                            .map(|sel| sel.region());
 
                         if let Some(fit_region) = fit_region
                             && let Some(size) = self.viewport.image_size()

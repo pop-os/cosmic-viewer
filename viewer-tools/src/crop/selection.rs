@@ -6,8 +6,10 @@ use super::{handle::DragHandle, ratio::CropRatio};
 use crate::{ToolOperation, crop::CropOperation};
 use cosmic::{
     Renderer,
-    iced::widget::canvas::{Fill, Frame, Path, Stroke},
-    iced::{Color, Point, Rectangle, Size, mouse},
+    iced::{
+        Color, Point, Rectangle, Size, Vector, mouse,
+        widget::canvas::{Fill, Frame, Path, Stroke},
+    },
 };
 use image::DynamicImage;
 
@@ -22,7 +24,7 @@ const BORDER_WIDTH: f32 = 1.5;
 #[derive(Debug, Clone)]
 pub struct CropSelection {
     /// Current selection rectangle in viewport/screen coordinates.
-    pub region: Rectangle,
+    region: Rectangle,
     /// Active aspect ratio constraint.
     pub ratio: CropRatio,
     /// Which handle is being dragged.
@@ -33,6 +35,9 @@ pub struct CropSelection {
     drag_start_region: Rectangle,
     /// Whether the selection is visible
     pub visible: bool,
+    /// delta from the origin that must be accounted for when bounds checking
+    pub pan: Vector,
+    last_image_size: Size,
 }
 
 impl Default for CropSelection {
@@ -51,12 +56,20 @@ impl CropSelection {
             drag_origin: Point::ORIGIN,
             drag_start_region: Rectangle::default(),
             visible: false,
+            pan: Vector::ZERO,
+            last_image_size: Size::ZERO,
         }
+    }
+
+    pub fn region(&self) -> Rectangle {
+        self.region
     }
 
     /// Activate for a ratio. A fixed ratio shows a centered frame; Custom starts
     /// with no frame - the user draws it from scratch with the reticle.
     pub fn activate(&mut self, ratio: CropRatio, image_size: Size) {
+        self.last_image_size = image_size;
+
         self.ratio = ratio;
 
         if let Some(aspect) = ratio.resolve(image_size) {
@@ -86,6 +99,8 @@ impl CropSelection {
     /// Change the ratio: fixed ratios fill a centered frame, Custom clears to
     /// reticle free-draw.
     pub fn set_ratio(&mut self, ratio: CropRatio, image_size: Size) {
+        self.last_image_size = image_size;
+
         self.activate(ratio, image_size);
     }
 
@@ -105,8 +120,17 @@ impl CropSelection {
         self.drag_start_region = self.region;
     }
 
+    pub fn pan(&mut self, p: Vector) {
+        self.pan = p;
+        self.active_handle = DragHandle::Move;
+        self.drag_origin = self.region.position();
+        self.drag_start_region = self.region;
+        self.update_drag(self.region.position(), self.last_image_size);
+    }
+
     /// Update during drag. Enforces ratio constraint if active.
     pub fn update_drag(&mut self, pos: Point, image_size: Size) {
+        self.last_image_size = image_size;
         let delta_x = pos.x - self.drag_origin.x;
         let delta_y = pos.y - self.drag_origin.y;
         let reg = self.drag_start_region;
@@ -178,7 +202,7 @@ impl CropSelection {
                     let new_height = width / aspect;
                     let dy = new_height - reg.height;
                     let new_y = reg.y - dy;
-                    if new_y < 0. {
+                    if new_y < self.pan.x {
                         y = 0.;
                         height = new_height + new_y;
                         width = height * aspect;
@@ -191,7 +215,7 @@ impl CropSelection {
                     let new_height = width / aspect;
                     let dy = new_height - reg.height;
                     let new_y = reg.y - dy;
-                    if new_y < 0. {
+                    if new_y < self.pan.y {
                         y = 0.;
                         height = new_height + new_y;
                         let dx = width - height * aspect;
@@ -224,13 +248,22 @@ impl CropSelection {
         }
 
         if matches!(self.active_handle, DragHandle::Move) {
-            x = x.clamp(0.0, (image_size.width - width).max(0.0));
-            y = y.clamp(0.0, (image_size.height - height).max(0.0));
+            x = x.clamp(self.pan.x, (image_size.width - width).max(0.0) + self.pan.x);
+            y = y.clamp(
+                self.pan.y,
+                (image_size.height - height).max(0.0) + self.pan.y,
+            );
         } else {
-            x = x.clamp(0.0, (image_size.width - MIN_SIZE).max(0.0));
-            y = y.clamp(0.0, (image_size.height - MIN_SIZE).max(0.0));
-            width = width.min(image_size.width - x);
-            height = height.min(image_size.height - y);
+            x = x.clamp(
+                self.pan.x,
+                (image_size.width - MIN_SIZE).max(0.0) + self.pan.x,
+            );
+            y = y.clamp(
+                self.pan.y,
+                (image_size.height - MIN_SIZE).max(0.0) + self.pan.y,
+            );
+            width = width.min(image_size.width - x + self.pan.x);
+            height = height.min(image_size.height - y + self.pan.y);
         }
 
         self.region = Rectangle::new(Point::new(x, y), Size::new(width, height));
@@ -487,7 +520,7 @@ impl ToolOperation for CropSelection {
 
     fn commit(&self) -> Option<Box<dyn ToolOperation>> {
         if self.visible && self.region.width >= MIN_SIZE && self.region.height >= MIN_SIZE {
-            Some(Box::new(CropOperation::new(self.region)))
+            Some(Box::new(CropOperation::new(self.region - self.pan)))
         } else {
             None
         }
@@ -501,7 +534,9 @@ impl ToolOperation for CropSelection {
         self
     }
 
-    fn on_press(&mut self, point: Point, _image_size: Size) -> mouse::Interaction {
+    fn on_press(&mut self, point: Point, image_size: Size) -> mouse::Interaction {
+        self.last_image_size = image_size;
+
         let handle = self.hit_test(point);
         if handle != DragHandle::None {
             self.start_handle_drag(handle, point);
@@ -520,12 +555,16 @@ impl ToolOperation for CropSelection {
     }
 
     fn on_drag(&mut self, point: Point, image_size: Size) {
+        self.last_image_size = image_size;
+
         if self.active_handle != DragHandle::None {
             self.update_drag(point, image_size);
         }
     }
 
-    fn on_release(&mut self, _point: Point, _image_size: Size) {
+    fn on_release(&mut self, _point: Point, image_size: Size) {
+        self.last_image_size = image_size;
+
         self.end_drag();
     }
 
