@@ -1522,11 +1522,14 @@ impl Application for CosmicViewer {
     }
 
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
+        let has_image = self.viewport.image().is_some();
+
         vec![menu_bar(
             &self.core,
             &self.key_binds,
             self.viewport.can_undo(),
             self.viewport.can_redo(),
+            has_image,
         )]
     }
 
