@@ -545,11 +545,31 @@ impl Viewport<'_> {
         shell: &mut Shell<'_, CanvasMessage>,
     ) -> bool {
         let mgr = self.manager;
-        if matches!(event, Event::Mouse(MouseEvent::CursorLeft)) && mgr.tool_dragging {
+        if matches!(
+            event,
+            Event::Mouse(MouseEvent::CursorLeft | MouseEvent::ButtonReleased(Button::Left))
+        ) && mgr.tool_dragging
+        {
             shell.publish(CanvasMessage::ToolEnd);
             shell.capture_event();
             return true;
         }
+
+        let Some(position) = cursor.position_in(bounds).or_else(|| {
+            if mgr.tool_dragging {
+                let mut pos = cursor.position().unwrap_or_default();
+                pos.x = pos.x.clamp(bounds.x, bounds.x + bounds.width) - bounds.x;
+                pos.y = pos.y.clamp(bounds.y, bounds.y + bounds.height) - bounds.y;
+                return Some(pos);
+            }
+            None
+        }) else {
+            return false;
+        };
+
+        let Event::Mouse(mouse_event) = event else {
+            return false;
+        };
 
         // Release crop pan even if cursor left the canvas
         if mgr.crop_pan.get().is_some()
@@ -562,11 +582,6 @@ impl Viewport<'_> {
             shell.capture_event();
             return true;
         }
-
-        let (Event::Mouse(mouse_event), Some(position)) = (event, cursor.position_in(bounds))
-        else {
-            return false;
-        };
 
         if let Some((start, origin)) = mgr.crop_pan.get()
             && let MouseEvent::CursorMoved { .. } = mouse_event
@@ -651,7 +666,11 @@ impl Viewport<'_> {
     ) -> bool {
         let mgr = self.manager;
 
-        if matches!(event, Event::Mouse(MouseEvent::CursorLeft)) && mgr.tool_dragging {
+        if matches!(
+            event,
+            Event::Mouse(MouseEvent::CursorLeft | MouseEvent::ButtonReleased(Button::Left))
+        ) && mgr.tool_dragging
+        {
             shell.publish(CanvasMessage::ToolEnd);
             shell.capture_event();
             return true;
