@@ -1697,11 +1697,11 @@ impl Application for CosmicViewer {
 
         let main = Column::new()
             .push(image_area)
-            .push(
+            .push_maybe(has_image.then(|| {
                 container(self.build_toolbar())
                     .center_x(Length::Fill)
-                    .padding([spacing.space_xxs, 0, spacing.space_xxs, 0]),
-            )
+                    .padding([spacing.space_xxs, 0, spacing.space_xxs, 0])
+            }))
             .width(Length::Fill)
             .height(Length::Fill);
 
