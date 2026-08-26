@@ -131,11 +131,29 @@ impl CropSelection {
     }
 
     /// Update during drag. Enforces ratio constraint if active.
-    pub fn update_drag(&mut self, pos: Point, image_size: Size) {
+    pub fn update_drag(&mut self, mut pos: Point, image_size: Size) {
         let zoomed_size_padding = (image_size * self.zoom - image_size) / 2.;
         self.last_image_size = image_size;
-        let delta_x = pos.x - self.drag_origin.x;
-        let delta_y = pos.y - self.drag_origin.y;
+
+        let mut delta_x = pos.x - self.drag_origin.x;
+        let mut delta_y = pos.y - self.drag_origin.y;
+
+        if matches!(
+            self.active_handle,
+            DragHandle::BottomLeft | DragHandle::Left | DragHandle::TopLeft
+        ) && self.drag_start_region.x + delta_x < self.pan.x
+        {
+            delta_x = self.pan.x - self.drag_start_region.x;
+        }
+
+        if matches!(
+            self.active_handle,
+            DragHandle::TopLeft | DragHandle::Top | DragHandle::TopRight
+        ) && self.drag_start_region.y + delta_y < self.pan.y
+        {
+            delta_y = self.pan.y - self.drag_start_region.y;
+        }
+
         let reg = self.drag_start_region;
 
         let (mut x, mut y, mut width, mut height) = match self.active_handle {
