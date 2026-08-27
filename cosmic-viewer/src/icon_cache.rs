@@ -28,7 +28,7 @@ impl IconCache {
         }
 
         bundle!("markup-symbolic");
-        bundle!("image-crop-rotate-symbolic");
+        bundle!("image-crop-symbolic");
         bundle!("view-fit-symbolic");
         bundle!("view-actual-size-symbolic");
         bundle!("pan-down-symbolic");

@@ -566,7 +566,7 @@ impl CosmicViewer {
             )
             .start(
                 ToolbarItem::new(icon_btn(
-                    "image-crop-rotate-symbolic",
+                    "image-crop-symbolic",
                     fl!("toolbar-crop"),
                     ViewerMessage::Edit(EditMessage::Crop),
                 ))
