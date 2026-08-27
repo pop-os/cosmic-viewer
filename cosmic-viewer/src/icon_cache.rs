@@ -29,6 +29,7 @@ impl IconCache {
 
         bundle!("markup-symbolic");
         bundle!("image-crop-symbolic");
+        bundle!("insert-polygon-symbolic");
         bundle!("view-fit-symbolic");
         bundle!("view-actual-size-symbolic");
         bundle!("pan-down-symbolic");

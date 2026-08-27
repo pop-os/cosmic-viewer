@@ -542,7 +542,7 @@ impl CosmicViewer {
                         tooltip: String,
                         msg: ViewerMessage|
          -> Element<'_, ViewerMessage> {
-            button::icon(icon::from_name(name))
+            button::icon(icon_cache_get(name))
                 .tooltip(tooltip)
                 .on_press(msg)
                 .into()
@@ -739,7 +739,7 @@ impl CosmicViewer {
                         tooltip: String,
                         msg: ViewerMessage|
          -> Element<'_, ViewerMessage> {
-            button::icon(icon::from_name(name))
+            button::icon(icon_cache_get(name))
                 .tooltip(tooltip)
                 .on_press(msg)
                 .into()
