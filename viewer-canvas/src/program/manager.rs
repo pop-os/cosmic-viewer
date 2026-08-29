@@ -395,15 +395,13 @@ impl ViewportManager {
                 image.height as f32,
             )
         };
+
         let center_x = bounds.width / 2.0;
         let center_y = bounds.height / 2.0;
         let img_x = (point.x - center_x) / fit_scale + image.width as f32 / 2.0;
         let img_y = (point.y - center_y) / fit_scale + image.height as f32 / 2.0;
 
-        Some(Point::new(
-            img_x.clamp(0.0, image.width as f32),
-            img_y.clamp(0.0, image.height as f32),
-        ))
+        Some(Point::new(img_x, img_y))
     }
 
     /// Fit-space mapping WITHOUT clamping. Used to hit-test crop handles that sit flush
@@ -547,9 +545,14 @@ impl Viewport<'_> {
         let mgr = self.manager;
         if matches!(
             event,
-            Event::Mouse(MouseEvent::CursorLeft | MouseEvent::ButtonReleased(Button::Left))
+            Event::Mouse(
+                MouseEvent::CursorEntered
+                    | MouseEvent::CursorLeft
+                    | MouseEvent::ButtonReleased(Button::Left)
+            )
         ) && mgr.tool_dragging
         {
+            mgr.crop_pan.set(None);
             shell.publish(CanvasMessage::ToolEnd);
             shell.capture_event();
             return true;
@@ -558,8 +561,8 @@ impl Viewport<'_> {
         let Some(position) = cursor.position_in(bounds).or_else(|| {
             if mgr.tool_dragging {
                 let mut pos = cursor.position().unwrap_or_default();
-                pos.x = pos.x.clamp(bounds.x, bounds.x + bounds.width) - bounds.x;
-                pos.y = pos.y.clamp(bounds.y, bounds.y + bounds.height) - bounds.y;
+                pos.x = pos.x - bounds.x;
+                pos.y = pos.y - bounds.y;
                 return Some(pos);
             }
             None
@@ -593,6 +596,8 @@ impl Viewport<'_> {
         }
 
         match mouse_event {
+            MouseEvent::CursorEntered => {}
+
             MouseEvent::ButtonPressed(Button::Left) => {
                 let crop = mgr
                     .active_preview

@@ -131,28 +131,12 @@ impl CropSelection {
     }
 
     /// Update during drag. Enforces ratio constraint if active.
-    pub fn update_drag(&mut self, mut pos: Point, image_size: Size) {
+    pub fn update_drag(&mut self, pos: Point, image_size: Size) {
         let zoomed_size_padding = (image_size * self.zoom - image_size) / 2.;
         self.last_image_size = image_size;
 
-        let mut delta_x = pos.x - self.drag_origin.x;
-        let mut delta_y = pos.y - self.drag_origin.y;
-
-        if matches!(
-            self.active_handle,
-            DragHandle::BottomLeft | DragHandle::Left | DragHandle::TopLeft
-        ) && self.drag_start_region.x + delta_x < self.pan.x
-        {
-            delta_x = self.pan.x - self.drag_start_region.x;
-        }
-
-        if matches!(
-            self.active_handle,
-            DragHandle::TopLeft | DragHandle::Top | DragHandle::TopRight
-        ) && self.drag_start_region.y + delta_y < self.pan.y
-        {
-            delta_y = self.pan.y - self.drag_start_region.y;
-        }
+        let delta_x = pos.x - self.drag_origin.x;
+        let delta_y = pos.y - self.drag_origin.y;
 
         let reg = self.drag_start_region;
 
@@ -312,16 +296,21 @@ impl CropSelection {
                 (image_size.height - height).max(0.0) + self.pan.y + zoomed_size_padding.height,
             );
         } else {
+            let prev_x = x;
+            let prev_y = y;
             x = x.clamp(
                 self.pan.x - zoomed_size_padding.width,
                 (image_size.width - MIN_SIZE).max(0.0) + self.pan.x + zoomed_size_padding.width,
             );
+            let dx = x - prev_x;
             y = y.clamp(
                 self.pan.y - zoomed_size_padding.height,
                 (image_size.height - MIN_SIZE).max(0.0) + self.pan.y + zoomed_size_padding.height,
             );
-            width = width.min(image_size.width - x + self.pan.x + zoomed_size_padding.width);
-            height = height.min(image_size.height - y + self.pan.y + zoomed_size_padding.height);
+            let dy = y - prev_y;
+            width = (width - dx).min(image_size.width - x + self.pan.x + zoomed_size_padding.width);
+            height =
+                (height - dy).min(image_size.height - y + self.pan.y + zoomed_size_padding.height);
         }
 
         self.region = Rectangle::new(Point::new(x, y), Size::new(width, height));
