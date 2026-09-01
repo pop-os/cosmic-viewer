@@ -1249,8 +1249,10 @@ impl CosmicViewer {
                 )
             } else {
                 (
-                    &["2px", "4px", "6px", "8px", "10px", "12px"][..],
-                    &[2_f32, 4., 6., 8., 10., 12.][..],
+                    &[
+                        "2px", "4px", "6px", "8px", "10px", "12px", "16px", "24px", "32px",
+                    ][..],
+                    &[2_f32, 4., 6., 8., 10., 12., 16., 24., 32.][..],
                     self.annotate_stroke_size,
                 )
             };
@@ -3252,7 +3254,7 @@ impl Application for CosmicViewer {
                                 }
                             }
                         } else {
-                            let sizes: [f32; 6] = [2., 4., 6., 8., 10., 12.];
+                            let sizes: [f32; 9] = [2., 4., 6., 8., 10., 12., 16., 24., 32.];
                             if let Some(&size) = sizes.get(size) {
                                 self.annotate_stroke_size = size;
                                 if let Some(preview) = self.viewport.preview_mut() {
