@@ -44,7 +44,7 @@ use cosmic::{
         },
         container, divider, dropdown, icon,
         image::Handle,
-        menu::{KeyBind, menu_button},
+        menu::{self, KeyBind},
         mouse_area, nav_bar, popover, scrollable, segmented_button, segmented_control,
         space::horizontal,
         text, toaster,
@@ -108,7 +108,6 @@ pub struct CosmicViewer {
     scroll_id: Id,
     viewport: ViewportManager,
     context_page: Option<ContextMessage>,
-    context_menu_position: Option<Point>,
     annotate_tool: AnnotateTool,
     annotate_color: AnnotateColor,
     annotate_stroke_size: f32,
@@ -446,57 +445,15 @@ impl CosmicViewer {
         content.into()
     }
 
-    fn build_context_menu_element<'a>() -> Element<'a, ViewerMessage> {
-        let menu_item = |label: String, message: ViewerMessage| {
-            menu_button(vec![text(label).into()]).on_press(message)
-        };
-
-        container(
-            Column::new()
-                .push(menu_item(
-                    fl!("menu-copy-to-clipboard"),
-                    ViewerMessage::CopyToClipboard,
-                ))
-                .push(menu_item(
-                    fl!("menu-copy-file-path"),
-                    ViewerMessage::CopyFilePath,
-                ))
-                .push(menu_item(
-                    fl!("menu-revert-all"),
-                    ViewerMessage::Edit(EditMessage::RevertAll),
-                ))
-                .push(menu_item(
-                    fl!("menu-image-details"),
-                    ViewerMessage::Context(ContextMessage::ImageDetails),
-                ))
-                .push(menu_item(
-                    fl!("menu-set-wallpaper"),
-                    ViewerMessage::SetWallpaper,
-                ))
-                .push(menu_item(
-                    fl!("menu-move-to-trash"),
-                    ViewerMessage::MoveToTrash,
-                )),
-        )
-        .padding(1)
-        .style(|theme| {
-            let cosmic = theme.cosmic();
-            // force opaque because it is not a real popup.
-            let component = &cosmic.background(false).component;
-            container::Style {
-                icon_color: Some(component.on.into()),
-                text_color: Some(component.on.into()),
-                background: Some(Background::Color(component.base.into())),
-                border: Border {
-                    radius: cosmic.radius_s().map(|x| x + 1.0).into(),
-                    width: 1.0,
-                    color: component.divider.into(),
-                },
-                ..Default::default()
-            }
-        })
-        .width(Length::Fixed(240.0))
-        .into()
+    fn context_menu_items() -> Vec<menu::Item<MenuAction, String>> {
+        vec![
+            menu::Item::Button(fl!("menu-copy-to-clipboard"), None, MenuAction::CopyToClipboard),
+            menu::Item::Button(fl!("menu-copy-file-path"), None, MenuAction::CopyFilePath),
+            menu::Item::Button(fl!("menu-revert-all"), None, MenuAction::RevertAll),
+            menu::Item::Button(fl!("menu-image-details"), None, MenuAction::ImageDetails),
+            menu::Item::Button(fl!("menu-set-wallpaper"), None, MenuAction::SetWallpaper),
+            menu::Item::Button(fl!("menu-move-to-trash"), None, MenuAction::MoveToTrash),
+        ]
     }
 
     fn popup_style(theme: &cosmic::Theme) -> container::Style {
@@ -1424,7 +1381,6 @@ impl Application for CosmicViewer {
             scroll_id,
             viewport: ViewportManager::default(),
             context_page: None,
-            context_menu_position: None,
             annotate_tool: AnnotateTool::default(),
             annotate_color: initial_color.map(AnnotateColor).unwrap_or_default(),
             annotate_stroke_size: 2.,
@@ -1659,6 +1615,17 @@ impl Application for CosmicViewer {
                 .into()
         };
 
+        let context_items = (has_image
+            && self.wallpaper_dialog.is_none()
+            && self.delete_dialog.is_none())
+        .then(|| menu::items(&self.key_binds, Self::context_menu_items()));
+        let mut content =
+            widget::context_menu(content, context_items).on_surface_action(ViewerMessage::Surface);
+        if let Some(id) = self.core.main_window_id() {
+            content = content.window_id(id);
+        }
+        let content: Element<'_, Self::Message> = content.into();
+
         let spacing = cosmic::theme::active().cosmic().spacing;
 
         let nav_collapsed = !self.core().nav_bar_active();
@@ -1715,18 +1682,7 @@ impl Application for CosmicViewer {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        let mut pop = widget::popover(main);
-        if let Some(point) = self.context_menu_position
-            && self.wallpaper_dialog.is_none()
-            && self.delete_dialog.is_none()
-        {
-            pop = pop
-                .popup(Self::build_context_menu_element())
-                .position(widget::popover::Position::Point(point))
-                .on_close(ViewerMessage::Canvas(CanvasMessage::ContextMenu(None)));
-        }
-
-        let view: Element<'_, Self::Message> = pop.into();
+        let view: Element<'_, Self::Message> = main.into();
 
         if let Some(ref path) = self.wallpaper_dialog {
             let path = path.clone();
@@ -1850,10 +1806,8 @@ impl Application for CosmicViewer {
                 return cosmic::command::set_theme(theme);
             }
             ViewerMessage::Copy => {
-                self.context_menu_position = None;
             }
             ViewerMessage::CopyToClipboard => {
-                self.context_menu_position = None;
                 if let Some(path) = self.nav.current().cloned()
                     && let Some(mime) = path
                         .extension()
@@ -1868,7 +1822,6 @@ impl Application for CosmicViewer {
                 }
             }
             ViewerMessage::CopyFilePath => {
-                self.context_menu_position = None;
                 if let Some(path) = self.nav.current() {
                     return cosmic::iced::clipboard::write(path.display().to_string());
                 }
@@ -2113,7 +2066,6 @@ impl Application for CosmicViewer {
                 tasks.push(self.reload_image_list());
             }
             ViewerMessage::SetWallpaper => {
-                self.context_menu_position = None;
                 if let Some(path) = self.nav.current().cloned() {
                     #[cfg(target_os = "linux")]
                     {
@@ -2180,7 +2132,6 @@ impl Application for CosmicViewer {
                 }
             }
             ViewerMessage::MoveToTrash => {
-                self.context_menu_position = None;
                 if let Some(path) = self.nav.current().cloned() {
                     let next_idx = self.nav.index().and_then(|idx| {
                         if idx > 0 {
@@ -2271,11 +2222,6 @@ impl Application for CosmicViewer {
                 self.toasts.remove(toast_id);
             }
             ViewerMessage::KeyPressed(key, modifiers, text) => {
-                if self.context_menu_position.is_some() && matches!(key, Key::Named(Named::Escape))
-                {
-                    self.context_menu_position = None;
-                    return Task::none();
-                }
 
                 // Enter applies crop, Escape cancels
                 if matches!(key, Key::Named(Named::Enter))
@@ -2841,7 +2787,6 @@ impl Application for CosmicViewer {
                 }
             },
             ViewerMessage::Context(page) => {
-                self.context_menu_position = None;
                 if self.context_page == Some(page) {
                     self.context_page = None;
                 } else {
@@ -2851,9 +2796,7 @@ impl Application for CosmicViewer {
                 self.set_show_context(self.context_page.is_some());
             }
             ViewerMessage::Canvas(msg) => match msg {
-                CanvasMessage::ContextMenu(point) => {
-                    self.context_menu_position = point;
-                }
+                CanvasMessage::ContextMenu(_) => {}
                 CanvasMessage::ZoomIn => self.zoom_by(1.25),
                 CanvasMessage::ZoomOut => self.zoom_by(1.0 / 1.25),
                 CanvasMessage::ZoomBy(factor) => self.zoom_by(factor),
@@ -2938,10 +2881,6 @@ impl Application for CosmicViewer {
                     }
                 }
                 CanvasMessage::ToolStart(point) => {
-                    if self.context_menu_position.is_some() {
-                        self.context_menu_position = None;
-                        return Task::none();
-                    }
 
                     if self.move_mode {
                         let hit = self
@@ -3181,7 +3120,6 @@ impl Application for CosmicViewer {
                 }
             },
             ViewerMessage::Edit(msg) => {
-                self.context_menu_position = None;
                 if !matches!(msg, EditMessage::ColorPicker(_)) && self.color_picker.get_is_active()
                 {
                     if let Some(color) = self.color_picker.get_applied_color() {
