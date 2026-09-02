@@ -39,6 +39,7 @@ impl IconCache {
         bundle!("insert-rectangle-filled-symbolic");
         bundle!("text-highlight-symbolic");
         bundle!("stroke-width-symbolic");
+        bundle!("select-object-symbolic");
         bundle!("format-text-bold-symbolic");
         bundle!("format-text-italic-symbolic");
         bundle!("format-text-underline-symbolic");

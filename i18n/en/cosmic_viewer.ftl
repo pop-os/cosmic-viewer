@@ -53,7 +53,7 @@ menu-fullscreen = Fullscreen
 # Toolbar
 toolbar-crop = Crop
 toolbar-annotate = Markup
-toolbar-move = Move
+toolbar-select = Select
 toolbar-apply = Apply
 toolbar-cancel = Cancel
 toolbar-rotate-left = Rotate Left

@@ -872,8 +872,8 @@ impl CosmicViewer {
             .start_maybe({
                 let has_movable =
                     self.viewport.operations().iter().any(|op| op.movable()) && !self.text_editing;
-                let mut btn = button::icon(icon_cache_get("object-move-symbolic"))
-                    .tooltip(fl!("toolbar-move"));
+                let mut btn = button::icon(icon_cache_get("select-object-symbolic"))
+                    .tooltip(fl!("toolbar-select"));
                 if self.move_mode {
                     btn = btn.class(tool_toggle_class(self.move_mode));
                 }
