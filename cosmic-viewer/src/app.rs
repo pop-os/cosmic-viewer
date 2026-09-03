@@ -1619,8 +1619,9 @@ impl Application for CosmicViewer {
             && self.wallpaper_dialog.is_none()
             && self.delete_dialog.is_none())
         .then(|| menu::items(&self.key_binds, Self::context_menu_items()));
-        let mut content =
-            widget::context_menu(content, context_items).on_surface_action(ViewerMessage::Surface);
+        let mut content = widget::context_menu(content, context_items)
+            .item_width(menu::ItemWidth::Uniform(320))
+            .on_surface_action(ViewerMessage::Surface);
         if let Some(id) = self.core.main_window_id() {
             content = content.window_id(id);
         }
