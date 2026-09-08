@@ -120,3 +120,5 @@ dark = Dark
 light = Light
 startup = Startup
 show-navbar = Show navigation bar on launch
+
+type-here = Type here...

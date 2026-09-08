@@ -2478,6 +2478,7 @@ impl Application for CosmicViewer {
                                 false,
                                 false,
                                 self.text_alignment,
+                                fl!("type-here"),
                             ))));
                             self.sync_text_format_models();
                         }
@@ -3014,6 +3015,7 @@ impl Application for CosmicViewer {
                                 self.text_italic,
                                 self.text_underline,
                                 self.text_alignment,
+                                fl!("type-here"),
                             ))));
                             self.viewport.rebuild_display();
                             return Task::none();
@@ -3058,6 +3060,7 @@ impl Application for CosmicViewer {
                             self.text_italic,
                             self.text_underline,
                             self.text_alignment,
+                            fl!("type-here"),
                         ))));
                     }
 
@@ -3325,6 +3328,7 @@ impl Application for CosmicViewer {
                                     self.text_italic,
                                     self.text_underline,
                                     self.text_alignment,
+                                    fl!("type-here"),
                                 ))));
                                 self.viewport.set_active_tool(Some(ToolKind::Annotate));
                             }

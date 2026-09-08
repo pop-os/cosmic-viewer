@@ -38,6 +38,7 @@ pub struct TextOperation {
     /// axis-aligned image-space footprint; the text is laid out in its reading orientation
     /// (see `reading_size`) and rotated by this many quarter-turns at render/save time.
     pub rotation_steps: u8,
+    pub placeholder: String,
 }
 
 /// A run of identically-styled glyphs, laid out for canvas rendering.
@@ -96,6 +97,7 @@ impl TextOperation {
             false,
             false,
             self.alignment,
+            self.placeholder.clone(),
         );
         // Edit in the upright reading orientation; rotation is re-applied on commit and rendered
         // live by the preview. The footprint->reading conversion is the same swap as reading->footprint.
