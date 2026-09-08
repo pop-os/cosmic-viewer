@@ -3775,7 +3775,7 @@ impl Application for CosmicViewer {
                 }
             }
             ViewerMessage::Surface(action) => {
-                return cosmic::task::message(Action::Cosmic(cosmic::app::Action::Surface(action)));
+                return cosmic::task::message(Action::Surface(action));
             }
             ViewerMessage::ShowNavbar(show_navbar) => {
                 config_set!(show_navbar, show_navbar);
