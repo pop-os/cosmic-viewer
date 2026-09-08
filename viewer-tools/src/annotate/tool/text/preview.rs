@@ -1043,7 +1043,9 @@ impl ToolOperation for TextPreview {
                 let theme = cosmic::theme::active();
                 let space_xxxs = 2. * theme.cosmic().space_xxxs() as f32;
                 let h = TEXT_INSET.mul_add(2.0, space_xxxs + self.font_size * LINE_HEIGHT_FACTOR);
-                self.bounding_box = Rectangle::new(point, Size::new(DEFAULT_BOX_WIDTH, h));
+                let ratio = self.font_size / 24.;
+                let box_width = ratio * DEFAULT_BOX_WIDTH;
+                self.bounding_box = Rectangle::new(point, Size::new(box_width, h));
                 self.drag_origin = point;
                 self.drag_start_box = self.bounding_box;
                 self.custom_dragged = false;
