@@ -110,4 +110,12 @@ impl ToolOperation for PenOperation {
             .iter()
             .any(|p| point.distance(*p) < 4. * self.width)
     }
+
+    fn set_color(&mut self, color: Color) {
+        self.color = color;
+    }
+
+    fn set_annotation_stroke(&mut self, stroke: f32) {
+        self.width = stroke;
+    }
 }

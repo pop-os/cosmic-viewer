@@ -11,8 +11,7 @@ pub use crate::annotate::FONT_SIZE_PRESETS_PT;
 use crate::rotate::RotateDirection;
 use cosmic::{
     Renderer,
-    iced::widget::canvas::Frame,
-    iced::{Point, Rectangle, Size, mouse},
+    iced::{Color, Point, Rectangle, Size, mouse, widget::canvas::Frame},
 };
 use image::DynamicImage;
 use std::{any::Any, fmt::Debug};
@@ -89,4 +88,8 @@ pub trait ToolOperation: Debug {
     }
 
     fn translate(&mut self, _dx: f32, _dy: f32) {}
+
+    fn set_color(&mut self, _color: Color) {}
+
+    fn set_annotation_stroke(&mut self, _stroke: f32) {}
 }

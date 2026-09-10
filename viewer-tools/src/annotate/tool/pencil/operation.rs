@@ -97,4 +97,12 @@ impl ToolOperation for PencilOperation {
             point.y -= region.y;
         }
     }
+
+    fn set_color(&mut self, color: Color) {
+        self.color = color;
+    }
+
+    fn set_annotation_stroke(&mut self, stroke: f32) {
+        self.width = stroke;
+    }
 }

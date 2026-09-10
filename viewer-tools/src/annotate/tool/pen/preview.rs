@@ -90,4 +90,12 @@ impl ToolOperation for PenPreview {
     fn on_release(&mut self, _point: Point, _image_size: Size) {
         // Points already captured during drag; nothing to finalize.
     }
+
+    fn set_color(&mut self, color: Color) {
+        self.color = color;
+    }
+
+    fn set_annotation_stroke(&mut self, stroke: f32) {
+        self.width = stroke;
+    }
 }

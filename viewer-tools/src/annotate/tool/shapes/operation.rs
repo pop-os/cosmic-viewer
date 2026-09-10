@@ -13,7 +13,7 @@ use crate::{
 use cosmic::{
     Renderer,
     iced::widget::canvas::Frame,
-    iced::{Color, Point, Rectangle, Size},
+    iced::{Color, Point, Rectangle, Size, mouse},
 };
 use image::DynamicImage;
 use tiny_skia::{LineCap as SkiaLineCap, Rect};
@@ -198,5 +198,13 @@ impl ToolOperation for ShapeOperation {
 
     fn bounds(&self) -> Option<Rectangle> {
         Some(Self::bounds(self))
+    }
+
+    fn set_color(&mut self, color: Color) {
+        self.color = color;
+    }
+
+    fn set_annotation_stroke(&mut self, stroke: f32) {
+        self.width = stroke;
     }
 }

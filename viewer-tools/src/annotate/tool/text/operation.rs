@@ -239,7 +239,6 @@ impl ToolOperation for TextOperation {
             frame.rotate(Radians(f32::from(steps) * FRAC_PI_2));
             frame.translate(Vector::new(-center.x, -center.y));
         }
-
         for run in &runs {
             let text = canvas::Text {
                 content: run.content.clone(),

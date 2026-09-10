@@ -71,4 +71,12 @@ impl ToolOperation for ShapePreview {
     fn on_drag(&mut self, point: Point, _image_size: Size) {
         self.end = Some(point);
     }
+
+    fn set_color(&mut self, color: Color) {
+        self.color = color;
+    }
+
+    fn set_annotation_stroke(&mut self, stroke: f32) {
+        self.width = stroke;
+    }
 }

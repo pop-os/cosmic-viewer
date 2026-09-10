@@ -252,6 +252,20 @@ impl ViewportManager {
 
     /// Commit the active preview via its own `commit()` method.
     /// Returns true if a commit was made.
+    pub fn apply_tool_continue_edit(&mut self) -> bool {
+        if let Some(ref preview) = self.active_preview
+            && let Some(committed) = preview.commit()
+        {
+            self.operations.push(committed);
+            self.redo_stack.clear();
+            return true;
+        }
+
+        false
+    }
+
+    /// Commit the active preview via its own `commit()` method.
+    /// Returns true if a commit was made.
     pub fn apply_tool(&mut self) -> bool {
         if let Some(ref preview) = self.active_preview
             && let Some(committed) = preview.commit()
@@ -765,6 +779,8 @@ impl Widget<CanvasMessage, Theme, Renderer> for Viewport<'_> {
     ) {
         let bounds = layout.bounds();
         self.manager.last_bounds.set(bounds);
+
+        // TODO draw the active selection box if move tool is selected and something is selected
 
         // Layer 1: Image
         renderer.with_layer(bounds, |renderer| {
