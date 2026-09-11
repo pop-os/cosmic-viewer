@@ -119,7 +119,6 @@ pub struct CosmicViewer {
     move_mode: bool,
     move_target: Option<usize>,
     move_start: Option<Point>,
-    select_target: Option<usize>,
     font_families: Vec<&'static str>,
     text_font_family: &'static str,
     text_font_index: Option<usize>,
@@ -1437,7 +1436,6 @@ impl Application for CosmicViewer {
             text_editing: false,
             move_mode: false,
             move_target: None,
-            select_target: None,
             move_start: None,
             font_families: load_font_families(),
             shape_popup: false,
@@ -2297,7 +2295,7 @@ impl Application for CosmicViewer {
                 if self.move_mode && matches!(key, Key::Named(Named::Escape)) {
                     self.move_mode = false;
                     self.move_target = None;
-                    self.select_target = None;
+                    self.viewport.select_target = None;
                     self.move_start = None;
                     return Task::none();
                 }
@@ -2949,15 +2947,16 @@ impl Application for CosmicViewer {
                         return Task::none();
                     }
 
+                    let s_target = self.viewport.select_target;
                     if self.move_mode {
-                        let hit = self
-                            .viewport
-                            .operations_mut()
-                            .iter()
-                            .rposition(|op| op.movable() && op.hit_test(point));
+                        let hit = self.viewport.operations_mut().iter().enumerate().rposition(
+                            |(i, op)| {
+                                op.movable() && op.hit_test(point, s_target.is_some_and(|s| s == i))
+                            },
+                        );
 
                         self.move_target = hit;
-                        self.select_target = hit;
+                        self.viewport.select_target = hit;
                         self.move_start = Some(point);
                         self.viewport.tool_dragging = true;
                         return Task::none();
@@ -3196,7 +3195,7 @@ impl Application for CosmicViewer {
                 {
                     if let Some(color) = self.color_picker.get_applied_color() {
                         self.annotate_color = AnnotateColor(color);
-                        if let Some(select_target) = self.select_target {
+                        if let Some(select_target) = self.viewport.select_target {
                             self.viewport.operations_mut()[select_target].set_color(color);
                         }
 
@@ -3257,7 +3256,7 @@ impl Application for CosmicViewer {
                             let sizes: [f32; 7] = [8., 10., 12., 14., 16., 18., 20.];
 
                             if let Some((&size, select_target)) =
-                                sizes.get(size).zip(self.select_target)
+                                sizes.get(size).zip(self.viewport.select_target)
                             {
                                 self.viewport.operations_mut()[select_target]
                                     .set_annotation_stroke(size);
@@ -3275,6 +3274,7 @@ impl Application for CosmicViewer {
                             let sizes: [f32; 9] = [2., 4., 6., 8., 10., 12., 16., 24., 32.];
                             if let Some(&size) = sizes.get(size) {
                                 if let Some(o) = self
+                                    .viewport
                                     .select_target
                                     .and_then(|i| self.viewport.operations_mut().get_mut(i))
                                 {
@@ -3308,6 +3308,7 @@ impl Application for CosmicViewer {
                                 self.viewport.apply_tool_continue_edit();
                             }
                         }
+                        self.viewport.select_target = None;
                         self.annotate_tool = tool;
                         self.show_text_format_menu = false;
                         self.move_mode = false;
@@ -3372,6 +3373,7 @@ impl Application for CosmicViewer {
                         self.save_last_color();
                         // TODO use active selection
                         if let Some(o) = self
+                            .viewport
                             .select_target
                             .and_then(|i| self.viewport.operations_mut().get_mut(i))
                         {
@@ -3700,6 +3702,7 @@ impl Application for CosmicViewer {
                         let bold = self.text_bold;
 
                         if let Some(d) = self
+                            .viewport
                             .select_target
                             .and_then(|i| self.viewport.operations_mut().get_mut(i))
                         {
@@ -3741,6 +3744,7 @@ impl Application for CosmicViewer {
                         let italic = self.text_italic;
 
                         if let Some(d) = self
+                            .viewport
                             .select_target
                             .and_then(|i| self.viewport.operations_mut().get_mut(i))
                         {
@@ -3782,6 +3786,7 @@ impl Application for CosmicViewer {
                         let underline = self.text_underline;
 
                         if let Some(d) = self
+                            .viewport
                             .select_target
                             .and_then(|i| self.viewport.operations_mut().get_mut(i))
                         {
@@ -3812,6 +3817,7 @@ impl Application for CosmicViewer {
                         self.text_alignment = alignment;
 
                         if let Some(d) = self
+                            .viewport
                             .select_target
                             .and_then(|i| self.viewport.operations_mut().get_mut(i))
                         {
@@ -3837,6 +3843,7 @@ impl Application for CosmicViewer {
                             let size_px = pt_to_px(size_pt);
 
                             if let Some(d) = self
+                                .viewport
                                 .select_target
                                 .and_then(|i| self.viewport.operations_mut().get_mut(i))
                             {
@@ -3866,6 +3873,7 @@ impl Application for CosmicViewer {
                         self.text_font_family = fam;
 
                         if let Some(d) = self
+                            .viewport
                             .select_target
                             .and_then(|i| self.viewport.operations_mut().get_mut(i))
                         {
@@ -3916,20 +3924,22 @@ impl Application for CosmicViewer {
                     }
                     EditMessage::TextCancel => {
                         self.viewport.cancel_tool();
+                        self.viewport.select_target = None;
                         self.text_editing = false;
                     }
                     EditMessage::TextApply => {
                         self.viewport.apply_tool();
+                        self.viewport.select_target = None;
                         self.text_editing = false;
                     }
                     EditMessage::ToggleMoveMode => {
                         self.move_mode = !self.move_mode;
                         self.move_target = None;
-                        self.select_target = None;
+                        self.viewport.select_target = None;
                         self.move_start = None;
                     }
                     EditMessage::Undo => {
-                        self.select_target = None;
+                        self.viewport.select_target = None;
                         if let Some(op) = self.viewport.undo() {
                             if let Some(rotate) = op.as_any().downcast_ref::<RotateOperation>() {
                                 let inverse = rotate.direction.inverse();
@@ -3976,6 +3986,8 @@ impl Application for CosmicViewer {
                         }
                     }
                     EditMessage::Redo => {
+                        self.viewport.select_target = None;
+
                         if let Some(op) = self.viewport.redo() {
                             if let Some(rotate) = op.as_any().downcast_ref::<RotateOperation>() {
                                 let direction = rotate.direction;
@@ -3999,7 +4011,10 @@ impl Application for CosmicViewer {
                             }
                         }
                     }
-                    EditMessage::RevertAll => self.viewport.revert_all(),
+                    EditMessage::RevertAll => {
+                        self.viewport.select_target = None;
+                        self.viewport.revert_all()
+                    }
                 }
             }
             ViewerMessage::Surface(action) => {

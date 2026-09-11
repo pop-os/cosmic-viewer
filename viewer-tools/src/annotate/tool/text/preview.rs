@@ -851,7 +851,7 @@ impl TextPreview {
 }
 
 impl ToolOperation for TextPreview {
-    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32, _: bool) {
         self.last_scale.set(scale);
 
         // Edit in place: the box, glyphs, selection and caret are all authored in the upright

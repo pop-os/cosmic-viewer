@@ -48,6 +48,7 @@ pub struct ViewportManager {
     zoom: f32,
     pan: Vector,
     active_tool: Option<ToolKind>,
+    pub select_target: Option<usize>,
     pub tool_dragging: bool,
     /// Committed operations (undo stack)
     operations: Vec<Box<dyn ToolOperation>>,
@@ -81,6 +82,7 @@ impl ViewportManager {
             active_preview: None,
             last_bounds: Cell::new(Rectangle::new(Point::new(0.0, 0.0), Size::ZERO)),
             crop_pan: Cell::new(None),
+            select_target: None,
         }
     }
 
@@ -494,6 +496,7 @@ impl Viewport<'_> {
             operations: &[],
             preview: None,
             overlay_only: false,
+            select_target: None,
         };
 
         widget::canvas(canvas)
@@ -520,6 +523,7 @@ impl Viewport<'_> {
                 mgr.active_preview.as_deref()
             },
             overlay_only: true,
+            select_target: self.manager.select_target,
         };
 
         widget::canvas(canvas)
@@ -539,6 +543,7 @@ impl Viewport<'_> {
             operations: &[],
             preview: mgr.active_preview.as_deref(),
             overlay_only: true,
+            select_target: None,
         };
 
         widget::canvas(canvas)

@@ -3,8 +3,8 @@
 use crate::{
     ToolOperation,
     annotate::tool::text::{
-        LINE_HEIGHT_FACTOR, TEXT_INSET, TextSpan, build_buffer_line, color_channel_u8, group_spans,
-        intern_str,
+        BORDER_WIDTH, LINE_HEIGHT_FACTOR, TEXT_INSET, TextSpan, build_buffer_line,
+        color_channel_u8, group_spans, intern_str,
         preview::{TextEditState, TextPreview},
         rotated_footprint, span_attrs,
     },
@@ -12,14 +12,17 @@ use crate::{
 };
 use cosmic::{
     Renderer,
-    iced::advanced::graphics::text::{cosmic_text, font_system},
-    iced::advanced::text::{LineHeight, Shaping},
-    iced::widget::canvas::{self, Frame},
     iced::{
         Color, Font, Point, Radians, Rectangle, Size, Vector,
+        advanced::{
+            graphics::text::{cosmic_text, font_system},
+            text::{LineHeight, Shaping},
+        },
         alignment::{Horizontal, Vertical},
         font,
+        widget::canvas::{self, Frame},
     },
+    widget::canvas::Stroke,
 };
 use image::{DynamicImage, Rgba, RgbaImage, imageops};
 use std::any::Any;
@@ -214,7 +217,7 @@ impl TextOperation {
 }
 
 impl ToolOperation for TextOperation {
-    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, _scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, _scale: f32, selected: bool) {
         if self.spans.is_empty() {
             return;
         }
@@ -239,6 +242,18 @@ impl ToolOperation for TextOperation {
             frame.rotate(Radians(f32::from(steps) * FRAC_PI_2));
             frame.translate(Vector::new(-center.x, -center.y));
         }
+
+        if selected {
+            let border_w = BORDER_WIDTH;
+            let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
+
+            frame.stroke_rectangle(
+                self.bounding_box.position(),
+                self.bounding_box.size(),
+                Stroke::default().with_color(accent).with_width(border_w),
+            );
+        }
+
         for run in &runs {
             let text = canvas::Text {
                 content: run.content.clone(),
@@ -460,7 +475,7 @@ impl ToolOperation for TextOperation {
         true
     }
 
-    fn hit_test(&self, point: Point) -> bool {
+    fn hit_test(&self, point: Point, _selected: bool) -> bool {
         Self::hit_test(self, point)
     }
 

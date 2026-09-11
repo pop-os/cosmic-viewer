@@ -25,7 +25,7 @@ use std::{any::Any, fmt::Debug};
 pub trait ToolOperation: Debug {
     /// Draw the operation's overlay onto the frame.
     /// The frame is already translated/scaled to image coordinates.
-    fn draw(&self, frame: &mut Frame<Renderer>, image_size: Size, scale: f32);
+    fn draw(&self, frame: &mut Frame<Renderer>, image_size: Size, scale: f32, selected: bool);
 
     /// Apply the operation destructively to the image pixels.
     /// Called at save time when flattening all committed operations.
@@ -83,7 +83,7 @@ pub trait ToolOperation: Debug {
         false
     }
 
-    fn hit_test(&self, point: Point) -> bool {
+    fn hit_test(&self, point: Point, selected: bool) -> bool {
         self.bounds().is_some_and(|b| b.contains(point))
     }
 

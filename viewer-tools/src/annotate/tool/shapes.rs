@@ -8,8 +8,10 @@ pub use preview::ShapePreview;
 
 use cosmic::{
     Renderer,
-    iced::widget::canvas::{Fill, Frame, LineCap, Path, Stroke, path::Builder},
-    iced::{Color, Point, Rectangle, Size},
+    iced::{
+        Color, Point, Rectangle, Size, Vector,
+        widget::canvas::{Fill, Frame, LineCap, Path, Stroke, path::Builder},
+    },
     widget::canvas::LineJoin,
 };
 
@@ -33,8 +35,16 @@ pub fn draw_shape(
     width: f32,
     frame: &mut Frame<Renderer>,
     scale: f32,
+    selected: bool,
 ) {
     let path = build_path(kind, start, end);
+    if selected {
+        let start = start - Vector::new(width / 5., width / 5.);
+        let end = end + Vector::new(width / 5., width / 5.);
+        let color: Color = cosmic::theme::active().cosmic().accent_color().into();
+
+        draw_shape(kind, start, end, color, width, frame, scale, false);
+    }
 
     match kind {
         ShapeKind::Star | ShapeKind::Polygon => {

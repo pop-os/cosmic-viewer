@@ -43,7 +43,7 @@ impl HighlighterPreview {
 }
 
 impl ToolOperation for HighlighterPreview {
-    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32, _: bool) {
         if self.points.len() < 2 {
             return;
         }

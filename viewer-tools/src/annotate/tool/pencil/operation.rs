@@ -23,7 +23,7 @@ pub struct PencilOperation {
 }
 
 impl ToolOperation for PencilOperation {
-    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, _scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, _scale: f32, _: bool) {
         if self.points.len() < 2 {
             return;
         }

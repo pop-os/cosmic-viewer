@@ -9,9 +9,11 @@ use crate::{
 };
 use cosmic::{
     Renderer,
-    iced::widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
-    iced::{Color, Point, Rectangle, Size},
-    widget::canvas::LineJoin,
+    iced::{
+        Color, Point, Rectangle, Size,
+        widget::canvas::{Frame, LineCap, Path, Stroke, path::Builder},
+    },
+    widget::canvas::{Fill, LineJoin},
 };
 use image::DynamicImage;
 use tiny_skia::LineCap as SkiaLineCap;
@@ -24,7 +26,7 @@ pub struct PenOperation {
 }
 
 impl ToolOperation for PenOperation {
-    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32, selected: bool) {
         if self.points.len() < 2 {
             return;
         }
@@ -44,6 +46,20 @@ impl ToolOperation for PenOperation {
                 .with_line_cap(LineCap::Round)
                 .with_line_join(LineJoin::Round),
         );
+        if selected {
+            let start = Path::new(|b| {
+                b.circle(self.points[0], self.width * 1.5);
+            });
+            let accent: Color = cosmic::theme::active().cosmic().accent_color().into();
+
+            frame.fill(&start, Fill::from(accent));
+
+            let end = Path::new(|b| {
+                b.circle(self.points[self.points.len() - 1], self.width * 1.5);
+            });
+
+            frame.fill(&end, Fill::from(accent));
+        }
     }
 
     fn apply(&self, image: &mut DynamicImage) {
@@ -105,7 +121,7 @@ impl ToolOperation for PenOperation {
         true
     }
 
-    fn hit_test(&self, point: Point) -> bool {
+    fn hit_test(&self, point: Point, _selected: bool) -> bool {
         self.points
             .iter()
             .any(|p| point.distance(*p) < 4. * self.width)
