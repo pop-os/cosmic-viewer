@@ -23,7 +23,7 @@ pub struct PencilOperation {
 }
 
 impl ToolOperation for PencilOperation {
-    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, _scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, _scale: f32, _: bool) {
         if self.points.len() < 2 {
             return;
         }
@@ -96,5 +96,13 @@ impl ToolOperation for PencilOperation {
             point.x -= region.x;
             point.y -= region.y;
         }
+    }
+
+    fn set_color(&mut self, color: Color) {
+        self.color = color;
+    }
+
+    fn set_annotation_stroke(&mut self, stroke: f32) {
+        self.width = stroke;
     }
 }

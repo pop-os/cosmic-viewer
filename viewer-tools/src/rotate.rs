@@ -34,7 +34,7 @@ impl RotateOperation {
 }
 
 impl ToolOperation for RotateOperation {
-    fn draw(&self, _frame: &mut Frame<Renderer>, _image_size: Size, _scale: f32) {
+    fn draw(&self, _frame: &mut Frame<Renderer>, _image_size: Size, _scale: f32, _: bool) {
         // No overlay for rotation
     }
 

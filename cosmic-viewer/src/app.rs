@@ -872,8 +872,8 @@ impl CosmicViewer {
             .start_maybe({
                 let has_movable =
                     self.viewport.operations().iter().any(|op| op.movable()) && !self.text_editing;
-                let mut btn = button::icon(icon_cache_get("object-move-symbolic"))
-                    .tooltip(fl!("toolbar-move"));
+                let mut btn = button::icon(icon_cache_get("select-object-symbolic"))
+                    .tooltip(fl!("toolbar-select"));
                 if self.move_mode {
                     btn = btn.class(tool_toggle_class(self.move_mode));
                 }
@@ -1249,8 +1249,10 @@ impl CosmicViewer {
                 )
             } else {
                 (
-                    &["2px", "4px", "6px", "8px", "10px", "12px"][..],
-                    &[2_f32, 4., 6., 8., 10., 12.][..],
+                    &[
+                        "2px", "4px", "6px", "8px", "10px", "12px", "16px", "24px", "32px",
+                    ][..],
+                    &[2_f32, 4., 6., 8., 10., 12., 16., 24., 32.][..],
                     self.annotate_stroke_size,
                 )
             };
@@ -2293,6 +2295,7 @@ impl Application for CosmicViewer {
                 if self.move_mode && matches!(key, Key::Named(Named::Escape)) {
                     self.move_mode = false;
                     self.move_target = None;
+                    self.viewport.select_target = None;
                     self.move_start = None;
                     return Task::none();
                 }
@@ -2476,6 +2479,7 @@ impl Application for CosmicViewer {
                                 false,
                                 false,
                                 self.text_alignment,
+                                fl!("type-here"),
                             ))));
                             self.sync_text_format_models();
                         }
@@ -2943,14 +2947,16 @@ impl Application for CosmicViewer {
                         return Task::none();
                     }
 
+                    let s_target = self.viewport.select_target;
                     if self.move_mode {
-                        let hit = self
-                            .viewport
-                            .operations_mut()
-                            .iter()
-                            .rposition(|op| op.movable() && op.hit_test(point));
+                        let hit = self.viewport.operations_mut().iter().enumerate().rposition(
+                            |(i, op)| {
+                                op.movable() && op.hit_test(point, s_target.is_some_and(|s| s == i))
+                            },
+                        );
 
                         self.move_target = hit;
+                        self.viewport.select_target = hit;
                         self.move_start = Some(point);
                         self.viewport.tool_dragging = true;
                         return Task::none();
@@ -3012,6 +3018,7 @@ impl Application for CosmicViewer {
                                 self.text_italic,
                                 self.text_underline,
                                 self.text_alignment,
+                                fl!("type-here"),
                             ))));
                             self.viewport.rebuild_display();
                             return Task::none();
@@ -3056,6 +3063,7 @@ impl Application for CosmicViewer {
                             self.text_italic,
                             self.text_underline,
                             self.text_alignment,
+                            fl!("type-here"),
                         ))));
                     }
 
@@ -3100,6 +3108,7 @@ impl Application for CosmicViewer {
                 }
                 CanvasMessage::ToolEnd => {
                     if self.move_mode {
+                        // TODO if have move target and toolbar selects color, size?, or text formatting, update the move target...
                         self.move_target = None;
                         self.move_start = None;
                         self.viewport.tool_dragging = false;
@@ -3186,6 +3195,10 @@ impl Application for CosmicViewer {
                 {
                     if let Some(color) = self.color_picker.get_applied_color() {
                         self.annotate_color = AnnotateColor(color);
+                        if let Some(select_target) = self.viewport.select_target {
+                            self.viewport.operations_mut()[select_target].set_color(color);
+                        }
+
                         self.save_last_color();
                     }
                     _ = self.color_picker.update::<ViewerMessage>(
@@ -3241,7 +3254,13 @@ impl Application for CosmicViewer {
                     EditMessage::AnnotateStroke(size) => {
                         if self.annotate_tool == AnnotateTool::Highlighter {
                             let sizes: [f32; 7] = [8., 10., 12., 14., 16., 18., 20.];
-                            if let Some(&size) = sizes.get(size) {
+
+                            if let Some((&size, select_target)) =
+                                sizes.get(size).zip(self.viewport.select_target)
+                            {
+                                self.viewport.operations_mut()[select_target]
+                                    .set_annotation_stroke(size);
+
                                 self.highlighter_stroke_size = size;
                                 if let Some(highlighter) =
                                     self.viewport.preview_mut().and_then(|preview| {
@@ -3252,8 +3271,16 @@ impl Application for CosmicViewer {
                                 }
                             }
                         } else {
-                            let sizes: [f32; 6] = [2., 4., 6., 8., 10., 12.];
+                            let sizes: [f32; 9] = [2., 4., 6., 8., 10., 12., 16., 24., 32.];
                             if let Some(&size) = sizes.get(size) {
+                                if let Some(o) = self
+                                    .viewport
+                                    .select_target
+                                    .and_then(|i| self.viewport.operations_mut().get_mut(i))
+                                {
+                                    o.set_annotation_stroke(size);
+                                }
+
                                 self.annotate_stroke_size = size;
                                 if let Some(preview) = self.viewport.preview_mut() {
                                     if let Some(pen) =
@@ -3270,6 +3297,18 @@ impl Application for CosmicViewer {
                         }
                     }
                     EditMessage::AnnotateTool(tool) => {
+                        if matches!(self.annotate_tool, AnnotateTool::Text)
+                            && !matches!(tool, AnnotateTool::Text)
+                        {
+                            if self
+                                .viewport
+                                .preview_mut()
+                                .is_some_and(|p| p.as_any().downcast_ref::<TextPreview>().is_some())
+                            {
+                                self.viewport.apply_tool_continue_edit();
+                            }
+                        }
+                        self.viewport.select_target = None;
                         self.annotate_tool = tool;
                         self.show_text_format_menu = false;
                         self.move_mode = false;
@@ -3323,6 +3362,7 @@ impl Application for CosmicViewer {
                                     self.text_italic,
                                     self.text_underline,
                                     self.text_alignment,
+                                    fl!("type-here"),
                                 ))));
                                 self.viewport.set_active_tool(Some(ToolKind::Annotate));
                             }
@@ -3331,6 +3371,29 @@ impl Application for CosmicViewer {
                     EditMessage::AnnotateColor(color) => {
                         self.annotate_color = color;
                         self.save_last_color();
+                        // TODO use active selection
+                        if let Some(o) = self
+                            .viewport
+                            .select_target
+                            .and_then(|i| self.viewport.operations_mut().get_mut(i))
+                        {
+                            if let Some(text) = o.as_any_mut().downcast_mut::<TextOperation>() {
+                                if let Some(op) = text.as_any_mut().downcast_mut::<TextOperation>()
+                                {
+                                    let mut p = op.to_preview();
+                                    let c = color.0;
+
+                                    p.select_all();
+                                    p.apply_attr_to_selection(|a| a.color(text_color_rgba(c)));
+
+                                    if let Some(committed) = p.commit() {
+                                        *o = committed;
+                                    }
+                                }
+                            } else {
+                                o.set_color(color.0);
+                            }
+                        }
 
                         // Update the active preview's color if one exists
                         if let Some(preview) = self.viewport.preview_mut() {
@@ -3634,12 +3697,35 @@ impl Application for CosmicViewer {
                         self.show_text_format_menu = !self.show_text_format_menu;
                     }
                     EditMessage::TextBold => {
+                        // if we have an operation, convert to preview, select all, apply change, and then
                         self.text_bold = !self.text_bold;
+                        let bold = self.text_bold;
+
+                        if let Some(d) = self
+                            .viewport
+                            .select_target
+                            .and_then(|i| self.viewport.operations_mut().get_mut(i))
+                        {
+                            if let Some(o) = d.as_any_mut().downcast_mut::<TextOperation>() {
+                                let mut p = o.to_preview();
+                                p.select_all();
+                                p.apply_attr_to_selection(|a| {
+                                    a.weight(if bold {
+                                        cosmic_text::Weight::BOLD
+                                    } else {
+                                        cosmic_text::Weight::NORMAL
+                                    })
+                                });
+                                if let Some(committed) = p.commit() {
+                                    *d = committed;
+                                }
+                            }
+                        }
+
                         if let Some(preview) = self.viewport.preview_mut()
                             && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
                         {
                             if text.has_selection() {
-                                let bold = self.text_bold;
                                 text.apply_attr_to_selection(|a| {
                                     a.weight(if bold {
                                         cosmic_text::Weight::BOLD
@@ -3655,11 +3741,33 @@ impl Application for CosmicViewer {
                     }
                     EditMessage::TextItalic => {
                         self.text_italic = !self.text_italic;
+                        let italic = self.text_italic;
+
+                        if let Some(d) = self
+                            .viewport
+                            .select_target
+                            .and_then(|i| self.viewport.operations_mut().get_mut(i))
+                        {
+                            if let Some(o) = d.as_any_mut().downcast_mut::<TextOperation>() {
+                                let mut p = o.to_preview();
+                                p.select_all();
+                                p.apply_attr_to_selection(|a| {
+                                    a.style(if italic {
+                                        cosmic_text::Style::Italic
+                                    } else {
+                                        cosmic_text::Style::Normal
+                                    })
+                                });
+                                if let Some(committed) = p.commit() {
+                                    *d = committed;
+                                }
+                            }
+                        }
+
                         if let Some(preview) = self.viewport.preview_mut()
                             && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
                         {
                             if text.has_selection() {
-                                let italic = self.text_italic;
                                 text.apply_attr_to_selection(|a| {
                                     a.style(if italic {
                                         cosmic_text::Style::Italic
@@ -3675,11 +3783,27 @@ impl Application for CosmicViewer {
                     }
                     EditMessage::TextUnderline => {
                         self.text_underline = !self.text_underline;
+                        let underline = self.text_underline;
+
+                        if let Some(d) = self
+                            .viewport
+                            .select_target
+                            .and_then(|i| self.viewport.operations_mut().get_mut(i))
+                        {
+                            if let Some(o) = d.as_any_mut().downcast_mut::<TextOperation>() {
+                                let mut p = o.to_preview();
+                                p.select_all();
+                                p.apply_attr_to_selection(|a| a.metadata(usize::from(underline)));
+                                if let Some(committed) = p.commit() {
+                                    *d = committed;
+                                }
+                            }
+                        }
+
                         if let Some(preview) = self.viewport.preview_mut()
                             && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
                         {
                             if text.has_selection() {
-                                let underline = self.text_underline;
                                 text.apply_attr_to_selection(|a| {
                                     a.metadata(usize::from(underline))
                                 });
@@ -3691,6 +3815,21 @@ impl Application for CosmicViewer {
                     }
                     EditMessage::TextAlignment(alignment) => {
                         self.text_alignment = alignment;
+
+                        if let Some(d) = self
+                            .viewport
+                            .select_target
+                            .and_then(|i| self.viewport.operations_mut().get_mut(i))
+                        {
+                            if let Some(o) = d.as_any_mut().downcast_mut::<TextOperation>() {
+                                let mut p = o.to_preview();
+                                p.set_line_alignment(alignment);
+                                if let Some(committed) = p.commit() {
+                                    *d = committed;
+                                }
+                            }
+                        }
+
                         if let Some(preview) = self.viewport.preview_mut()
                             && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
                         {
@@ -3702,6 +3841,22 @@ impl Application for CosmicViewer {
                     EditMessage::TextFontSize(idx) => {
                         if let Some(&size_pt) = FONT_SIZE_PRESETS_PT.get(idx) {
                             let size_px = pt_to_px(size_pt);
+
+                            if let Some(d) = self
+                                .viewport
+                                .select_target
+                                .and_then(|i| self.viewport.operations_mut().get_mut(i))
+                            {
+                                if let Some(o) = d.as_any_mut().downcast_mut::<TextOperation>() {
+                                    let mut p = o.to_preview();
+                                    p.select_all();
+                                    p.update_font_size(size_px);
+                                    if let Some(committed) = p.commit() {
+                                        *d = committed;
+                                    }
+                                }
+                            }
+
                             self.text_font_size = size_px;
                             if let Some(preview) = self.viewport.preview_mut()
                                 && let Some(text) =
@@ -3716,6 +3871,24 @@ impl Application for CosmicViewer {
                         self.text_font_index = Some(idx);
                         let fam = self.font_families[idx];
                         self.text_font_family = fam;
+
+                        if let Some(d) = self
+                            .viewport
+                            .select_target
+                            .and_then(|i| self.viewport.operations_mut().get_mut(i))
+                        {
+                            if let Some(o) = d.as_any_mut().downcast_mut::<TextOperation>() {
+                                let mut p = o.to_preview();
+                                p.select_all();
+                                p.apply_attr_to_selection(|a| {
+                                    a.family(cosmic_text::Family::Name(fam))
+                                });
+                                if let Some(committed) = p.commit() {
+                                    *d = committed;
+                                }
+                            }
+                        }
+
                         if let Some(preview) = self.viewport.preview_mut()
                             && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
                         {
@@ -3751,18 +3924,22 @@ impl Application for CosmicViewer {
                     }
                     EditMessage::TextCancel => {
                         self.viewport.cancel_tool();
+                        self.viewport.select_target = None;
                         self.text_editing = false;
                     }
                     EditMessage::TextApply => {
                         self.viewport.apply_tool();
+                        self.viewport.select_target = None;
                         self.text_editing = false;
                     }
                     EditMessage::ToggleMoveMode => {
                         self.move_mode = !self.move_mode;
                         self.move_target = None;
+                        self.viewport.select_target = None;
                         self.move_start = None;
                     }
                     EditMessage::Undo => {
+                        self.viewport.select_target = None;
                         if let Some(op) = self.viewport.undo() {
                             if let Some(rotate) = op.as_any().downcast_ref::<RotateOperation>() {
                                 let inverse = rotate.direction.inverse();
@@ -3809,6 +3986,8 @@ impl Application for CosmicViewer {
                         }
                     }
                     EditMessage::Redo => {
+                        self.viewport.select_target = None;
+
                         if let Some(op) = self.viewport.redo() {
                             if let Some(rotate) = op.as_any().downcast_ref::<RotateOperation>() {
                                 let direction = rotate.direction;
@@ -3832,7 +4011,10 @@ impl Application for CosmicViewer {
                             }
                         }
                     }
-                    EditMessage::RevertAll => self.viewport.revert_all(),
+                    EditMessage::RevertAll => {
+                        self.viewport.select_target = None;
+                        self.viewport.revert_all()
+                    }
                 }
             }
             ViewerMessage::Surface(action) => {

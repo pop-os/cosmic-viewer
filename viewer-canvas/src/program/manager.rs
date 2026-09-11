@@ -48,6 +48,7 @@ pub struct ViewportManager {
     zoom: f32,
     pan: Vector,
     active_tool: Option<ToolKind>,
+    pub select_target: Option<usize>,
     pub tool_dragging: bool,
     /// Committed operations (undo stack)
     operations: Vec<Box<dyn ToolOperation>>,
@@ -81,6 +82,7 @@ impl ViewportManager {
             active_preview: None,
             last_bounds: Cell::new(Rectangle::new(Point::new(0.0, 0.0), Size::ZERO)),
             crop_pan: Cell::new(None),
+            select_target: None,
         }
     }
 
@@ -248,6 +250,20 @@ impl ViewportManager {
     pub fn commit(&mut self, op: Box<dyn ToolOperation>) {
         self.operations.push(op);
         self.redo_stack.clear();
+    }
+
+    /// Commit the active preview via its own `commit()` method.
+    /// Returns true if a commit was made.
+    pub fn apply_tool_continue_edit(&mut self) -> bool {
+        if let Some(ref preview) = self.active_preview
+            && let Some(committed) = preview.commit()
+        {
+            self.operations.push(committed);
+            self.redo_stack.clear();
+            return true;
+        }
+
+        false
     }
 
     /// Commit the active preview via its own `commit()` method.
@@ -480,6 +496,7 @@ impl Viewport<'_> {
             operations: &[],
             preview: None,
             overlay_only: false,
+            select_target: None,
         };
 
         widget::canvas(canvas)
@@ -506,6 +523,7 @@ impl Viewport<'_> {
                 mgr.active_preview.as_deref()
             },
             overlay_only: true,
+            select_target: self.manager.select_target,
         };
 
         widget::canvas(canvas)
@@ -525,6 +543,7 @@ impl Viewport<'_> {
             operations: &[],
             preview: mgr.active_preview.as_deref(),
             overlay_only: true,
+            select_target: None,
         };
 
         widget::canvas(canvas)
@@ -765,6 +784,8 @@ impl Widget<CanvasMessage, Theme, Renderer> for Viewport<'_> {
     ) {
         let bounds = layout.bounds();
         self.manager.last_bounds.set(bounds);
+
+        // TODO draw the active selection box if move tool is selected and something is selected
 
         // Layer 1: Image
         renderer.with_layer(bounds, |renderer| {

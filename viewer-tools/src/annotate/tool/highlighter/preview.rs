@@ -43,7 +43,7 @@ impl HighlighterPreview {
 }
 
 impl ToolOperation for HighlighterPreview {
-    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32, _: bool) {
         if self.points.len() < 2 {
             return;
         }
@@ -138,5 +138,13 @@ impl ToolOperation for HighlighterPreview {
 
     fn on_release(&mut self, _point: Point, _image_size: Size) {
         // Points already captured during drag; nothing to finalize.
+    }
+
+    fn set_color(&mut self, color: Color) {
+        self.color = color;
+    }
+
+    fn set_annotation_stroke(&mut self, stroke: f32) {
+        self.width = stroke;
     }
 }

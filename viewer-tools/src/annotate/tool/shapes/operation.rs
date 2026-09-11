@@ -13,7 +13,7 @@ use crate::{
 use cosmic::{
     Renderer,
     iced::widget::canvas::Frame,
-    iced::{Color, Point, Rectangle, Size},
+    iced::{Color, Point, Rectangle, Size, mouse},
 };
 use image::DynamicImage;
 use tiny_skia::{LineCap as SkiaLineCap, Rect};
@@ -47,7 +47,7 @@ impl ShapeOperation {
     }
 
     #[must_use]
-    pub fn hit_test(&self, point: Point) -> bool {
+    pub fn hit_test(&self, point: Point, _selected: bool) -> bool {
         let b = self.bounds();
         let pad = self.width.max(4.0);
         Rectangle::new(
@@ -66,9 +66,9 @@ impl ShapeOperation {
 }
 
 impl ToolOperation for ShapeOperation {
-    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32, selected: bool) {
         draw_shape(
-            self.kind, self.start, self.end, self.color, self.width, frame, scale,
+            self.kind, self.start, self.end, self.color, self.width, frame, scale, selected,
         );
     }
 
@@ -188,8 +188,8 @@ impl ToolOperation for ShapeOperation {
         true
     }
 
-    fn hit_test(&self, point: Point) -> bool {
-        Self::hit_test(self, point)
+    fn hit_test(&self, point: Point, selected: bool) -> bool {
+        Self::hit_test(self, point, selected)
     }
 
     fn translate(&mut self, dx: f32, dy: f32) {
@@ -198,5 +198,13 @@ impl ToolOperation for ShapeOperation {
 
     fn bounds(&self) -> Option<Rectangle> {
         Some(Self::bounds(self))
+    }
+
+    fn set_color(&mut self, color: Color) {
+        self.color = color;
+    }
+
+    fn set_annotation_stroke(&mut self, stroke: f32) {
+        self.width = stroke;
     }
 }

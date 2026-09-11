@@ -35,9 +35,11 @@ impl ShapePreview {
 }
 
 impl ToolOperation for ShapePreview {
-    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32, _: bool) {
         if let (Some(start), Some(end)) = (self.start, self.end) {
-            draw_shape(self.kind, start, end, self.color, self.width, frame, scale);
+            draw_shape(
+                self.kind, start, end, self.color, self.width, frame, scale, false,
+            );
         }
     }
 
@@ -70,5 +72,13 @@ impl ToolOperation for ShapePreview {
 
     fn on_drag(&mut self, point: Point, _image_size: Size) {
         self.end = Some(point);
+    }
+
+    fn set_color(&mut self, color: Color) {
+        self.color = color;
+    }
+
+    fn set_annotation_stroke(&mut self, stroke: f32) {
+        self.width = stroke;
     }
 }

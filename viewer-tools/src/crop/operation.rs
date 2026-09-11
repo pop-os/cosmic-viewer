@@ -26,7 +26,7 @@ impl CropOperation {
 }
 
 impl ToolOperation for CropOperation {
-    fn draw(&self, _frame: &mut Frame<Renderer>, _image_size: Size, _scale: f32) {}
+    fn draw(&self, _frame: &mut Frame<Renderer>, _image_size: Size, _scale: f32, _: bool) {}
 
     // reason: region holds non-negative pixel coordinates within image bounds;
     // rounding to the nearest pixel and saturating (float->int saturates in Rust)

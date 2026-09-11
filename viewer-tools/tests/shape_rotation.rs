@@ -116,7 +116,7 @@ fn shape_hit_test_inside() {
         RED,
         4.0,
     );
-    assert!(op.hit_test(Point::new(50.0, 50.0)));
+    assert!(op.hit_test(Point::new(50.0, 50.0), false));
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn shape_hit_test_outside() {
         RED,
         4.0,
     );
-    assert!(!op.hit_test(Point::new(200.0, 200.0)));
+    assert!(!op.hit_test(Point::new(200.0, 200.0), false));
 }
 
 #[test]

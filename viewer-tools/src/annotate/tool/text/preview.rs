@@ -35,6 +35,7 @@ pub enum TextEditState {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
 pub struct TextPreview {
+    pub placeholder: String,
     pub color: Color,
     pub font_size: f32,
     pub font_family: &'static str,
@@ -70,6 +71,7 @@ impl TextPreview {
         italic: bool,
         underline: bool,
         alignment: Horizontal,
+        placeholder: String,
     ) -> Self {
         Self {
             color,
@@ -79,6 +81,7 @@ impl TextPreview {
             italic,
             underline,
             alignment,
+            placeholder,
             state: TextEditState::Placing,
             bounding_box: Rectangle::new(Point::ORIGIN, Size::ZERO),
             last_scale: Cell::new(1.0),
@@ -848,7 +851,7 @@ impl TextPreview {
 }
 
 impl ToolOperation for TextPreview {
-    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32) {
+    fn draw(&self, frame: &mut Frame<Renderer>, _image_size: Size, scale: f32, _: bool) {
         self.last_scale.set(scale);
 
         // Edit in place: the box, glyphs, selection and caret are all authored in the upright
@@ -887,7 +890,7 @@ impl ToolOperation for TextPreview {
 
             if self.state == TextEditState::Editing && self.is_empty() {
                 let placeholder = canvas::Text {
-                    content: "Type here...".to_string(),
+                    content: self.placeholder.clone(),
                     position: Point::new(origin.x, origin.y),
                     color: Color {
                         a: 0.4,
@@ -1024,6 +1027,7 @@ impl ToolOperation for TextPreview {
             alignment: self.alignment,
             bounding_box: rotated_footprint(self.bounding_box, self.rotation_steps),
             rotation_steps: self.rotation_steps,
+            placeholder: self.placeholder.clone(),
         }))
     }
 
@@ -1043,7 +1047,9 @@ impl ToolOperation for TextPreview {
                 let theme = cosmic::theme::active();
                 let space_xxxs = 2. * theme.cosmic().space_xxxs() as f32;
                 let h = TEXT_INSET.mul_add(2.0, space_xxxs + self.font_size * LINE_HEIGHT_FACTOR);
-                self.bounding_box = Rectangle::new(point, Size::new(DEFAULT_BOX_WIDTH, h));
+                let ratio = self.font_size / 24.;
+                let box_width = ratio * DEFAULT_BOX_WIDTH;
+                self.bounding_box = Rectangle::new(point, Size::new(box_width, h));
                 self.drag_origin = point;
                 self.drag_start_box = self.bounding_box;
                 self.custom_dragged = false;

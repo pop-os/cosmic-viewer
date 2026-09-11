@@ -38,6 +38,7 @@ pub struct ViewerCanvas<'a> {
     pub zoom: f32,
     pub pan: Vector,
     pub active_tool: Option<ToolKind>,
+    pub select_target: Option<usize>,
     pub operations: &'a [Box<dyn ToolOperation>],
     pub preview: Option<&'a dyn ToolOperation>,
     pub overlay_only: bool,
@@ -169,12 +170,13 @@ impl Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'_> {
                         -(image.height as f32) / 2.0,
                     ));
 
-                    for op in self.operations {
-                        op.draw(frame, image_size, effective_scale);
+                    for (i, op) in self.operations.into_iter().enumerate() {
+                        let is_selected = self.select_target.is_some_and(|s| s == i);
+                        op.draw(frame, image_size, effective_scale, is_selected);
                     }
 
                     if let Some(preview) = self.preview {
-                        preview.draw(frame, image_size, effective_scale);
+                        preview.draw(frame, image_size, effective_scale, false);
                     }
                 };
 
