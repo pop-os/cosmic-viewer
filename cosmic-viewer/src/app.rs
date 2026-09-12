@@ -2922,9 +2922,7 @@ impl Application for CosmicViewer {
                     self.viewport.zoom_to_actual_size(viewport_size);
                 }
                 CanvasMessage::FillView => {
-                    let bounds = self.viewport.last_bounds().get();
-                    let viewport_size = Size::new(bounds.width, bounds.height);
-                    self.viewport.fill_zoom(viewport_size);
+                    self.viewport.set_zoom(self.viewport.fit_zoom(None));
                 }
                 CanvasMessage::Fullscreen => {
                     self.is_fullscreen = !self.is_fullscreen;
