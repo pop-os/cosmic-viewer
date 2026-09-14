@@ -112,7 +112,6 @@ pub struct CosmicViewer {
     annotate_tool: AnnotateTool,
     annotate_color: AnnotateColor,
     annotate_stroke_size: f32,
-    highlighter_stroke_size: f32,
     crop_ratio: CropRatio,
     crop_ratio_popup: bool,
     text_editing: bool,
@@ -1243,9 +1242,11 @@ impl CosmicViewer {
         if self.stroke_popup {
             let (labels, sizes, current) = if self.annotate_tool == AnnotateTool::Highlighter {
                 (
-                    &["8px", "10px", "12px", "14px", "16px", "18px", "20px"][..],
-                    &[8_f32, 10., 12., 14., 16., 18., 20.][..],
-                    self.highlighter_stroke_size,
+                    &[
+                        "2px", "4px", "6px", "8px", "10px", "12px", "16px", "24px", "32px",
+                    ][..],
+                    &[2_f32, 4., 6., 8., 10., 12., 16., 24., 32.][..],
+                    self.annotate_stroke_size,
                 )
             } else {
                 (
@@ -1430,7 +1431,6 @@ impl Application for CosmicViewer {
             annotate_tool: AnnotateTool::default(),
             annotate_color: initial_color.map(AnnotateColor).unwrap_or_default(),
             annotate_stroke_size: 2.,
-            highlighter_stroke_size: 8.,
             crop_ratio: CropRatio::Custom,
             crop_ratio_popup: false,
             text_editing: false,
@@ -3157,7 +3157,7 @@ impl Application for CosmicViewer {
                         let preview: Box<dyn ToolOperation> = match self.annotate_tool {
                             AnnotateTool::Highlighter => Box::new(HighlighterPreview::new(
                                 self.annotate_color.0,
-                                self.highlighter_stroke_size,
+                                self.annotate_stroke_size,
                             )),
                             AnnotateTool::Rectangle
                             | AnnotateTool::Ellipse
@@ -3263,7 +3263,7 @@ impl Application for CosmicViewer {
                                 self.viewport.operations_mut()[select_target]
                                     .set_annotation_stroke(size);
 
-                                self.highlighter_stroke_size = size;
+                                self.annotate_stroke_size = size;
                                 if let Some(highlighter) =
                                     self.viewport.preview_mut().and_then(|preview| {
                                         preview.as_any_mut().downcast_mut::<HighlighterPreview>()
@@ -3319,7 +3319,7 @@ impl Application for CosmicViewer {
                                 self.viewport
                                     .set_preview(Some(Box::new(HighlighterPreview::new(
                                         self.annotate_color.0,
-                                        self.highlighter_stroke_size,
+                                        self.annotate_stroke_size,
                                     ))));
                             }
                             AnnotateTool::Pen => {
