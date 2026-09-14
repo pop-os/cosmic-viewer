@@ -94,6 +94,16 @@ impl ToolOperation for ShapeOperation {
                 };
                 fill_on_image(image, &path, self.color);
             }
+            ShapeKind::Block => {
+                if let Some(path) = build_path(|pb| {
+                    let rect = normalize_rect(self.start, self.end);
+                    if let Some(rect) = Rect::from_xywh(rect.x, rect.y, rect.width, rect.height) {
+                        pb.push_rect(rect);
+                    }
+                }) {
+                    fill_on_image(image, &path, self.color);
+                }
+            }
             ShapeKind::Arrow => {
                 let segs = arrow_segments(self.start, self.end, self.width);
                 // `segs[0]` is the shaft, shortened to the head base so the round cap stays hidden
