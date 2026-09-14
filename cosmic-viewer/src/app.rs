@@ -399,25 +399,22 @@ impl CosmicViewer {
                 format_file_size(meta.len()),
             ));
 
-            if let Ok(created) = meta.created() {
-                content = content.push(detail_row(
-                    fl!("image-created"),
-                    format_system_time(created),
-                ));
+            if let Ok(created) = meta.created()
+                && let Some(created) = format_system_time(created)
+            {
+                content = content.push(detail_row(fl!("image-created"), created));
             }
 
-            if let Ok(modified) = meta.modified() {
-                content = content.push(detail_row(
-                    fl!("image-modified"),
-                    format_system_time(modified),
-                ));
+            if let Ok(modified) = meta.modified()
+                && let Some(modified) = format_system_time(modified)
+            {
+                content = content.push(detail_row(fl!("image-modified"), modified));
             }
 
-            if let Ok(accessed) = meta.accessed() {
-                content = content.push(detail_row(
-                    fl!("image-accessed"),
-                    format_system_time(accessed),
-                ));
+            if let Ok(accessed) = meta.accessed()
+                && let Some(accessed) = format_system_time(accessed)
+            {
+                content = content.push(detail_row(fl!("image-accessed"), accessed));
             }
         }
 
@@ -3983,9 +3980,12 @@ fn format_number(num: u64) -> String {
     result
 }
 
-fn format_system_time(time: std::time::SystemTime) -> String {
-    let date_time: chrono::DateTime<chrono::Local> = time.into();
-    date_time.format("%a %d %b %Y %I:%M:%S %p %Z").to_string()
+fn format_system_time(time: std::time::SystemTime) -> Option<String> {
+    jiff::Timestamp::try_from(time).ok().map(|time| {
+        time.to_zoned(jiff::tz::TimeZone::system())
+            .strftime("%a %d %b %Y %I:%M:%S %p %Z")
+            .to_string()
+    })
 }
 
 // reason: the write guard must live across the whole `.faces()` walk (its single
