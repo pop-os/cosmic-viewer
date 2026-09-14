@@ -115,7 +115,6 @@ pub struct CosmicViewer {
     crop_ratio: CropRatio,
     crop_ratio_popup: bool,
     text_editing: bool,
-    move_mode: bool,
     move_target: Option<usize>,
     move_start: Option<Point>,
     font_families: Vec<&'static str>,
@@ -873,8 +872,8 @@ impl CosmicViewer {
                     self.viewport.operations().iter().any(|op| op.movable()) && !self.text_editing;
                 let mut btn = button::icon(icon_cache_get("select-object-symbolic"))
                     .tooltip(fl!("toolbar-select"));
-                if self.move_mode {
-                    btn = btn.class(tool_toggle_class(self.move_mode));
+                if self.viewport.move_mode {
+                    btn = btn.class(tool_toggle_class(self.viewport.move_mode));
                 }
                 let el = has_movable.then(|| {
                     let btn: Element<'_, ViewerMessage> = btn
@@ -1434,7 +1433,6 @@ impl Application for CosmicViewer {
             crop_ratio: CropRatio::Custom,
             crop_ratio_popup: false,
             text_editing: false,
-            move_mode: false,
             move_target: None,
             move_start: None,
             font_families: load_font_families(),
@@ -2292,8 +2290,8 @@ impl Application for CosmicViewer {
                     return self.update(ViewerMessage::Edit(EditMessage::CropCancel));
                 }
 
-                if self.move_mode && matches!(key, Key::Named(Named::Escape)) {
-                    self.move_mode = false;
+                if self.viewport.move_mode && matches!(key, Key::Named(Named::Escape)) {
+                    self.viewport.move_mode = false;
                     self.move_target = None;
                     self.viewport.select_target = None;
                     self.move_start = None;
@@ -2948,7 +2946,7 @@ impl Application for CosmicViewer {
                     }
 
                     let s_target = self.viewport.select_target;
-                    if self.move_mode {
+                    if self.viewport.move_mode {
                         let hit = self.viewport.operations_mut().iter().enumerate().rposition(
                             |(i, op)| {
                                 op.movable() && op.hit_test(point, s_target.is_some_and(|s| s == i))
@@ -3075,7 +3073,7 @@ impl Application for CosmicViewer {
                     }
                 }
                 CanvasMessage::ToolDrag(point) => {
-                    if self.move_mode {
+                    if self.viewport.move_mode {
                         if let Some(idx) = self.move_target
                             && let Some(start) = self.move_start
                         {
@@ -3107,7 +3105,7 @@ impl Application for CosmicViewer {
                     }
                 }
                 CanvasMessage::ToolEnd => {
-                    if self.move_mode {
+                    if self.viewport.move_mode {
                         // TODO if have move target and toolbar selects color, size?, or text formatting, update the move target...
                         self.move_target = None;
                         self.move_start = None;
@@ -3223,7 +3221,7 @@ impl Application for CosmicViewer {
                         self.text_editing = false;
                         self.show_text_format_menu = false;
                         self.viewport.tool_dragging = false;
-                        self.move_mode = false;
+                        self.viewport.move_mode = false;
                     }
                     EditMessage::AnnotateCancel => {
                         if self.text_editing {
@@ -3238,7 +3236,7 @@ impl Application for CosmicViewer {
                         self.viewport.revert_all();
                         self.viewport.set_active_tool(None);
                         self.viewport.set_preview(None);
-                        self.move_mode = false;
+                        self.viewport.move_mode = false;
                         // Restore working image from cache so rotation etc. still works
                         if let Some(path) = self.nav.current().cloned()
                             && let Some(cached) = self.cache.get_full(&path)
@@ -3309,11 +3307,13 @@ impl Application for CosmicViewer {
                             {
                                 self.viewport.apply_tool_continue_edit();
                             }
+                            self.text_editing = false;
                         }
                         self.viewport.select_target = None;
                         self.annotate_tool = tool;
                         self.show_text_format_menu = false;
-                        self.move_mode = false;
+                        self.viewport.move_mode = false;
+
                         match tool {
                             AnnotateTool::Highlighter => {
                                 self.viewport
@@ -3935,7 +3935,7 @@ impl Application for CosmicViewer {
                         self.text_editing = false;
                     }
                     EditMessage::ToggleMoveMode => {
-                        self.move_mode = !self.move_mode;
+                        self.viewport.move_mode = !self.viewport.move_mode;
                         self.move_target = None;
                         self.viewport.select_target = None;
                         self.move_start = None;

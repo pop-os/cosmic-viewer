@@ -49,6 +49,7 @@ pub struct ViewportManager {
     pan: Vector,
     active_tool: Option<ToolKind>,
     pub select_target: Option<usize>,
+    pub move_mode: bool,
     pub tool_dragging: bool,
     /// Committed operations (undo stack)
     operations: Vec<Box<dyn ToolOperation>>,
@@ -83,6 +84,7 @@ impl ViewportManager {
             last_bounds: Cell::new(Rectangle::new(Point::new(0.0, 0.0), Size::ZERO)),
             crop_pan: Cell::new(None),
             select_target: None,
+            move_mode: false,
         }
     }
 
@@ -903,6 +905,8 @@ impl Widget<CanvasMessage, Theme, Renderer> for Viewport<'_> {
             // An in-progress pan behind the crop frame is the closed-hand cursor.
             if self.manager.crop_pan.get().is_some() {
                 return mouse::Interaction::Grabbing;
+            } else if self.manager.move_mode {
+                return mouse::Interaction::default();
             }
             if let Some(position) = cursor.position_in(bounds) {
                 // The crop frame lives in fit space; hit-test the cursor there so the
