@@ -96,7 +96,12 @@ impl ViewportManager {
         &mut self.operations
     }
 
-    pub fn set_image(&mut self, image: Option<CanvasImage>, base: Option<DynamicImage>) {
+    pub fn set_image(
+        &mut self,
+        image: Option<CanvasImage>,
+        base: Option<DynamicImage>,
+        fit_to_window: bool,
+    ) {
         let image = match (image, base.as_ref()) {
             (Some(mut img), Some(base)) => {
                 img.width = base.width();
@@ -105,9 +110,13 @@ impl ViewportManager {
             }
             (img, _) => img,
         };
+        self.zoom = if fit_to_window {
+            self.fit_zoom(image.as_ref())
+        } else {
+            1.0
+        };
         self.image = image;
         self.working_image = base;
-        self.zoom = 1.0;
         self.pan = Vector::ZERO;
         self.active_preview = None;
         self.active_tool = None;
@@ -180,6 +189,19 @@ impl ViewportManager {
             let zy = frame_size.height / (image.height as f32 * fit_scale);
             zx.max(zy).max(1.0)
         })
+    }
+
+    pub fn fit_zoom(&self, image: Option<&CanvasImage>) -> f32 {
+        let Rectangle { width, height, .. } = self.last_bounds().get();
+        if width > 0.0
+            && height > 0.0
+            && let Some(image) = image.or_else(|| self.image())
+        {
+            #[allow(clippy::cast_precision_loss)]
+            super::fit_scale_uncapped(width, height, image.width as f32, image.height as f32)
+        } else {
+            1.0
+        }
     }
 
     pub const fn set_zoom(&mut self, zoom: f32) {

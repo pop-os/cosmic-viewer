@@ -37,6 +37,7 @@ pub enum CanvasMessage {
     ZoomBy(f32),
     Pan(Vector),
     ActualSize,
+    FillView,
     FitToView,
     Fullscreen,
     ToolStart(Point),
