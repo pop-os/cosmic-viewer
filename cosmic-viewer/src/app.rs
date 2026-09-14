@@ -3161,6 +3161,7 @@ impl Application for CosmicViewer {
                             )),
                             AnnotateTool::Rectangle
                             | AnnotateTool::Ellipse
+                            | AnnotateTool::Block
                             | AnnotateTool::Line
                             | AnnotateTool::Arrow
                             | AnnotateTool::Star
@@ -3168,6 +3169,7 @@ impl Application for CosmicViewer {
                                 let kind = match self.annotate_tool {
                                     AnnotateTool::Rectangle => ShapeKind::Rectangle,
                                     AnnotateTool::Ellipse => ShapeKind::Ellipse,
+                                    AnnotateTool::Block => ShapeKind::Block,
                                     AnnotateTool::Line => ShapeKind::Line,
                                     AnnotateTool::Arrow => ShapeKind::Arrow,
                                     AnnotateTool::Star => ShapeKind::Star,
