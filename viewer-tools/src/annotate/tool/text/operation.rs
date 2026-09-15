@@ -19,6 +19,7 @@ use cosmic::{
             text::{LineHeight, Shaping},
         },
         alignment::{Horizontal, Vertical},
+        core::text::Alignment,
         font,
         widget::canvas::{self, Frame},
     },
@@ -258,10 +259,19 @@ impl ToolOperation for TextOperation {
             let text = canvas::Text {
                 content: run.content.clone(),
                 position: Point::new(
-                    run.x + origin.x,
-                    run.line_top
-                        + run.font_size.mul_add(-LINE_HEIGHT_FACTOR, run.line_h)
-                        + origin.y,
+                    match self.alignment {
+                        Horizontal::Left => origin.x,
+                        Horizontal::Center => {
+                            self.bounding_box.x
+                                + self.bounding_box.width / 2.
+                                + (TEXT_INSET + space_xxxs) / 2.
+                        }
+                        Horizontal::Right => {
+                            self.bounding_box.x + self.bounding_box.width
+                                - (TEXT_INSET + space_xxxs)
+                        }
+                    },
+                    origin.y + run.line_top,
                 ),
                 color: run.color,
                 size: run.font_size.into(),
@@ -280,8 +290,12 @@ impl ToolOperation for TextOperation {
                     stretch: font::Stretch::Normal,
                 },
                 max_width: f32::INFINITY,
-                line_height: LineHeight::default(),
-                align_x: Horizontal::Left.into(),
+                line_height: LineHeight::Relative(LINE_HEIGHT_FACTOR),
+                align_x: match self.alignment {
+                    Horizontal::Left => Alignment::Left,
+                    Horizontal::Center => Alignment::Center,
+                    Horizontal::Right => Alignment::Right,
+                },
                 align_y: Vertical::Top,
                 shaping: Shaping::Advanced,
             };

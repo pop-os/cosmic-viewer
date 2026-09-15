@@ -9,13 +9,16 @@ use super::{
 use crate::{ToolOperation, annotate::tool::text::TEXT_INSET};
 use cosmic::{
     Renderer,
-    iced::advanced::graphics::text::{cosmic_text, font_system},
-    iced::advanced::text::{LineHeight, Shaping},
-    iced::widget::canvas::{self, Fill, Frame, Path, Stroke},
     iced::{
         Color, Font, Point, Radians, Rectangle, Size, Vector,
+        advanced::{
+            graphics::text::{cosmic_text, font_system},
+            text::{LineHeight, Shaping},
+        },
         alignment::{Horizontal, Vertical},
+        core::text::Alignment,
         font, mouse,
+        widget::canvas::{self, Fill, Frame, Path, Stroke},
     },
 };
 use cosmic_text::Edit;
@@ -746,14 +749,24 @@ impl TextPreview {
                         cosmic_text::Family::Name(n) if n != self.font_family => intern_str(n),
                         _ => self.font_family,
                     };
-
-                    let baseline_offset =
-                        span_font_size.mul_add(-LINE_HEIGHT_FACTOR, run.line_height);
+                    let theme = cosmic::theme::active();
+                    let space_xxxs = theme.cosmic().space_xxxs() as f32;
                     let text = canvas::Text {
                         content: span_text.to_string(),
                         position: Point::new(
-                            first.x + origin.x,
-                            run.line_top + baseline_offset + origin.y,
+                            match self.alignment {
+                                Horizontal::Left => origin.x,
+                                Horizontal::Center => {
+                                    self.bounding_box.x
+                                        + self.bounding_box.width / 2.
+                                        + (TEXT_INSET + space_xxxs) / 2.
+                                }
+                                Horizontal::Right => {
+                                    self.bounding_box.x + self.bounding_box.width
+                                        - (TEXT_INSET + space_xxxs)
+                                }
+                            },
+                            run.line_top + origin.y,
                         ),
                         color: span_color,
                         size: span_font_size.into(),
@@ -772,16 +785,19 @@ impl TextPreview {
                             stretch: font::Stretch::Normal,
                         },
                         max_width: f32::INFINITY,
-                        line_height: LineHeight::default(),
-                        align_x: Horizontal::Left.into(),
+                        line_height: LineHeight::Relative(LINE_HEIGHT_FACTOR),
+                        align_x: match self.alignment {
+                            Horizontal::Left => Alignment::Left,
+                            Horizontal::Center => Alignment::Center,
+                            Horizontal::Right => Alignment::Right,
+                        },
                         align_y: Vertical::Top,
                         shaping: Shaping::Advanced,
                     };
                     frame.fill_text(text);
 
                     if underline {
-                        let uy = span_font_size
-                            .mul_add(LINE_HEIGHT_FACTOR, run.line_top + baseline_offset)
+                        let uy = span_font_size.mul_add(LINE_HEIGHT_FACTOR, run.line_top)
                             + origin.y
                             - 1.0;
                         let ux = first.x + origin.x;
