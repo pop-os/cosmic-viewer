@@ -135,8 +135,10 @@ impl TextOperation {
 
         let mut font_sys = font_system().write().expect("Write font system");
         let mut buffer = cosmic_text::Buffer::new(font_sys.raw(), metrics);
+        let theme = cosmic::theme::active();
+        let space_xxxs = theme.cosmic().space_xxxs() as f32;
         buffer.set_size(
-            Some(TEXT_INSET.mul_add(-2.0, self.reading_size().width)),
+            Some(TEXT_INSET.mul_add(-2.0, space_xxxs.mul_add(-2., self.reading_size().width))),
             None,
         );
         buffer.set_wrap(cosmic_text::Wrap::WordOrGlyph);
@@ -339,7 +341,13 @@ impl ToolOperation for TextOperation {
 
         let mut font_sys = font_system().write().expect("Write font system");
         let mut buffer = cosmic_text::Buffer::new(font_sys.raw(), img_metrics);
-        buffer.set_size(Some(TEXT_INSET.mul_add(-2.0, reading.width)), None);
+        let theme = cosmic::theme::active();
+        let space_xxxs = theme.cosmic().space_xxxs() as f32;
+
+        buffer.set_size(
+            Some(TEXT_INSET.mul_add(-2.0, space_xxxs.mul_add(-2., self.reading_size().width))),
+            None,
+        );
         buffer.set_wrap(cosmic_text::Wrap::WordOrGlyph);
 
         let lines = group_spans(&self.spans);
@@ -357,7 +365,6 @@ impl ToolOperation for TextOperation {
                 .push(build_buffer_line(line_text, attrs_list, *line_align));
         }
         buffer.shape_until_scroll(font_sys.raw(), false);
-
         // Rasterize the text upright into a transparent layer the size of the reading box, then
         // rotate that layer into the image's orientation. 90° turns stay exact and avoid
         // per-glyph bitmap rotation.
@@ -374,8 +381,6 @@ impl ToolOperation for TextOperation {
         );
 
         let mut swash_cache = cosmic_text::SwashCache::new();
-        let theme = cosmic::theme::active();
-        let space_xxxs = theme.cosmic().space_xxxs() as f32;
         let origin = Point::new(TEXT_INSET + space_xxxs, space_xxxs);
         for run in buffer.layout_runs() {
             let line = &buffer.lines[run.line_i];

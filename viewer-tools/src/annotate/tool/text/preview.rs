@@ -142,8 +142,11 @@ impl TextPreview {
             let mut font_sys = font_system().write().expect("Write font system");
             cosmic_text::Buffer::new(font_sys.raw(), metrics)
         };
+
+        let theme = cosmic::theme::active();
+        let space_xxxs = 2. * theme.cosmic().space_xxxs() as f32;
         buffer.set_size(
-            Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width)),
+            Some(TEXT_INSET.mul_add(-2.0, self.bounding_box.width - space_xxxs)),
             None,
         );
         buffer.set_wrap(cosmic_text::Wrap::WordOrGlyph);
