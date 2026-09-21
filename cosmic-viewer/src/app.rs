@@ -18,7 +18,7 @@ use cosmic::{
         self, Alignment, Background, Border, Color, Length, Point, Rectangle, Size, Subscription,
         Vector,
         advanced::graphics::text::{cosmic_text, font_system},
-        alignment::Horizontal,
+        alignment::{Horizontal, Vertical},
         clipboard, event, font,
         keyboard::{
             Modifiers,
@@ -1592,15 +1592,20 @@ impl Application for CosmicViewer {
                     .and_then(std::clone::Clone::clone)
                     .unwrap_or_else(|| Handle::from_rgba(1, 1, vec![0, 0, 0, 0]));
 
-                let btn = button::image(handle)
-                    .selected(img == active)
-                    .height(Length::Fixed(thumbnail_size as f32))
-                    .width(Length::Fixed(thumbnail_size as f32))
-                    .id(Id::new(format!("img-{}-{img}", p.to_string_lossy())))
-                    .on_press(Action::App(ViewerMessage::Nav(NavMessage::GridActivate(
-                        img,
-                    ))));
-
+                let btn = container(
+                    button::image(handle)
+                        .selected(img == active)
+                        .height(Length::Fill)
+                        .width(Length::Fill)
+                        .id(Id::new(format!("img-{}-{img}", p.to_string_lossy())))
+                        .on_press(Action::App(ViewerMessage::Nav(NavMessage::GridActivate(
+                            img,
+                        )))),
+                )
+                .max_width(thumbnail_size as f32)
+                .max_height(thumbnail_size as f32)
+                .align_x(Horizontal::Center)
+                .align_y(Vertical::Center);
                 sensor(btn)
                     .on_show(move |_| {
                         Action::App(ViewerMessage::Nav(NavMessage::NavThumbnailShow(img)))
