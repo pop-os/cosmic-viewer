@@ -80,7 +80,7 @@ pub enum ViewerMessage {
     Context(ContextMessage),
     Canvas(CanvasMessage),
     Edit(EditMessage),
-    Surface(cosmic::surface::Action),
+    Surface(cosmic::surface::Action<ViewerMessage>),
     WatcherEvent(crate::watcher::WatcherEvent),
     WatcherRescan,
     TextPaste(String),
