@@ -98,6 +98,7 @@ enum TextStyle {
 pub struct CosmicViewer {
     core: Core,
     cur_scroll: Option<iced::widget::scrollable::Viewport>,
+    hovered_item: Option<usize>,
     key_binds: HashMap<KeyBind, MenuAction>,
     config: ViewerConfig,
     app_themes: Vec<String>,
@@ -1416,6 +1417,7 @@ impl Application for CosmicViewer {
         let mut viewer = Self {
             core,
             cur_scroll: None,
+            hovered_item: None,
             key_binds: key_binds::init_keybinds(),
             config,
             app_themes,
@@ -1592,7 +1594,7 @@ impl Application for CosmicViewer {
                     .and_then(std::clone::Clone::clone)
                     .unwrap_or_else(|| Handle::from_rgba(1, 1, vec![0, 0, 0, 0]));
 
-                let btn = container(
+                let mut btn = container(
                     button::image(handle)
                         .selected(img == active)
                         .height(Length::Fill)
@@ -1602,10 +1604,38 @@ impl Application for CosmicViewer {
                             img,
                         )))),
                 )
-                .max_width(thumbnail_size as f32)
-                .max_height(thumbnail_size as f32)
+                .width(thumbnail_size as f32)
+                .height(thumbnail_size as f32)
                 .align_x(Horizontal::Center)
                 .align_y(Vertical::Center);
+
+                if self.hovered_item.is_some_and(|h| h == img) {
+                    btn = btn.style(|theme| {
+                        let cosmic = theme.cosmic();
+
+                        let component = &cosmic.list_button;
+                        container::Style {
+                            icon_color: Some(component.on.into()),
+                            text_color: Some(component.on.into()),
+                            background: Some(Background::Color(
+                                cosmic.primary(theme.transparent).component.hover.into(),
+                            )),
+                            border: Border {
+                                radius: cosmic.radius_s().map(|x| x + 1.0).into(),
+                                width: 0.0,
+                                color: Color::TRANSPARENT,
+                            },
+                            ..Default::default()
+                        }
+                    })
+                }
+                let btn = mouse_area(btn)
+                    .on_enter(cosmic::Action::App(ViewerMessage::HoverItem(Some(img))))
+                    .on_press(Action::App(ViewerMessage::Nav(NavMessage::GridActivate(
+                        img,
+                    ))))
+                    .on_exit(cosmic::Action::App(ViewerMessage::HoverItem(None)));
+
                 sensor(btn)
                     .on_show(move |_| {
                         Action::App(ViewerMessage::Nav(NavMessage::NavThumbnailShow(img)))
@@ -4025,7 +4055,7 @@ impl Application for CosmicViewer {
                 }
             }
             ViewerMessage::Surface(action) => {
-                return cosmic::task::message(Action::Cosmic(cosmic::app::Action::Surface(action)));
+                return cosmic::task::message(cosmic::Action::Surface(action));
             }
             ViewerMessage::ShowNavbar(show_navbar) => {
                 config_set!(show_navbar, show_navbar);
@@ -4039,6 +4069,9 @@ impl Application for CosmicViewer {
                     tracing::warn!("failed to open {:?}: {}", url, err);
                 }
             },
+            ViewerMessage::HoverItem(img) => {
+                self.hovered_item = img;
+            }
         }
 
         if tasks.is_empty() {
