@@ -1,3 +1,9 @@
+cosmic-viewer (1.9.0) noble; urgency=medium
+
+  * 1.9.0
+
+ -- Jeremy Soller <ashley@system76.com>  Wed, 23 Sep 2026 15:11:10 -0600
+
 cosmic-viewer (1.0.0) noble; urgency=medium
 
   * Initial release.

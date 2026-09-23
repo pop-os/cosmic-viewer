@@ -12,7 +12,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.0.0"
+version = "1.9.0"
 description = "Image viewer for the COSMIC Desktop"
 edition = "2024"
 authors = ["Bryan Hyland <bryan.hyland32@gmail.com>"]
