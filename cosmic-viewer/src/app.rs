@@ -31,7 +31,7 @@ use cosmic::{
         },
         window,
     },
-    task::future,
+    task::{self, future},
     theme::{self, Button},
     widget::{
         self, Column, Id, Row, Space, Toasts,
@@ -61,8 +61,8 @@ use std::{
 use viewer_canvas::{CanvasImage, CanvasMessage, ToolKind, ViewportManager};
 use viewer_config::{AppTheme, ViewerConfig};
 use viewer_core::{
-    CachedImage, ClipboardImage, ImageCache, NavState, get_image_dir, image_mime_type, load_image,
-    load_thumbnail, read_dpi, scan_dir,
+    CachedImage, ClipboardImage, ImageCache, NavState, get_image_dir, image_mime_type,
+    is_supported_image, load_image, load_thumbnail, read_dpi, scan_dir,
 };
 use viewer_toolbar::{ItemPriority, ToolbarItem, ToolbarMode, responsive_toolbar};
 use viewer_tools::{
@@ -211,38 +211,49 @@ impl CosmicViewer {
     }
 
     fn open_path(&mut self, path: PathBuf) -> Task<Action<ViewerMessage>> {
-        let Some(dir) = get_image_dir(&path) else {
-            return Task::none();
-        };
+        if let Some(dir) = get_image_dir(&path) {
+            let select = path.is_file().then_some(path);
+            let include_hidden = self.config.show_hidden_files;
+            let sort_mode = self.config.sort_mode;
+            let sort_order = self.config.sort_order;
+            let dir_clone = dir.clone();
 
-        let select = path.is_file().then_some(path);
-        let include_hidden = self.config.show_hidden_files;
-        let sort_mode = self.config.sort_mode;
-        let sort_order = self.config.sort_order;
-        let dir_clone = dir.clone();
+            let title = match select.as_ref() {
+                Some(tab) => tab
+                    .file_name()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .unwrap_or_default(),
+                None => "No Open File".to_string(),
+            };
 
-        let title = match select.as_ref() {
-            Some(tab) => tab
+            let window_title = format!("{title} - {}", fl!("app-name"));
+            Task::batch([
+                if let Some(window_id) = self.core.main_window_id() {
+                    self.set_window_title(window_title, window_id)
+                } else {
+                    Task::none()
+                },
+                future(async move {
+                    let images = scan_dir(&dir, include_hidden, sort_mode, sort_order).await;
+                    Action::App(ViewerMessage::Nav(NavMessage::ScanComplete(
+                        dir_clone, images, select,
+                    )))
+                }),
+            ])
+        } else if path.is_file()
+            && is_supported_image(&path)
+            && path
                 .file_name()
-                .map(|f| f.to_string_lossy().to_string())
-                .unwrap_or_default(),
-            None => "No Open File".to_string(),
-        };
-
-        let window_title = format!("{title} - {}", fl!("app-name"));
-        Task::batch([
-            if let Some(window_id) = self.core.main_window_id() {
-                self.set_window_title(window_title, window_id)
-            } else {
-                Task::none()
-            },
-            future(async move {
-                let images = scan_dir(&dir, include_hidden, sort_mode, sort_order).await;
-                Action::App(ViewerMessage::Nav(NavMessage::ScanComplete(
-                    dir_clone, images, select,
-                )))
-            }),
-        ])
+                .is_some_and(|name| !name.to_str().is_some_and(|name| name.starts_with('.')))
+        {
+            task::message(Action::App(ViewerMessage::Nav(NavMessage::ScanComplete(
+                path.parent().unwrap().to_path_buf(),
+                vec![path.clone()],
+                Some(path),
+            ))))
+        } else {
+            Task::none()
+        }
     }
 
     // reason: thumbnail size and grid index are small in-range counts; exact as f32.
