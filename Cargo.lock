@@ -6171,7 +6171,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "viewer-canvas"
-version = "1.0.0"
+version = "1.9.0"
 dependencies = [
  "image",
  "libcosmic",
@@ -6180,7 +6180,7 @@ dependencies = [
 
 [[package]]
 name = "viewer-config"
-version = "1.0.0"
+version = "1.9.0"
 dependencies = [
  "libcosmic",
  "serde",
@@ -6188,7 +6188,7 @@ dependencies = [
 
 [[package]]
 name = "viewer-core"
-version = "1.0.0"
+version = "1.9.0"
 dependencies = [
  "fast_image_resize",
  "image",
@@ -6207,14 +6207,14 @@ dependencies = [
 
 [[package]]
 name = "viewer-toolbar"
-version = "1.0.0"
+version = "1.9.0"
 dependencies = [
  "libcosmic",
 ]
 
 [[package]]
 name = "viewer-tools"
-version = "1.0.0"
+version = "1.9.0"
 dependencies = [
  "image",
  "libcosmic",
@@ -6223,7 +6223,7 @@ dependencies = [
 
 [[package]]
 name = "viewer-widgets"
-version = "1.0.0"
+version = "1.9.0"
 dependencies = [
  "libcosmic",
 ]
