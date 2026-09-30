@@ -38,6 +38,7 @@ pub enum MenuAction {
     ZoomOut,
     ActualSize,
     FitToView,
+    FillView,
     Fullscreen,
     SetWallpaper,
     MoveToTrash,
@@ -68,6 +69,7 @@ impl MenuAction {
             Self::ZoomOut => ViewerMessage::Canvas(CanvasMessage::ZoomOut),
             Self::ActualSize => ViewerMessage::Canvas(CanvasMessage::ActualSize),
             Self::FitToView => ViewerMessage::Canvas(CanvasMessage::FitToView),
+            Self::FillView => ViewerMessage::Canvas(CanvasMessage::FillView),
             Self::Fullscreen => ViewerMessage::Canvas(CanvasMessage::Fullscreen),
             // Edit Messages
             Self::RotateLeft => ViewerMessage::Edit(EditMessage::RotateLeft),
@@ -175,6 +177,14 @@ pub fn init_keybinds() -> HashMap<KeyBind, MenuAction> {
             key: Key::Character("1".into()),
         },
         MenuAction::ActualSize,
+    );
+
+    binds.insert(
+        KeyBind {
+            modifiers: vec![Modifier::Ctrl],
+            key: Key::Character("2".into()),
+        },
+        MenuAction::FillView,
     );
 
     binds.insert(

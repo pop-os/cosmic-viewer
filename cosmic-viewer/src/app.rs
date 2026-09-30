@@ -2237,7 +2237,8 @@ impl Application for CosmicViewer {
                     if let Some(idx) = next_idx {
                         tasks.push(self.update(ViewerMessage::Nav(NavMessage::GridActivate(idx))));
                     } else {
-                        self.viewport.set_image(None, None);
+                        self.viewport
+                            .set_image(None, None, self.config.fit_to_window);
                     }
 
                     // Trash the file
@@ -2660,11 +2661,15 @@ impl Application for CosmicViewer {
                     }
                     self.was_narrow = narrow;
                 }
+                if self.config.fit_to_window {
+                    self.viewport.set_zoom(self.viewport.fit_zoom(None));
+                }
             }
             ViewerMessage::Nav(msg) => match msg {
                 NavMessage::ScanComplete(dir, images, select) => {
                     self.viewport.cancel_tool();
-                    self.viewport.set_image(None, None);
+                    self.viewport
+                        .set_image(None, None, self.config.fit_to_window);
 
                     self.nav.set_images(dir, images, select.as_deref());
 
@@ -2769,6 +2774,7 @@ impl Application for CosmicViewer {
                                     height: cached.height,
                                 }),
                                 Some(cached.image),
+                                self.config.fit_to_window,
                             );
                         }
                         // Don't clear the viewport - keep the previous image
@@ -2865,6 +2871,7 @@ impl Application for CosmicViewer {
                                         height: cached.height,
                                     }),
                                     Some(cached.image),
+                                    self.config.fit_to_window,
                                 );
                             }
                         }
@@ -2949,6 +2956,9 @@ impl Application for CosmicViewer {
                     let bounds = self.viewport.last_bounds().get();
                     let viewport_size = Size::new(bounds.width, bounds.height);
                     self.viewport.zoom_to_actual_size(viewport_size);
+                }
+                CanvasMessage::FillView => {
+                    self.viewport.set_zoom(self.viewport.fit_zoom(None));
                 }
                 CanvasMessage::Fullscreen => {
                     self.is_fullscreen = !self.is_fullscreen;
@@ -3282,6 +3292,7 @@ impl Application for CosmicViewer {
                                     height: cached.height,
                                 }),
                                 Some(cached.image),
+                                self.config.fit_to_window,
                             );
                         }
                     }
@@ -4095,9 +4106,9 @@ impl Application for CosmicViewer {
 
         Subscription::batch([
             event::listen_with(|event, _status, _id| match event {
-                iced::Event::Window(iced::window::Event::Resized(size)) => {
-                    Some(ViewerMessage::WindowResized(size))
-                }
+                iced::Event::Window(
+                    iced::window::Event::Resized(size) | iced::window::Event::Opened { size, .. },
+                ) => Some(ViewerMessage::WindowResized(size)),
                 iced::Event::Window(iced::window::Event::CloseRequested) => {
                     Some(ViewerMessage::CloseRequested)
                 }
