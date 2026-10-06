@@ -7,7 +7,7 @@
 # mis-derives the fluent domain (it looks for `cosmic-viewer.ftl` instead of the
 # real `i18n/en/cosmic_viewer.ftl`) when version inheritance is used, breaking
 # every `fl!` call. Keep the version literal here until that is resolved upstream.
-version = "1.0.0"
+version = "1.10.0"
 name = "cosmic-viewer"
 description.workspace = true
 edition.workspace = true

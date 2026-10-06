@@ -1,3 +1,9 @@
+cosmic-viewer (1.10.0) noble; urgency=medium
+
+  * Epoch 1.10.0 version update
+
+ -- Michael Murphy <michael@mmurphy.dev>  Wed, 07 Oct 2026 00:25:29 +0200
+
 cosmic-viewer (1.9.0) noble; urgency=medium
 
   * 1.9.0
