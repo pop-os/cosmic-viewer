@@ -1,6 +1,6 @@
 app-name = Projektor COSMIC
 app-description = Przeglądarka obrazów dla środowiska COSMIC
-menu-about = O Rzutniku COSMIC…
+menu-about = O Projektorze COSMIC…
 repository = Repozytorium
 support = Wsparcie
 menu-file = Plik
