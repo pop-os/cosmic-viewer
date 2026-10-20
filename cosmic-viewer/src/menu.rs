@@ -125,7 +125,7 @@ fn build_view_menu(has_image: bool) -> Vec<menu::Item<MenuAction, String>> {
         menu::Item::Divider,
         make_button(fl!("menu-image-details"), None, MenuAction::ImageDetails),
         menu::Item::Divider,
-        menu::Item::Button(fl!("settings"), None, MenuAction::Settings),
+        menu::Item::Button(fl!("menu-settings"), None, MenuAction::Settings),
         menu::Item::Divider,
         menu::Item::Button(fl!("menu-about"), None, MenuAction::About),
     ]
