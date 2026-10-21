@@ -30,7 +30,7 @@ i18n-embed = { version = "0.16.0", features = [
 i18n-embed-fl = "0.10.0"
 rust-embed = "8.11.0"
 open = "5.3.3"
-chrono = "0.4.44"
+jiff = "0.2"
 image.workspace = true
 dirs = "6.0.0"
 notify = "8.2.0"
