@@ -24,7 +24,8 @@ use viewer_tools::{
     crop::{CropSelection, DragHandle},
 };
 
-const MAX_TEX: u32 = 2048;
+/// Keep in sync with `viewer_core::loader::MAX_TEX` (this crate sits below viewer-core).
+const MAX_TEX: u32 = 8192;
 
 // Display texture, downscaled to MAX_TEX. The source image is left full-res.
 fn display_handle(image: &DynamicImage) -> Handle {

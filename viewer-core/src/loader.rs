@@ -16,9 +16,14 @@ use turbojpeg::{Decompressor, Image, PixelFormat, ScalingFactor};
 use zune_image::codecs::bmp::zune_core::colorspace::ColorSpace;
 use zune_image::image::Image as ZuneImage;
 
-// Cap texture uploads at 2048px on the long edge; the full-resolution image
-// is kept separately so edits and saves operate on the real pixels, not the texture.
-const MAX_TEX: u32 = 2048;
+/// Cap texture uploads on the long edge; the full-resolution image is kept separately so
+/// edits and saves operate on the real pixels, not the texture. A texture smaller than the
+/// image is stretched by the GPU, so anything below the image size is soft at 100% zoom.
+/// 8192 covers photos up to ~33MP while bounding GPU memory (256MB for an 8192x8192 RGBA).
+const MAX_TEX: u32 = 8192;
+
+/// Rasterisation size for SVGs, which would otherwise allocate a huge bitmap.
+const SVG_MAX_TEX: u32 = 2048;
 
 #[derive(Debug, Error)]
 pub enum LoadError {
@@ -89,7 +94,7 @@ fn load_image_sync(path: &Path) -> Result<LoadedImage, LoadError> {
         .unwrap_or_default();
 
     if extension == "svg" {
-        return load_svg_at(path, MAX_TEX);
+        return load_svg_at(path, SVG_MAX_TEX);
     }
     if matches!(extension.as_str(), "heif" | "heic") {
         return load_heif(path);
