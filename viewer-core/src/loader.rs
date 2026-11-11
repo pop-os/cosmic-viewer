@@ -10,6 +10,7 @@ use std::{
     fs::{self, File},
     io::{BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 use thiserror::Error;
 use turbojpeg::{Decompressor, Image, PixelFormat, ScalingFactor};
@@ -727,7 +728,11 @@ fn render_svg(tree: &usvg::Tree, w: u32, h: u32) -> Result<Vec<u8>, LoadError> {
 
 fn load_svg_at(path: &Path, max: u32) -> Result<LoadedImage, LoadError> {
     let data = fs::read(path)?;
-    let tree = usvg::Tree::from_data(&data, &usvg::Options::default())
+    let mut svg_options=usvg::Options::default();
+    Arc::make_mut(&mut svg_options.fontdb).load_system_fonts();
+    // Changes default Times New Roman for Liberation Sans
+    svg_options.font_family="Liberation Sans".to_string();
+    let tree = usvg::Tree::from_data(&data, &svg_options)
         .map_err(|e| LoadError::UnsupportedFormat(format!("SVG: {e}")))?;
 
     let (w, h) = svg_fit_dimensions(&tree, max);
