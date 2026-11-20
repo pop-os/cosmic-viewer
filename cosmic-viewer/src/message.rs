@@ -44,6 +44,7 @@ pub enum UnsavedChoice {
 #[derive(Debug, Clone)]
 pub enum ViewerMessage {
     AppTheme(AppTheme),
+    SetSmoothScaling(bool),
     Copy,
     CopyToClipboard,
     CopyFilePath,

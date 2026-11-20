@@ -6,6 +6,7 @@ use cosmic::{
     Element, Theme,
     iced::advanced::{
         Clipboard, Layout, Renderer as CoreRenderer, Shell,
+        image::FilterMethod,
         layout::Node,
         widget::{Tree, tree},
     },
@@ -47,6 +48,7 @@ pub struct ViewportManager {
     working_image: Option<DynamicImage>,
     zoom: f32,
     pan: Vector,
+    filter_method: FilterMethod,
     active_tool: Option<ToolKind>,
     pub select_target: Option<usize>,
     pub move_mode: bool,
@@ -76,6 +78,7 @@ impl ViewportManager {
             working_image: None,
             zoom: 1.0,
             pan: Vector::ZERO,
+            filter_method: FilterMethod::default(),
             active_tool: None,
             tool_dragging: false,
             operations: Vec::new(),
@@ -237,6 +240,10 @@ impl ViewportManager {
 
     pub const fn set_pan(&mut self, pan: Vector) {
         self.pan = pan;
+    }
+
+    pub const fn set_filter_method(&mut self, filter_method: FilterMethod) {
+        self.filter_method = filter_method;
     }
 
     pub const fn active_tool(&self) -> Option<ToolKind> {
@@ -494,6 +501,7 @@ impl Viewport<'_> {
             cache: &mgr.cache,
             zoom: mgr.zoom,
             pan: mgr.pan,
+            filter_method: mgr.filter_method,
             active_tool: mgr.active_tool,
             operations: &[],
             preview: None,
@@ -517,6 +525,7 @@ impl Viewport<'_> {
             cache: &mgr.cache,
             zoom: mgr.zoom,
             pan: mgr.pan,
+            filter_method: mgr.filter_method,
             active_tool: mgr.active_tool,
             operations: &mgr.operations,
             preview: if is_crop {
@@ -541,6 +550,7 @@ impl Viewport<'_> {
             cache: &mgr.cache,
             zoom: 1.0,
             pan: Vector::ZERO,
+            filter_method: mgr.filter_method,
             active_tool: mgr.active_tool,
             operations: &[],
             preview: mgr.active_preview.as_deref(),

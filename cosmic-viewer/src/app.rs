@@ -18,6 +18,7 @@ use cosmic::{
         self, Alignment, Background, Border, Color, Length, Point, Rectangle, Size, Subscription,
         Vector,
         advanced::graphics::text::{cosmic_text, font_system},
+        advanced::image::FilterMethod,
         alignment::{Horizontal, Vertical},
         clipboard, event, font,
         keyboard::{
@@ -1379,7 +1380,16 @@ impl CosmicViewer {
             )),
         );
 
-        widget::settings::view_column(vec![appearance.into()]).into()
+        let render_options = widget::settings::section()
+            .title(fl!("render-options"))
+            .add(
+                widget::settings::item::builder(fl!("smooth-scaling")).control(
+                    widget::toggler(self.config.smooth_scaling)
+                        .on_toggle(|b| ViewerMessage::SetSmoothScaling(b)),
+                ),
+            );
+
+        widget::settings::view_column(vec![appearance.into(), render_options.into()]).into()
     }
 }
 
@@ -1422,6 +1432,10 @@ impl Application for CosmicViewer {
             .map(|c| Color::from_rgba(c[0], c[1], c[2], c[3]));
         let app_themes = vec![fl!("match-desktop"), fl!("dark"), fl!("light")];
         core.nav_bar_set_toggled(config.show_navbar && flags.as_ref().is_none_or(|p| p.is_dir()));
+
+        let mut viewport_manager = ViewportManager::default();
+        viewport_manager.set_filter_method(get_filter_method(config.smooth_scaling));
+
         let mut viewer = Self {
             core,
             cur_scroll: None,
@@ -1434,7 +1448,7 @@ impl Application for CosmicViewer {
             cache: ImageCache::with_defaults(),
             nav_handles: Vec::new(),
             scroll_id,
-            viewport: ViewportManager::default(),
+            viewport: viewport_manager,
             context_page: None,
             context_menu_position: None,
             annotate_tool: AnnotateTool::default(),
@@ -1891,6 +1905,12 @@ impl Application for CosmicViewer {
                 let theme = self.config.app_theme.theme();
 
                 return cosmic::command::set_theme(theme);
+            }
+            ViewerMessage::SetSmoothScaling(should_smooth_scale) => {
+                config_set!(smooth_scaling, should_smooth_scale);
+
+                let filter_method = get_filter_method(should_smooth_scale);
+                self.viewport.set_filter_method(filter_method);
             }
             ViewerMessage::Copy => {
                 self.context_menu_position = None;
@@ -4115,6 +4135,14 @@ impl Application for CosmicViewer {
 }
 
 // HELPER FUNCTIONS
+
+fn get_filter_method(should_smooth_scale: bool) -> FilterMethod {
+    if should_smooth_scale {
+        FilterMethod::Linear
+    } else {
+        FilterMethod::Nearest
+    }
+}
 
 fn detail_row<'a>(label: String, value: String) -> Element<'a, ViewerMessage> {
     Column::new()
