@@ -118,6 +118,8 @@ theme = Theme
 match-desktop = Match desktop
 dark = Dark
 light = Light
+render-options = Image rendering
+smooth-scaling = Smooth scaling
 startup = Startup
 show-navbar = Show navigation bar on launch
 

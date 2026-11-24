@@ -5,7 +5,7 @@ pub mod manager;
 use crate::state::{CanvasImage, CanvasMessage, Interaction, ToolKind};
 use cosmic::{
     Renderer, Theme,
-    iced::advanced::image::Renderer as IcedRenderer,
+    iced::advanced::image::{FilterMethod, Image, Renderer as IcedRenderer},
     iced::widget::canvas::{Action, Event, Frame, Geometry, Program},
     iced::{
         Rectangle, Size, Vector,
@@ -37,6 +37,7 @@ pub struct ViewerCanvas<'a> {
     pub cache: &'a Cache,
     pub zoom: f32,
     pub pan: Vector,
+    pub filter_method: FilterMethod,
     pub active_tool: Option<ToolKind>,
     pub select_target: Option<usize>,
     pub operations: &'a [Box<dyn ToolOperation>],
@@ -217,7 +218,10 @@ impl Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'_> {
                         height: image.height as f32,
                     };
 
-                    frame.draw_image(img_rect, &image.handle);
+                    frame.draw_image(
+                        img_rect,
+                        Image::new(&image.handle).filter_method(self.filter_method),
+                    );
                 });
             }
         }
