@@ -4,6 +4,7 @@ app-description = Image viewer for the COSMIC desktop
 
 ## About
 menu-about = About COSMIC Viewer...
+menu-settings = Settings...
 repository = Repository
 support = Support
 
@@ -18,7 +19,7 @@ menu-save-as = Save as
 menu-set-wallpaper = Set as wallpaper
 menu-move-to-trash = Move to trash
 menu-delete-permanently = Delete permanently
-menu-image-details = Image details
+menu-image-details = Image details...
 menu-quit = Quit
 
 # Wallpaper dialog
