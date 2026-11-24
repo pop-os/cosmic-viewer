@@ -26,7 +26,13 @@ fn build_file_menu(has_image: bool) -> Vec<menu::Item<MenuAction, String>> {
         MenuAction::OpenFolder,
     ));
 
-    items.push(menu::Item::Button(
+    let make_button = if has_image {
+        |name: String, keybind, action: MenuAction| menu::Item::Button(name, keybind, action)
+    } else {
+        |name, keybind, action| menu::Item::ButtonDisabled(name, keybind, action)
+    };
+
+    items.push(make_button(
         fl!("menu-open-containing"),
         None,
         MenuAction::OpenContaining,
@@ -34,11 +40,6 @@ fn build_file_menu(has_image: bool) -> Vec<menu::Item<MenuAction, String>> {
 
     items.push(menu::Item::Divider);
 
-    let make_button = if has_image {
-        |name: String, keybind, action: MenuAction| menu::Item::Button(name, keybind, action)
-    } else {
-        |name, keybind, action| menu::Item::ButtonDisabled(name, keybind, action)
-    };
     items.push(make_button(fl!("menu-save"), None, MenuAction::Save));
     items.push(make_button(fl!("menu-save-as"), None, MenuAction::SaveAs));
 
