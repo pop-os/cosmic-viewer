@@ -731,8 +731,8 @@ fn load_svg_at(path: &Path, max: u32) -> Result<LoadedImage, LoadError> {
     let mut svg_options=usvg::Options::default();
     if svg_options.fontdb.len() == 0 {
         Arc::make_mut(&mut svg_options.fontdb).load_system_fonts();
-        // Changes default Times New Roman for Liberation Sans
-        svg_options.font_family="Liberation Sans".to_string();
+        // Changes default Times New Roman for Open Sans
+        svg_options.font_family="Open Sans".to_string();
     }
     let tree = usvg::Tree::from_data(&data, &svg_options)
         .map_err(|e| LoadError::UnsupportedFormat(format!("SVG: {e}")))?;
