@@ -71,53 +71,58 @@ impl Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'_> {
         bounds: Rectangle,
         cursor: Cursor,
     ) -> Option<Action<CanvasMessage>> {
+        let Event::Mouse(mouse_event) = event else {
+            return None;
+        };
+
+        if let Interaction::Panning { start, start_pan } = *state {
+            match mouse_event {
+                MouseEvent::CursorMoved { .. } => {
+                    let position = cursor.position_from(bounds.position())?;
+                    return Some(Action::publish(CanvasMessage::Pan(
+                        start_pan + (position - start),
+                    )));
+                }
+                MouseEvent::ButtonReleased(Button::Left) | MouseEvent::CursorLeft => {
+                    *state = Interaction::None;
+                    return Some(Action::capture());
+                }
+                _ => {}
+            }
+        }
+
         let position = cursor.position_in(bounds)?;
 
-        match event {
-            Event::Mouse(mouse_event) => match mouse_event {
-                MouseEvent::ButtonPressed(Button::Right) => {
-                    Some(Action::publish(CanvasMessage::ContextMenu(Some(position))))
-                }
-                MouseEvent::ButtonPressed(Button::Left) => {
-                    if self.active_tool.is_none() && self.image_exceeds_bounds(bounds) {
-                        *state = Interaction::Panning {
-                            start: position,
-                            start_pan: self.pan,
-                        };
-                    }
-                    Some(Action::publish(CanvasMessage::ContextMenu(None)))
-                }
-                MouseEvent::CursorMoved { .. } => {
-                    if let Interaction::Panning { start, start_pan } = state {
-                        let delta = Vector::new(position.x - start.x, position.y - start.y);
-                        Some(Action::publish(CanvasMessage::Pan(*start_pan + delta)))
-                    } else {
-                        *state = Interaction::None;
-                        None
-                    }
-                }
-                MouseEvent::ButtonReleased(Button::Left) => {
-                    *state = Interaction::None;
-                    Some(Action::capture())
-                }
-                MouseEvent::WheelScrolled { delta } => {
-                    let msg = match delta {
-                        mouse::ScrollDelta::Lines { y, .. } => {
-                            if *y < 0.0 {
-                                CanvasMessage::ZoomOut
-                            } else {
-                                CanvasMessage::ZoomIn
-                            }
-                        }
-                        mouse::ScrollDelta::Pixels { y, .. } => {
-                            CanvasMessage::ZoomBy((1.0 + y * PIXEL_ZOOM_RATE).clamp(0.5, 2.0))
-                        }
+        match mouse_event {
+            MouseEvent::ButtonPressed(Button::Right) => {
+                Some(Action::publish(CanvasMessage::ContextMenu(Some(position))))
+            }
+            MouseEvent::ButtonPressed(Button::Left) => {
+                if self.active_tool.is_none() && self.image_exceeds_bounds(bounds) {
+                    *state = Interaction::Panning {
+                        start: position,
+                        start_pan: self.pan,
                     };
-
-                    Some(Action::publish(msg))
                 }
-                _ => None,
-            },
+                Some(Action::publish(CanvasMessage::ContextMenu(None)))
+            }
+            MouseEvent::ButtonReleased(Button::Left) => Some(Action::capture()),
+            MouseEvent::WheelScrolled { delta } => {
+                let msg = match delta {
+                    mouse::ScrollDelta::Lines { y, .. } => {
+                        if *y < 0.0 {
+                            CanvasMessage::ZoomOut
+                        } else {
+                            CanvasMessage::ZoomIn
+                        }
+                    }
+                    mouse::ScrollDelta::Pixels { y, .. } => {
+                        CanvasMessage::ZoomBy((1.0 + y * PIXEL_ZOOM_RATE).clamp(0.5, 2.0))
+                    }
+                };
+
+                Some(Action::publish(msg))
+            }
             _ => None,
         }
     }
@@ -231,19 +236,12 @@ impl Program<CanvasMessage, Theme, Renderer> for ViewerCanvas<'_> {
         bounds: Rectangle,
         cursor: Cursor,
     ) -> mouse::Interaction {
-        if !cursor.is_over(bounds) {
-            return mouse::Interaction::default();
-        }
-
         match state {
             Interaction::Panning { .. } => mouse::Interaction::Grabbing,
-            Interaction::None => {
-                if self.active_tool.is_some() {
-                    mouse::Interaction::Crosshair
-                } else {
-                    mouse::Interaction::default()
-                }
+            Interaction::None if self.active_tool.is_some() && cursor.is_over(bounds) => {
+                mouse::Interaction::Crosshair
             }
+            Interaction::None => mouse::Interaction::default(),
         }
     }
 }

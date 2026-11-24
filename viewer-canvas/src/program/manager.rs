@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use super::ViewerCanvas;
-use crate::{CanvasImage, CanvasMessage, state::ToolKind};
+use crate::{
+    CanvasImage, CanvasMessage,
+    state::{Interaction, ToolKind},
+};
 use cosmic::{
     Element, Theme,
     iced::advanced::{
@@ -57,7 +60,6 @@ pub struct ViewportManager {
     // Live preview for the active tool
     active_preview: Option<Box<dyn ToolOperation>>,
     last_bounds: Cell<Rectangle>,
-    crop_pan: Cell<Option<(Point, Vector)>>,
 }
 
 impl Default for ViewportManager {
@@ -82,7 +84,6 @@ impl ViewportManager {
             redo_stack: Vec::new(),
             active_preview: None,
             last_bounds: Cell::new(Rectangle::new(Point::new(0.0, 0.0), Size::ZERO)),
-            crop_pan: Cell::new(None),
             select_target: None,
             move_mode: false,
         }
@@ -561,6 +562,7 @@ impl Viewport<'_> {
         event: &Event,
         bounds: Rectangle,
         cursor: Cursor,
+        interaction: &mut Interaction,
         shell: &mut Shell<'_, CanvasMessage>,
     ) -> bool {
         let mgr = self.manager;
@@ -573,7 +575,6 @@ impl Viewport<'_> {
             )
         ) && mgr.tool_dragging
         {
-            mgr.crop_pan.set(None);
             shell.publish(CanvasMessage::ToolEnd);
             shell.capture_event();
             return true;
@@ -594,27 +595,6 @@ impl Viewport<'_> {
         let Event::Mouse(mouse_event) = event else {
             return false;
         };
-
-        // Release crop pan even if cursor left the canvas
-        if mgr.crop_pan.get().is_some()
-            && matches!(
-                event,
-                Event::Mouse(MouseEvent::ButtonReleased(Button::Left))
-            )
-        {
-            mgr.crop_pan.set(None);
-            shell.capture_event();
-            return true;
-        }
-
-        if let Some((start, origin)) = mgr.crop_pan.get()
-            && let MouseEvent::CursorMoved { .. } = mouse_event
-        {
-            let delta = Vector::new(position.x - start.x, position.y - start.y);
-            shell.publish(CanvasMessage::Pan(origin + delta));
-            shell.capture_event();
-            return true;
-        }
 
         match mouse_event {
             MouseEvent::CursorEntered => {}
@@ -646,7 +626,10 @@ impl Viewport<'_> {
                         && crop.hit_test(pt) == DragHandle::None
                         && crop.region().contains(pt)
                     {
-                        mgr.crop_pan.set(Some((position, mgr.pan)));
+                        *interaction = Interaction::Panning {
+                            start: position,
+                            start_pan: mgr.pan,
+                        };
                         shell.capture_event();
                         return true;
                     }
@@ -865,7 +848,8 @@ impl Widget<CanvasMessage, Theme, Renderer> for Viewport<'_> {
         let is_crop = self.manager.active_tool == Some(ToolKind::Crop);
 
         if is_crop {
-            if self.handle_crop_event(event, bounds, cursor, shell) {
+            let interaction = tree.children[0].state.downcast_mut::<Interaction>();
+            if self.handle_crop_event(event, bounds, cursor, interaction, shell) {
                 return;
             }
         } else if self.manager.active_tool.is_some()
@@ -903,7 +887,10 @@ impl Widget<CanvasMessage, Theme, Renderer> for Viewport<'_> {
 
         if self.manager.active_tool.is_some() {
             // An in-progress pan behind the crop frame is the closed-hand cursor.
-            if self.manager.crop_pan.get().is_some() {
+            if matches!(
+                tree.children[0].state.downcast_ref::<Interaction>(),
+                Interaction::Panning { .. }
+            ) {
                 return mouse::Interaction::Grabbing;
             } else if self.manager.move_mode {
                 return mouse::Interaction::default();
