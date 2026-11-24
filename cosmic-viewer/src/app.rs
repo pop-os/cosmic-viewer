@@ -2314,10 +2314,13 @@ impl Application for CosmicViewer {
                 self.toasts.remove(toast_id);
             }
             ViewerMessage::KeyPressed(key, modifiers, text) => {
-                if self.context_menu_position.is_some() && matches!(key, Key::Named(Named::Escape))
-                {
-                    self.context_menu_position = None;
-                    return Task::none();
+                if matches!(key, Key::Named(Named::Escape)) {
+                    if self.context_menu_position.is_some() {
+                        self.context_menu_position = None;
+                        return Task::none();
+                    } else if let Some(window_id) = self.core.main_window_id() {
+                        return window::close(window_id);
+                    }
                 }
 
                 // Enter applies crop, Escape cancels
