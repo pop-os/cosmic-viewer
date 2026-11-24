@@ -4088,6 +4088,17 @@ impl Application for CosmicViewer {
         (self.core().main_window_id() == Some(id)).then_some(ViewerMessage::Quit)
     }
 
+    fn on_escape(&mut self) -> cosmic::Task<cosmic::Action<Self::Message>> {
+        if self.unsaved_dialog.is_some() {
+            self.unsaved_dialog = None;
+        } else if self.wallpaper_dialog.is_some() {
+            self.wallpaper_dialog = None;
+        } else if self.context_page.is_some() {
+            self.context_page = None;
+        }
+        Task::none()
+    }
+
     fn subscription(&self) -> Subscription<Self::Message> {
         let watcher_sub =
             crate::watcher::watch_directory(self.nav.dir().map(std::path::Path::to_path_buf))
