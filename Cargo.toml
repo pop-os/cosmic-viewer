@@ -44,9 +44,9 @@ libheif-rs = { version = "2.7.0", default-features = false, features = [
   "embedded-libheif",
   "v1_17",
 ] }
-lru = "0.16.3"
+lru = "0.19"
 rayon = "1.11.0"
-resvg = "0.47.0"
+resvg = "0.50.0"
 serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2.0.18"
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "sync", "fs"] }
