@@ -52,7 +52,6 @@ thiserror = "2.0.18"
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "sync", "fs"] }
 tracing = "0.1.44"
 turbojpeg = "1.4.0"
-zune-image = "0.5.0"
 
 
 [workspace.dependencies.libcosmic]

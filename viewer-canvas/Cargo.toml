@@ -14,6 +14,7 @@ license.workspace = true
 libcosmic.workspace = true
 image.workspace = true
 
+viewer-core = { path = "../viewer-core" }
 viewer-tools = { path = "../viewer-tools" }
 
 [lints]

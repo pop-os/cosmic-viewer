@@ -1,9 +1,23 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+mod animation;
+mod apng;
+mod color;
+mod export;
+mod format;
+mod jxl;
+mod native;
+mod pages;
+
 pub mod cache;
 pub mod clipboard;
 pub mod loader;
 pub mod nav;
+
+pub use animation::{Animation, AnimationFrame, OpenedImage, open_image};
+pub use export::save_image;
+pub use format::{EXTENSIONS, Format, OUTPUT_EXTENSIONS, detect, output_format};
+pub use pages::load_page;
 
 // Re-exports
 pub use cache::{CachedImage, ImageCache};

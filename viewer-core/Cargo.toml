@@ -14,18 +14,27 @@ license.workspace = true
 libcosmic.workspace = true
 fast_image_resize.workspace = true
 image.workspace = true
+gif = "0.14.2"
 kamadak-exif.workspace = true
 libheif-rs.workspace = true
 lru.workspace = true
+moxcms = "0.8.1"
+png = "0.18.1"
+tempfile = "3"
+tiff = "0.11.3"
 rayon.workspace = true
 resvg.workspace = true
 turbojpeg.workspace = true
-zune-image.workspace = true
+jxl-oxide = { version = "0.12.6", features = ["moxcms"] }
 
 viewer-config = { path = "../viewer-config" }
 
 thiserror.workspace = true
 tokio.workspace = true
+
+[build-dependencies]
+cc = "1"
+pkg-config = "0.3"
 
 [lints]
 workspace = true

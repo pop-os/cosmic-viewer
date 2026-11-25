@@ -80,37 +80,31 @@ async fn scan_date_ascending_is_ordered() {
 
 #[tokio::test]
 async fn scan_hidden_files_off() {
-    let dir = std::env::temp_dir().join("cosmic-viewer-nav-hidden-test");
-    let _ = fs::create_dir_all(&dir);
-    fs::write(dir.join("visible.jpg"), b"fake").unwrap();
-    fs::write(dir.join(".hidden.png"), b"fake").unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path();
+    let visible = dir.join("visible.jpg");
+    fs::copy(test_images_dir().join("1315754.jpg"), &visible).unwrap();
+    fs::copy(
+        test_images_dir().join("test_format.png"),
+        dir.join(".hidden.png"),
+    )
+    .unwrap();
 
-    let images = scan_dir(&dir, false, SortMode::Name, SortOrder::Ascending).await;
-    for path in &images {
-        let name = path.file_name().unwrap().to_str().unwrap();
-        assert!(
-            !name.starts_with('.'),
-            "hidden file {name} should be excluded"
-        );
-    }
-
-    let _ = fs::remove_dir_all(&dir);
+    let images = scan_dir(dir, false, SortMode::Name, SortOrder::Ascending).await;
+    assert_eq!(images, vec![visible]);
 }
 
 #[tokio::test]
 async fn scan_hidden_files_on() {
-    let dir = std::env::temp_dir().join("cosmic-viewer-nav-hidden-test-on");
-    let _ = fs::create_dir_all(&dir);
-    fs::write(dir.join("visible.jpg"), b"fake").unwrap();
-    fs::write(dir.join(".hidden.png"), b"fake").unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path();
+    let visible = dir.join("visible.jpg");
+    let hidden = dir.join(".hidden.png");
+    fs::copy(test_images_dir().join("1315754.jpg"), &visible).unwrap();
+    fs::copy(test_images_dir().join("test_format.png"), &hidden).unwrap();
 
-    let images = scan_dir(&dir, true, SortMode::Name, SortOrder::Ascending).await;
-    let has_hidden = images
-        .iter()
-        .any(|p| p.file_name().unwrap().to_str().unwrap().starts_with('.'));
-    assert!(has_hidden, "hidden file should be included when flag is on");
-
-    let _ = fs::remove_dir_all(&dir);
+    let images = scan_dir(dir, true, SortMode::Name, SortOrder::Ascending).await;
+    assert_eq!(images, vec![hidden, visible]);
 }
 
 #[tokio::test]
@@ -138,62 +132,47 @@ async fn scan_empty_dir_returns_empty() {
 
 #[tokio::test]
 async fn scan_filters_non_image_files() {
-    let dir = std::env::temp_dir().join("cosmic-viewer-nav-filter-test");
-    let _ = fs::create_dir_all(&dir);
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path();
     fs::write(dir.join("readme.txt"), b"text").unwrap();
-    fs::write(dir.join("video.mp4"), b"video").unwrap();
-    fs::write(dir.join("photo.jpg"), b"fake").unwrap();
+    fs::write(dir.join("fake.jpg"), b"fake").unwrap();
+    let image = dir.join("photo.jpg");
+    fs::copy(test_images_dir().join("1315754.jpg"), &image).unwrap();
 
-    let images = scan_dir(&dir, false, SortMode::Name, SortOrder::Ascending).await;
-    assert_eq!(images.len(), 1);
-    assert_eq!(
-        images[0].file_name().unwrap().to_str().unwrap(),
-        "photo.jpg",
-    );
-
-    let _ = fs::remove_dir_all(&dir);
+    let images = scan_dir(dir, false, SortMode::Name, SortOrder::Ascending).await;
+    assert_eq!(images, vec![image]);
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn scan_handles_symlinks_gracefully() {
-    let dir = std::env::temp_dir().join("cosmic-viewer-nav-symlink-test");
-    let _ = fs::remove_dir_all(&dir);
-    let _ = fs::create_dir_all(&dir);
-    fs::write(dir.join("real.jpg"), b"fake image").unwrap();
+    use std::os::unix::fs::symlink;
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::symlink;
-        let _ = symlink(dir.join("real.jpg"), dir.join("link.jpg"));
-        // Also create a broken symlink
-        let _ = symlink("/nonexistent/path.jpg", dir.join("broken.jpg"));
-    }
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path();
+    let real = dir.join("real.jpg");
+    let link = dir.join("link.jpg");
+    fs::copy(test_images_dir().join("1315754.jpg"), &real).unwrap();
+    symlink(&real, &link).unwrap();
+    symlink(dir.join("missing.jpg"), dir.join("broken.jpg")).unwrap();
 
-    // Should not panic regardless of symlink state
-    let images = scan_dir(&dir, false, SortMode::Name, SortOrder::Ascending).await;
-    assert!(!images.is_empty());
-
-    let _ = fs::remove_dir_all(&dir);
+    let images = scan_dir(dir, false, SortMode::Name, SortOrder::Ascending).await;
+    assert_eq!(images, vec![link, real]);
 }
 
 #[test]
 fn is_supported_image_consistency() {
-    // Supported extensions are accepted; unsupported ones are rejected.
-    assert!(is_supported_image(Path::new("photo.jpg")));
-    assert!(is_supported_image(Path::new("photo.jpeg")));
-    assert!(is_supported_image(Path::new("photo.png")));
-    assert!(is_supported_image(Path::new("photo.gif")));
-    assert!(is_supported_image(Path::new("photo.webp")));
-    assert!(is_supported_image(Path::new("photo.bmp")));
-    assert!(is_supported_image(Path::new("photo.tiff")));
-    assert!(is_supported_image(Path::new("photo.ico")));
-    assert!(is_supported_image(Path::new("photo.avif")));
-    assert!(is_supported_image(Path::new("photo.svg")));
-    assert!(is_supported_image(Path::new("photo.heif")));
-    assert!(is_supported_image(Path::new("photo.heic")));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path();
+    let png = test_images_dir().join("test_format.png");
+    for name in ["photo.PNG", "photo", "photo.txt"] {
+        let path = dir.join(name);
+        fs::copy(&png, &path).unwrap();
+        assert!(is_supported_image(&path), "{name}");
+    }
 
-    assert!(!is_supported_image(Path::new("file.txt")));
-    assert!(!is_supported_image(Path::new("file.mp4")));
-    assert!(!is_supported_image(Path::new("file.pdf")));
-    assert!(!is_supported_image(Path::new("file")));
+    let fake = dir.join("fake.png");
+    fs::write(&fake, b"text").unwrap();
+    assert!(!is_supported_image(&fake));
+    assert!(!is_supported_image(&dir.join("missing.png")));
 }

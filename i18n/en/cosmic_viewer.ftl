@@ -122,3 +122,20 @@ startup = Startup
 show-navbar = Show navigation bar on launch
 
 type-here = Type here...
+
+image-open-dialog = Open image
+image-supported-filter = Supported images
+image-all-files = All files
+image-output-filter = Image formats
+image-loading = Opening…
+image-no-selection = No image selected
+image-path-unavailable = Check that the file or folder still exists.
+image-open-error = Couldn’t open the image. { $detail }
+image-save-error = Couldn’t save the image. { $detail }
+image-save-copy = Save this frame or page to a different file.
+image-play = Play
+image-pause = Pause
+image-replay = Play from start
+image-page-previous = Previous page
+image-page-next = Next page
+image-page-count = { $current } of { $total }
