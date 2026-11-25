@@ -89,8 +89,8 @@ pub enum ViewerMessage {
 
 #[derive(Debug, Clone)]
 pub enum NavMessage {
-    ScanComplete(PathBuf, Vec<PathBuf>, Option<PathBuf>),
-    DirectoryRefreshed(Vec<PathBuf>),
+    ScanComplete(u64, PathBuf, Vec<PathBuf>, Option<PathBuf>),
+    DirectoryRefreshed(u64, PathBuf, Vec<PathBuf>),
     NavThumbnailShow(usize),
     NavThumbnailHide(usize),
     GridActivate(usize),
@@ -102,8 +102,16 @@ pub enum NavMessage {
 pub enum ImageMessage {
     // path, width, height (handle is in cache)
     ThumbnailReady(PathBuf, u32, u32),
-    ImageReady(PathBuf),
-    LoadError(PathBuf),
+    Opened(u64, Result<Arc<viewer_core::OpenedImage>, String>),
+    Frame(
+        u64,
+        Option<Result<Arc<viewer_core::AnimationFrame>, String>>,
+    ),
+    PageReady(u64, usize, Result<Arc<viewer_core::LoadedImage>, String>),
+    TogglePlayback,
+    Replay,
+    SelectPage(usize),
+    ThumbnailFailed(PathBuf),
 }
 
 #[derive(Debug, Clone)]

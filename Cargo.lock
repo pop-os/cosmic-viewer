@@ -3218,12 +3218,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "jpeg-encoder"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0370574b86f7eca156b9f298392b5e69a23f8c86f3f865add60bbc2e79467a6"
-
-[[package]]
 name = "js-sys"
 version = "0.3.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3354,6 +3348,7 @@ dependencies = [
  "jxl-oxide-common",
  "jxl-render",
  "jxl-threadpool",
+ "moxcms",
  "tracing",
 ]
 
@@ -6545,6 +6540,7 @@ version = "1.12.0"
 dependencies = [
  "image",
  "libcosmic",
+ "viewer-core",
  "viewer-tools",
 ]
 
@@ -6560,19 +6556,26 @@ dependencies = [
 name = "viewer-core"
 version = "1.12.0"
 dependencies = [
+ "cc",
  "fast_image_resize",
+ "gif 0.14.2",
  "image",
+ "jxl-oxide",
  "kamadak-exif",
  "libcosmic",
  "libheif-rs",
  "lru",
+ "moxcms",
+ "pkg-config",
+ "png 0.18.1",
  "rayon",
  "resvg 0.47.0",
+ "tempfile",
  "thiserror 2.0.21",
+ "tiff",
  "tokio",
  "turbojpeg",
  "viewer-config",
- "zune-image",
 ]
 
 [[package]]
@@ -8114,16 +8117,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zune-bmp"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b77b890dbf6b1a32fc57d9f1f30e22175694c454581de7c6e466f2853cf9fe3"
-dependencies = [
- "log",
- "zune-core 0.5.3",
-]
-
-[[package]]
 name = "zune-core"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8134,52 +8127,6 @@ name = "zune-core"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d56377fd46368984a170bc5aac5567e52ca5da874caa60bea39fcbca78fb658b"
-dependencies = [
- "log",
- "serde",
-]
-
-[[package]]
-name = "zune-farbfeld"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46689bf6c90702cba18ef876cc0d29affa8cda58e82a1246fced3a820e0e4c3d"
-dependencies = [
- "zune-core 0.5.3",
-]
-
-[[package]]
-name = "zune-hdr"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34f7d50f1e3f3a95efa12c3c5048ad84e9d7fd8b1bc5faf01fd35b8df1f103e9"
-dependencies = [
- "zune-core 0.5.3",
-]
-
-[[package]]
-name = "zune-image"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d67f66717c2ca4f5fe18894e4724c7d22076dea8f245ea5386a05a4b6b8f4a53"
-dependencies = [
- "bytemuck",
- "image-webp",
- "jpeg-encoder",
- "jxl-oxide",
- "kamadak-exif",
- "serde",
- "zune-bmp",
- "zune-core 0.5.3",
- "zune-farbfeld",
- "zune-hdr",
- "zune-jpeg 0.5.15",
- "zune-jpegxl",
- "zune-png",
- "zune-ppm",
- "zune-psd",
- "zune-qoi",
-]
 
 [[package]]
 name = "zune-inflate"
@@ -8204,52 +8151,6 @@ name = "zune-jpeg"
 version = "0.5.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296"
-dependencies = [
- "zune-core 0.5.3",
-]
-
-[[package]]
-name = "zune-jpegxl"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cba11ecd07cc23351500e840ae03841b7e4997923ec8e4832ee3ae199ea0b6b4"
-dependencies = [
- "zune-core 0.5.3",
-]
-
-[[package]]
-name = "zune-png"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a321146329f7617ba0a5b26982cba45b7ce78163135aba78be25850aefcea80"
-dependencies = [
- "zune-core 0.5.3",
- "zune-inflate",
-]
-
-[[package]]
-name = "zune-ppm"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fa3b8ca5bfe13b58735c3c8e56442390946e8e0e0ff50e12b9215afd278d422"
-dependencies = [
- "zune-core 0.5.3",
-]
-
-[[package]]
-name = "zune-psd"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a518b7a7bee76246a6c783d795c56204cd9184ce0e2e4483717f1b9438c902c"
-dependencies = [
- "zune-core 0.5.3",
-]
-
-[[package]]
-name = "zune-qoi"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdfb703f475bc1190ebece625c1ddf162214933188a3572af8e8f697ad043d5a"
 dependencies = [
  "zune-core 0.5.3",
 ]

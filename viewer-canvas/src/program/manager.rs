@@ -15,7 +15,7 @@ use cosmic::{
         mouse::{self, Button, Cursor, Event as MouseEvent},
         overlay,
     },
-    widget::{self, Operation, Widget, canvas::Cache, image::Handle},
+    widget::{self, Operation, Widget, canvas::Cache},
 };
 use image::DynamicImage;
 use std::cell::Cell;
@@ -24,20 +24,7 @@ use viewer_tools::{
     crop::{CropSelection, DragHandle},
 };
 
-const MAX_TEX: u32 = 2048;
-
-// Display texture, downscaled to MAX_TEX. The source image is left full-res.
-fn display_handle(image: &DynamicImage) -> Handle {
-    let rgba = if image.width() > MAX_TEX || image.height() > MAX_TEX {
-        image
-            .resize(MAX_TEX, MAX_TEX, image::imageops::FilterType::Triangle)
-            .to_rgba8()
-    } else {
-        image.to_rgba8()
-    };
-    let (width, height) = rgba.dimensions();
-    Handle::from_rgba(width, height, rgba.into_raw())
-}
+use viewer_core::loader::display_handle;
 
 /// Orchestrator that owns the canvas state, edit operations, and undo/redo history.
 pub struct ViewportManager {
@@ -115,6 +102,13 @@ impl ViewportManager {
         self.pan = Vector::ZERO;
         self.active_preview = None;
         self.active_tool = None;
+        self.cache.clear();
+        self.dirty.set(true);
+    }
+
+    pub fn set_sequence_frame(&mut self, image: CanvasImage, base: DynamicImage) {
+        self.image = Some(image);
+        self.working_image = Some(base);
         self.cache.clear();
         self.dirty.set(true);
     }

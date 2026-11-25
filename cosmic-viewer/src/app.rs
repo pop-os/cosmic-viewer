@@ -31,7 +31,7 @@ use cosmic::{
         },
         window,
     },
-    task::{self, future},
+    task::future,
     theme::{self, Button},
     widget::{
         self, Column, Id, Row, Space, Toasts,
@@ -61,8 +61,9 @@ use std::{
 use viewer_canvas::{CanvasImage, CanvasMessage, ToolKind, ViewportManager};
 use viewer_config::{AppTheme, ViewerConfig};
 use viewer_core::{
-    CachedImage, ClipboardImage, ImageCache, NavState, get_image_dir, image_mime_type,
-    is_supported_image, load_image, load_thumbnail, read_dpi, scan_dir,
+    Animation, AnimationFrame, CachedImage, ClipboardImage, EXTENSIONS, Format, ImageCache,
+    LoadedImage, NavState, OUTPUT_EXTENSIONS, get_image_dir, load_page, load_thumbnail, open_image,
+    output_format, read_dpi, save_image, scan_dir,
 };
 use viewer_toolbar::{ItemPriority, ToolbarItem, ToolbarMode, responsive_toolbar};
 use viewer_tools::{
@@ -85,6 +86,22 @@ enum PendingAction {
     Quit,
 }
 
+#[derive(Default)]
+struct MediaState {
+    generation: u64,
+    task: Option<iced::task::Handle>,
+    path: Option<PathBuf>,
+    format: Option<Format>,
+    load_error: Option<String>,
+    page: usize,
+    page_count: usize,
+    animation: Option<Animation>,
+    playing: bool,
+    delay: Duration,
+    pending_frame: Option<Arc<AnimationFrame>>,
+    animated: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TextStyle {
     Bold,
@@ -103,6 +120,8 @@ pub struct CosmicViewer {
     config: ViewerConfig,
     app_themes: Vec<String>,
     nav: NavState,
+    scan_generation: u64,
+    media: MediaState,
     nav_bar_model: nav_bar::Model,
     cache: ImageCache,
     nav_handles: Vec<Option<Handle>>,
@@ -201,9 +220,12 @@ impl CosmicViewer {
         );
 
         if let Some(dir) = dir {
+            let generation = self.scan_generation;
             return future(async move {
                 let images = scan_dir(&dir, include_hidden, sort_mode, sort_order).await;
-                Action::App(ViewerMessage::Nav(NavMessage::DirectoryRefreshed(images)))
+                Action::App(ViewerMessage::Nav(NavMessage::DirectoryRefreshed(
+                    generation, dir, images,
+                )))
             });
         }
 
@@ -211,49 +233,45 @@ impl CosmicViewer {
     }
 
     fn open_path(&mut self, path: PathBuf) -> Task<Action<ViewerMessage>> {
-        if let Some(dir) = get_image_dir(&path) {
-            let select = path.is_file().then_some(path);
-            let include_hidden = self.config.show_hidden_files;
-            let sort_mode = self.config.sort_mode;
-            let sort_order = self.config.sort_order;
-            let dir_clone = dir.clone();
-
-            let title = match select.as_ref() {
-                Some(tab) => tab
-                    .file_name()
-                    .map(|f| f.to_string_lossy().to_string())
-                    .unwrap_or_default(),
-                None => "No Open File".to_string(),
-            };
-
-            let window_title = format!("{title} - {}", fl!("app-name"));
-            Task::batch([
-                if let Some(window_id) = self.core.main_window_id() {
-                    self.set_window_title(window_title, window_id)
-                } else {
-                    Task::none()
-                },
-                future(async move {
-                    let images = scan_dir(&dir, include_hidden, sort_mode, sort_order).await;
-                    Action::App(ViewerMessage::Nav(NavMessage::ScanComplete(
-                        dir_clone, images, select,
-                    )))
-                }),
-            ])
-        } else if path.is_file()
-            && is_supported_image(&path)
-            && path
-                .file_name()
-                .is_some_and(|name| !name.to_str().is_some_and(|name| name.starts_with('.')))
-        {
-            task::message(Action::App(ViewerMessage::Nav(NavMessage::ScanComplete(
-                path.parent().unwrap().to_path_buf(),
-                vec![path.clone()],
-                Some(path),
-            ))))
-        } else {
-            Task::none()
+        if self.guard_unsaved(ViewerMessage::Open(path.clone())) {
+            return Task::none();
         }
+        self.scan_generation = self.scan_generation.wrapping_add(1);
+        self.clear_media();
+        self.nav = NavState::new();
+        self.nav_handles.clear();
+        let generation = self.scan_generation;
+        let path = if path.is_absolute() {
+            path
+        } else {
+            std::env::current_dir().map_or(path.clone(), |dir| dir.join(&path))
+        };
+        let Some(dir) = get_image_dir(&path) else {
+            return self.show_media_error(fl!(
+                "image-open-error",
+                detail = fl!("image-path-unavailable")
+            ));
+        };
+        let select = path.is_file().then_some(path);
+        let include_hidden = self.config.show_hidden_files;
+        let sort_mode = self.config.sort_mode;
+        let sort_order = self.config.sort_order;
+
+        let selected_task = select
+            .as_ref()
+            .map(|path| self.load_full_image(path.clone()));
+        let scan = future(async move {
+            let mut images = scan_dir(&dir, include_hidden, sort_mode, sort_order).await;
+            if let Some(path) = &select
+                && !images.contains(path)
+            {
+                images.insert(0, path.clone());
+            }
+            Action::App(ViewerMessage::Nav(NavMessage::ScanComplete(
+                generation, dir, images, select,
+            )))
+        });
+        Task::batch(selected_task.into_iter().chain([scan]))
     }
 
     // reason: thumbnail size and grid index are small in-range counts; exact as f32.
@@ -331,7 +349,9 @@ impl CosmicViewer {
                                 loaded.height,
                             )))
                         }
-                        Err(_) => Action::App(ViewerMessage::Image(ImageMessage::LoadError(path))),
+                        Err(_) => {
+                            Action::App(ViewerMessage::Image(ImageMessage::ThumbnailFailed(path)))
+                        }
                     }
                 })
             })
@@ -344,44 +364,209 @@ impl CosmicViewer {
         }
     }
 
+    fn can_save_in_place(&self) -> bool {
+        self.media.page_count == 1
+            && !self.media.animated
+            && self
+                .media
+                .path
+                .as_deref()
+                .and_then(output_format)
+                .is_some_and(|output| {
+                    self.media.format == Some(Format::Raster(output))
+                        || (self.media.format == Some(Format::Avif)
+                            && output == image::ImageFormat::Avif)
+                })
+    }
+
+    fn clear_media(&mut self) {
+        self.media = MediaState {
+            generation: self.media.generation.wrapping_add(1),
+            ..MediaState::default()
+        };
+        self.viewport.cancel_tool();
+        self.viewport.revert_all();
+        self.viewport.set_image(None, None);
+        self.text_editing = false;
+    }
+
+    fn set_media_task(&mut self, task: Task<Action<ViewerMessage>>) -> Task<Action<ViewerMessage>> {
+        let (task, handle) = task.abortable();
+        self.media.task = Some(handle.abort_on_drop());
+        task
+    }
+
     fn load_full_image(&mut self, path: PathBuf) -> Task<Action<ViewerMessage>> {
+        self.clear_media();
+        self.media.path = Some(path.clone());
         let window_title = format!(
             "{} - {}",
-            path.file_name()
-                .map(|f| f.to_string_lossy().to_string())
-                .unwrap_or_default(),
+            path.file_name().unwrap_or_default().to_string_lossy(),
             fl!("app-name")
         );
-        let window_title = if let Some(window_id) = self.core.main_window_id() {
-            self.set_window_title(window_title.clone(), window_id)
-        } else {
-            Task::none()
+        let title = self
+            .core
+            .main_window_id()
+            .map_or_else(Task::none, |window_id| {
+                self.set_window_title(window_title, window_id)
+            });
+        let generation = self.media.generation;
+        let decode = self.set_media_task(future(async move {
+            let result = open_image(path)
+                .await
+                .map(Arc::new)
+                .map_err(|err| err.to_string());
+            Action::App(ViewerMessage::Image(ImageMessage::Opened(
+                generation, result,
+            )))
+        }));
+        Task::batch([title, decode])
+    }
+
+    fn show_media_error(&mut self, detail: String) -> Task<Action<ViewerMessage>> {
+        self.media.load_error = Some(detail);
+        Task::none()
+    }
+
+    fn show_toast(&mut self, detail: String) -> Task<Action<ViewerMessage>> {
+        self.toasts
+            .push(toaster::Toast::new(detail))
+            .map(Action::App)
+    }
+
+    fn display_loaded(&mut self, loaded: LoadedImage, new_page: bool) {
+        let canvas = CanvasImage {
+            handle: loaded.handle.clone(),
+            width: loaded.width,
+            height: loaded.height,
         };
-        if self.cache.get_full(&path).is_some() || self.cache.is_pending(&path) {
-            return window_title;
+        if new_page {
+            self.cache.insert_full(
+                loaded.path,
+                CachedImage {
+                    handle: loaded.handle,
+                    width: loaded.width,
+                    height: loaded.height,
+                    image: loaded.image.clone(),
+                },
+            );
         }
+        self.viewport.set_sequence_frame(canvas, loaded.image);
+    }
 
-        self.cache.set_pending(path.clone());
-        let cache = self.cache.clone();
+    fn schedule_frame(&mut self) -> Task<Action<ViewerMessage>> {
+        if !self.media.playing || self.media.task.is_some() {
+            return Task::none();
+        }
+        let Some(animation) = self.media.animation.clone() else {
+            return Task::none();
+        };
+        let generation = self.media.generation;
+        let delay = self.media.delay;
+        self.set_media_task(future(async move {
+            tokio::time::sleep(delay).await;
+            let result = animation
+                .next()
+                .await
+                .map(|frame| frame.map(Arc::new).map_err(|err| err.to_string()));
+            Action::App(ViewerMessage::Image(ImageMessage::Frame(
+                generation, result,
+            )))
+        }))
+    }
 
-        future(async move {
-            match load_image(path.clone()).await {
-                Ok(loaded) => {
-                    cache.insert_full(
-                        loaded.path.clone(),
-                        CachedImage {
-                            handle: loaded.handle,
-                            image: loaded.image,
-                            width: loaded.width,
-                            height: loaded.height,
-                        },
-                    );
-                    Action::App(ViewerMessage::Image(ImageMessage::ImageReady(loaded.path)))
-                }
-                Err(_) => Action::App(ViewerMessage::Image(ImageMessage::LoadError(path))),
+    fn display_animation_frame(
+        &mut self,
+        frame: Arc<AnimationFrame>,
+    ) -> Task<Action<ViewerMessage>> {
+        let frame = Arc::unwrap_or_clone(frame);
+        self.media.delay = frame.delay;
+        self.display_loaded(frame.image, false);
+        self.schedule_frame()
+    }
+
+    fn pause_for_edit(&mut self) {
+        if !self.media.animated || self.has_unsaved_edits() || self.viewport.active_tool().is_some()
+        {
+            return;
+        }
+        self.media.playing = false;
+        if let (Some(path), Some(canvas), Some(image)) = (
+            &self.media.path,
+            self.viewport.image(),
+            self.viewport.working_image(),
+        ) {
+            self.cache.insert_full(
+                path.clone(),
+                CachedImage {
+                    handle: canvas.handle.clone(),
+                    width: canvas.width,
+                    height: canvas.height,
+                    image: image.clone(),
+                },
+            );
+        }
+    }
+
+    fn sequence_controls(&self) -> Option<Element<'_, ViewerMessage>> {
+        let spacing = cosmic::theme::active().cosmic().spacing;
+        let can_switch = self.media.task.is_none();
+        let editing = self.has_unsaved_edits() || self.viewport.active_tool().is_some();
+        let icon_button = |name, label, message, enabled| {
+            let button = button::icon(icon::from_name(name)).tooltip(label);
+            if enabled {
+                button.on_press(ViewerMessage::Image(message))
+            } else {
+                button
             }
-        })
-        .chain(window_title)
+        };
+        let mut controls = Row::new()
+            .spacing(spacing.space_xs)
+            .align_y(Alignment::Center);
+        if self.media.animated {
+            let (icon, label) = if self.media.playing {
+                ("media-playback-pause-symbolic", fl!("image-pause"))
+            } else {
+                ("media-playback-start-symbolic", fl!("image-play"))
+            };
+            controls = controls
+                .push(icon_button(
+                    icon,
+                    label,
+                    ImageMessage::TogglePlayback,
+                    !editing,
+                ))
+                .push(icon_button(
+                    "media-playlist-repeat-symbolic",
+                    fl!("image-replay"),
+                    ImageMessage::Replay,
+                    !editing,
+                ));
+        } else if self.media.page_count > 1 {
+            let page = self.media.page;
+            let count = self.media.page_count;
+            controls = controls
+                .push(icon_button(
+                    "go-previous-symbolic",
+                    fl!("image-page-previous"),
+                    ImageMessage::SelectPage(page.saturating_sub(1)),
+                    can_switch && page > 0,
+                ))
+                .push(text::body(fl!(
+                    "image-page-count",
+                    current = (page + 1).to_string(),
+                    total = count.to_string()
+                )))
+                .push(icon_button(
+                    "go-next-symbolic",
+                    fl!("image-page-next"),
+                    ImageMessage::SelectPage(page + 1),
+                    can_switch && page + 1 < count,
+                ));
+        } else {
+            return None;
+        }
+        Some(container(controls).center_x(Length::Fill).into())
     }
 
     fn image_details_page(&self) -> Element<'_, ViewerMessage> {
@@ -398,8 +583,8 @@ impl CosmicViewer {
         }
 
         // Type
-        if let Some(ext) = path.extension().and_then(|ext| ext.to_str()) {
-            content = content.push(detail_row(fl!("image-type"), friendly_type_name(ext)));
+        if let Some(format) = self.media.format {
+            content = content.push(detail_row(fl!("image-type"), format.mime().to_string()));
         }
 
         // File metadata (size, timestamps)
@@ -643,14 +828,16 @@ impl CosmicViewer {
                 ))
                 .priority(ItemPriority::Essential),
             )
-            .end_maybe(self.has_unsaved_edits().then(|| {
-                ToolbarItem::new(
-                    button::text(fl!("toolbar-save"))
-                        .tooltip(fl!("toolbar-save"))
-                        .on_press(ViewerMessage::Save),
-                )
-                .priority(ItemPriority::Essential)
-            }))
+            .end_maybe(
+                (self.has_unsaved_edits() && self.can_save_in_place()).then(|| {
+                    ToolbarItem::new(
+                        button::text(fl!("toolbar-save"))
+                            .tooltip(fl!("toolbar-save"))
+                            .on_press(ViewerMessage::Save),
+                    )
+                    .priority(ItemPriority::Essential)
+                }),
+            )
             .end_maybe(self.has_unsaved_edits().then(|| {
                 ToolbarItem::new(
                     button::icon(icon::from_name("document-save-as-symbolic"))
@@ -1430,6 +1617,8 @@ impl Application for CosmicViewer {
             config,
             app_themes,
             nav: NavState::new(),
+            scan_generation: 0,
+            media: MediaState::default(),
             nav_bar_model: nav_bar::Model::default(),
             cache: ImageCache::with_defaults(),
             nav_handles: Vec::new(),
@@ -1694,7 +1883,16 @@ impl Application for CosmicViewer {
         } else {
             Column::new()
                 .push(Space::new().height(Length::Fill))
-                .push(text("No image selected").center())
+                .push(
+                    text::body(self.media.load_error.clone().unwrap_or_else(|| {
+                        if self.media.path.is_some() {
+                            fl!("image-loading")
+                        } else {
+                            fl!("image-no-selection")
+                        }
+                    }))
+                    .center(),
+                )
                 .push(Space::new().height(Length::Fill))
                 .align_x(Horizontal::Center)
                 .width(Length::Fill)
@@ -1750,6 +1948,7 @@ impl Application for CosmicViewer {
 
         let main = Column::new()
             .push(image_area)
+            .push_maybe(has_image.then(|| self.sequence_controls()).flatten())
             .push_maybe(has_image.then(|| {
                 container(self.build_toolbar())
                     .center_x(Length::Fill)
@@ -1897,17 +2096,29 @@ impl Application for CosmicViewer {
             }
             ViewerMessage::CopyToClipboard => {
                 self.context_menu_position = None;
-                if let Some(path) = self.nav.current().cloned()
-                    && let Some(mime) = path
-                        .extension()
-                        .and_then(|ext| ext.to_str())
-                        .and_then(image_mime_type)
-                    && let Ok(data) = std::fs::read(&path)
+                let Some(path) = self.media.path.as_ref() else {
+                    return Task::none();
+                };
+                if let Some(format) = self.media.format
+                    && !matches!(format, Format::Raw)
+                    && let Ok(data) = std::fs::read(path)
                 {
                     return clipboard::write_data(ClipboardImage {
                         data,
-                        mime: mime.to_string(),
+                        mime: format.mime().into(),
                     });
+                }
+                if let Some(image) = self.flatten_image() {
+                    let mut output = std::io::Cursor::new(Vec::new());
+                    if image::DynamicImage::ImageRgba8(image.into_rgba8())
+                        .write_to(&mut output, image::ImageFormat::Png)
+                        .is_ok()
+                    {
+                        return clipboard::write_data(ClipboardImage {
+                            data: output.into_inner(),
+                            mime: "image/png".into(),
+                        });
+                    }
                 }
             }
             ViewerMessage::CopyFilePath => {
@@ -1924,59 +2135,9 @@ impl Application for CosmicViewer {
                 }
                 return future(async move {
                     let dialog = file_chooser::open::Dialog::new()
-                        .title("Open Image")
-                        .filter(
-                            FileFilter::new("All")
-                                .extension("jpg")
-                                .extension("JPG")
-                                .extension("jpeg")
-                                .extension("JPEG")
-                                .extension("png")
-                                .extension("PNG")
-                                .extension("gif")
-                                .extension("GIF")
-                                .extension("webp")
-                                .extension("WEBP")
-                                .extension("bmp")
-                                .extension("BMP")
-                                .extension("tiff")
-                                .extension("TIFF")
-                                .extension("tif")
-                                .extension("TIF")
-                                .extension("ico")
-                                .extension("ICO")
-                                .extension("avif")
-                                .extension("AVIF")
-                                .extension("hdr")
-                                .extension("HDR")
-                                .extension("svg")
-                                .extension("SVG")
-                                .extension("heif")
-                                .extension("HEIF")
-                                .extension("heic")
-                                .extension("HEIC"),
-                        )
-                        .filter(
-                            FileFilter::new("JPEG")
-                                .extension("jpg")
-                                .extension("jpeg")
-                                .extension("JPEG")
-                                .extension("JPG"),
-                        )
-                        .filter(FileFilter::new("png").extension("png").extension("PNG"))
-                        .filter(FileFilter::new("gif").extension("gif").extension("GIF"))
-                        .filter(FileFilter::new("webp").extension("webp").extension("WEBP"))
-                        .filter(FileFilter::new("bmp").extension("bmp").extension("BMP"))
-                        .filter(
-                            FileFilter::new("tiff")
-                                .extension("tiff")
-                                .extension("tif")
-                                .extension("TIFF")
-                                .extension("TIF"),
-                        )
-                        .filter(FileFilter::new("avif").extension("avif").extension("AVIF"))
-                        .filter(FileFilter::new("ico").extension("ico").extension("ICO"))
-                        .filter(FileFilter::new("hdr").extension("hdr").extension("HDR"));
+                        .title(fl!("image-open-dialog"))
+                        .filter(image_filter(fl!("image-supported-filter"), EXTENSIONS))
+                        .filter(FileFilter::new(fl!("image-all-files")).extension("*"));
 
                     match dialog.open_file().await {
                         Ok(response) => response.url().to_file_path().map_or_else(
@@ -2025,33 +2186,56 @@ impl Application for CosmicViewer {
                 }
             }
             ViewerMessage::Save => {
-                if let (Some(image), Some(path)) = (self.flatten_image(), self.nav.current()) {
-                    if let Err(e) = image.save(path) {
-                        tracing::error!("Failed to save image: {e}");
-                    } else {
-                        self.viewport.revert_all();
-                        self.cache.remove_full(path);
-                        self.viewport.cancel_tool();
-                        self.text_editing = false;
-                        tasks.push(self.load_full_image(path.clone()));
+                if !self.can_save_in_place() {
+                    if self.viewport.image().is_some() {
+                        return self.update(ViewerMessage::SaveAs);
+                    }
+                    return Task::none();
+                }
+                if let (Some(image), Some(path)) = (self.flatten_image(), self.media.path.clone()) {
+                    match save_image(image, &path) {
+                        Ok(()) => {
+                            self.viewport.revert_all();
+                            self.cache.remove_full(&path);
+                            self.cache.remove_thumbnail(&path);
+                            self.viewport.cancel_tool();
+                            self.text_editing = false;
+                            if self.unsaved_dialog.is_some() {
+                                return self.resolve_pending();
+                            }
+                            tasks.push(self.load_full_image(path));
+                        }
+                        Err(error) => tasks.push(
+                            self.show_toast(fl!("image-save-error", detail = error.to_string())),
+                        ),
                     }
                 }
             }
             ViewerMessage::SaveAs => {
-                let current = self.nav.current();
+                if self.viewport.image().is_none() {
+                    return Task::none();
+                }
+                let current = self.media.path.as_ref();
+                let preserve_format = self.can_save_in_place();
                 let suggested = current
                     .and_then(|path| {
-                        path.file_name()
-                            .map(|name| name.to_string_lossy().to_string())
+                        let label = if preserve_format {
+                            path.file_name()?.to_os_string()
+                        } else {
+                            let mut name = path.file_stem()?.to_os_string();
+                            name.push(".png");
+                            name
+                        };
+                        Some(label.to_string_lossy().into_owned())
                     })
                     .unwrap_or_else(|| "image.png".to_string());
-                let directory =
-                    current.and_then(|path| path.parent().map(std::path::Path::to_path_buf));
+                let directory = current.and_then(|path| path.parent().map(Path::to_path_buf));
 
                 return future(async move {
                     let mut dialog = file_chooser::save::Dialog::new()
-                        .title("Save Image As...".to_string())
-                        .file_name(suggested);
+                        .title(fl!("toolbar-save-as"))
+                        .file_name(suggested)
+                        .filter(image_filter(fl!("image-output-filter"), OUTPUT_EXTENSIONS));
                     if let Some(directory) = directory {
                         dialog = dialog.directory(directory);
                     }
@@ -2076,17 +2260,38 @@ impl Application for CosmicViewer {
                 });
             }
             ViewerMessage::SavedAs(path) => {
-                if let Some(image) = self.flatten_image()
-                    && let Err(e) = image.save(&path)
-                {
-                    tracing::error!("Failed to save image: {e}");
+                let same_file = self.media.path.as_ref().is_some_and(|current| {
+                    current == &path
+                        || std::fs::canonicalize(current)
+                            .ok()
+                            .zip(std::fs::canonicalize(&path).ok())
+                            .is_some_and(|(current, target)| current == target)
+                });
+                if same_file {
+                    if self.can_save_in_place() {
+                        return self.update(ViewerMessage::Save);
+                    }
+                    return self.show_toast(fl!("image-save-copy"));
                 }
-
-                self.viewport.cancel_tool();
-                self.viewport.revert_all();
-                return self.resolve_pending();
+                if let Some(image) = self.flatten_image() {
+                    if let Err(error) = save_image(image, &path) {
+                        return self
+                            .show_toast(fl!("image-save-error", detail = error.to_string()));
+                    }
+                    if let Some(cached) = self
+                        .media
+                        .path
+                        .as_ref()
+                        .and_then(|path| self.cache.get_full(path))
+                    {
+                        self.viewport.cancel_tool();
+                        self.viewport.rebuild_image(&cached.image);
+                    }
+                    return self.resolve_pending();
+                }
             }
             ViewerMessage::Quit => {
+                self.clear_media();
                 return iced::exit();
             }
             ViewerMessage::CloseRequested => {
@@ -2098,8 +2303,7 @@ impl Application for CosmicViewer {
             }
             ViewerMessage::Unsaved(choice) => match choice {
                 UnsavedChoice::Save => {
-                    let save = self.update(ViewerMessage::Save);
-                    return Task::batch([save, self.resolve_pending()]);
+                    return self.update(ViewerMessage::Save);
                 }
                 UnsavedChoice::SaveAs => return self.update(ViewerMessage::SaveAs),
                 UnsavedChoice::Discard => {
@@ -2133,8 +2337,13 @@ impl Application for CosmicViewer {
                         self.cache.clear_pending_thumbnail(path);
                         self.cache.remove_full(path);
                         self.cache.remove_thumbnail(path);
-                        if self.nav.current() == Some(path) {
+                        if matches!(evt, WatcherEvent::Removed(_))
+                            && self.media.path.as_ref() == Some(path)
+                            && !path.is_file()
+                            && !self.has_unsaved_edits()
+                        {
                             self.nav.deselect();
+                            self.clear_media();
                         }
                     }
                     WatcherEvent::Created(_) => {}
@@ -2237,7 +2446,7 @@ impl Application for CosmicViewer {
                     if let Some(idx) = next_idx {
                         tasks.push(self.update(ViewerMessage::Nav(NavMessage::GridActivate(idx))));
                     } else {
-                        self.viewport.set_image(None, None);
+                        self.clear_media();
                     }
 
                     // Trash the file
@@ -2662,10 +2871,10 @@ impl Application for CosmicViewer {
                 }
             }
             ViewerMessage::Nav(msg) => match msg {
-                NavMessage::ScanComplete(dir, images, select) => {
-                    self.viewport.cancel_tool();
-                    self.viewport.set_image(None, None);
-
+                NavMessage::ScanComplete(generation, dir, images, select) => {
+                    if generation != self.scan_generation {
+                        return Task::none();
+                    }
                     self.nav.set_images(dir, images, select.as_deref());
 
                     if self.nav.index().is_none() && !self.nav.is_empty() {
@@ -2680,7 +2889,9 @@ impl Application for CosmicViewer {
 
                     // Load the selected image at full resolution.
                     if let Some(idx) = self.nav.index() {
-                        if let Some(path) = self.nav.current().cloned() {
+                        if let Some(path) = self.nav.current().cloned()
+                            && self.media.path.as_ref() != Some(&path)
+                        {
                             tasks.push(self.load_full_image(path));
                         }
 
@@ -2723,7 +2934,7 @@ impl Application for CosmicViewer {
                                         ))
                                     }
                                     Err(_) => Action::App(ViewerMessage::Image(
-                                        ImageMessage::LoadError(path),
+                                        ImageMessage::ThumbnailFailed(path),
                                     )),
                                 }
                             }));
@@ -2760,40 +2971,14 @@ impl Application for CosmicViewer {
                                 .update::<ViewerMessage>(ColorPickerUpdate::ToggleColorPicker);
                         }
 
-                        if let Some(cached) = self.cache.get_full(&path) {
-                            self.viewport.revert_all();
-                            self.viewport.set_image(
-                                Some(CanvasImage {
-                                    handle: cached.handle,
-                                    width: cached.width,
-                                    height: cached.height,
-                                }),
-                                Some(cached.image),
-                            );
+                        if self.media.path.as_ref() != Some(&path) {
+                            tasks.push(self.load_full_image(path));
                         }
-                        // Don't clear the viewport - keep the previous image
-                        // visible until the new one loads
-
-                        tasks.push(self.load_full_image(path));
-                        let images = self.nav.images().to_vec();
-                        for (adj_idx, adj_path) in images.iter().enumerate() {
-                            // distance from the just-activated image to this neighbor;
-                            // skip the activated image itself, which is loaded above.
-                            let dist = idx.abs_diff(adj_idx);
-                            if dist != 0
-                                && dist <= 1
-                                && self.cache.get_full(adj_path).is_none()
-                                && !self.cache.is_pending(adj_path)
-                            {
-                                tasks.push(self.load_full_image(adj_path.clone()));
-                            } else if dist > 2 {
-                                self.cache.remove_full(adj_path);
-                            }
-                        }
+                        tasks.push(self.load_nearby_thumbnails(idx, 5));
                     }
                 }
                 NavMessage::GridFocus(idx) => {
-                    if let Some(p) = self.nav.select(idx) {
+                    if let Some(p) = self.nav.images().get(idx) {
                         return focus(Id::new(format!("img-{}-{idx}", p.to_string_lossy())));
                     }
                 }
@@ -2819,23 +3004,21 @@ impl Application for CosmicViewer {
                         }
                     }
                 }
-                NavMessage::DirectoryRefreshed(images) => {
+                NavMessage::DirectoryRefreshed(generation, dir, mut images) => {
+                    if generation != self.scan_generation || self.nav.dir() != Some(dir.as_path()) {
+                        return Task::none();
+                    }
                     let selected = self.nav.current().cloned();
-                    let dir = self.nav.dir().map(std::path::Path::to_path_buf);
-                    if let Some(dir) = dir {
-                        self.nav.set_images(dir, images, selected.as_deref());
-                        self.rebuild_nav_handles();
-
-                        if !self.nav.is_empty() {
-                            let idx = self.nav.index().unwrap_or(0);
-                            tasks.push(self.load_nearby_thumbnails(idx, 10));
-                        }
-
-                        if let Some(path) = self.nav.current().cloned()
-                            && self.cache.get_full(&path).is_none()
-                        {
-                            tasks.push(self.load_full_image(path));
-                        }
+                    if let Some(path) = selected.as_ref()
+                        && path.is_file()
+                        && !images.contains(path)
+                    {
+                        images.insert(0, path.clone());
+                    }
+                    self.nav.set_images(dir, images, selected.as_deref());
+                    self.rebuild_nav_handles();
+                    if !self.nav.is_empty() {
+                        tasks.push(self.load_nearby_thumbnails(self.nav.index().unwrap_or(0), 10));
                     }
                 }
             },
@@ -2848,33 +3031,109 @@ impl Application for CosmicViewer {
                         *slot = Some(handle);
                     }
                 }
-                ImageMessage::ImageReady(path) => {
-                    if let Some(idx) = self.nav.index() {
-                        if self.nav.current() == Some(&path) {
-                            // Clear any tool that is active when reselecting a new image.
-                            if self.viewport.active_tool().is_some() {
-                                self.viewport.cancel_tool();
+                ImageMessage::Opened(generation, result) if generation == self.media.generation => {
+                    self.media.task = None;
+                    match result {
+                        Ok(image) => {
+                            if let Some(animation) = &image.animation {
+                                self.media.delay = animation.first_delay;
                             }
-
-                            // Set the selected image to canvas image.
-                            if let Some(cached) = self.cache.get_full(&path) {
-                                self.viewport.set_image(
-                                    Some(CanvasImage {
-                                        handle: cached.handle,
-                                        width: cached.width,
-                                        height: cached.height,
-                                    }),
-                                    Some(cached.image),
+                            self.media.format = Some(image.format);
+                            self.media.page_count = image.page_count;
+                            self.media.animation = image.animation.clone();
+                            self.media.animated = self.media.animation.is_some();
+                            self.media.playing = self.media.animated;
+                            let image = Arc::try_unwrap(image)
+                                .map_or_else(|image| image.image.clone(), |image| image.image);
+                            self.display_loaded(image, true);
+                            tasks.push(self.schedule_frame());
+                        }
+                        Err(detail) => tasks
+                            .push(self.show_media_error(fl!("image-open-error", detail = detail))),
+                    }
+                }
+                ImageMessage::Frame(generation, result) if generation == self.media.generation => {
+                    self.media.task = None;
+                    match result {
+                        Some(Ok(frame)) if self.media.playing => {
+                            tasks.push(self.display_animation_frame(frame))
+                        }
+                        Some(Ok(frame)) => self.media.pending_frame = Some(frame),
+                        error_or_end => {
+                            self.media.playing = false;
+                            self.media.animation = None;
+                            if let Some(Err(detail)) = error_or_end {
+                                tasks.push(
+                                    self.show_toast(fl!("image-open-error", detail = detail)),
                                 );
                             }
                         }
-                        tasks.push(self.load_nearby_thumbnails(idx, 5));
                     }
                 }
-                ImageMessage::LoadError(path) => {
-                    self.cache.clear_pending(&path);
-                    self.cache.clear_pending_thumbnail(&path);
+                ImageMessage::TogglePlayback => {
+                    if self.has_unsaved_edits() || self.viewport.active_tool().is_some() {
+                        return Task::none();
+                    }
+                    if self.media.animation.is_none() {
+                        return self.update(ViewerMessage::Image(ImageMessage::Replay));
+                    }
+                    self.media.playing = !self.media.playing;
+                    if self.media.playing {
+                        return if let Some(frame) = self.media.pending_frame.take() {
+                            self.display_animation_frame(frame)
+                        } else {
+                            self.schedule_frame()
+                        };
+                    }
                 }
+                ImageMessage::Replay => {
+                    if self.media.animated
+                        && !self.has_unsaved_edits()
+                        && self.viewport.active_tool().is_none()
+                        && let Some(path) = self.media.path.clone()
+                    {
+                        return self.load_full_image(path);
+                    }
+                }
+                ImageMessage::SelectPage(index) => {
+                    if self.media.task.is_some()
+                        || index == self.media.page
+                        || index >= self.media.page_count
+                        || self.guard_unsaved(ViewerMessage::Image(ImageMessage::SelectPage(index)))
+                    {
+                        return Task::none();
+                    }
+                    if let Some(path) = self.media.path.clone() {
+                        let generation = self.media.generation;
+                        return self.set_media_task(future(async move {
+                            let result = load_page(path, index)
+                                .await
+                                .map(Arc::new)
+                                .map_err(|err| err.to_string());
+                            Action::App(ViewerMessage::Image(ImageMessage::PageReady(
+                                generation, index, result,
+                            )))
+                        }));
+                    }
+                }
+                ImageMessage::PageReady(generation, index, result)
+                    if generation == self.media.generation =>
+                {
+                    self.media.task = None;
+                    match result {
+                        Ok(image) => {
+                            self.media.page = index;
+                            self.viewport.cancel_tool();
+                            self.viewport.revert_all();
+                            self.display_loaded(Arc::unwrap_or_clone(image), true);
+                        }
+                        Err(detail) => {
+                            tasks.push(self.show_toast(fl!("image-open-error", detail = detail)))
+                        }
+                    }
+                }
+                ImageMessage::ThumbnailFailed(path) => self.cache.clear_pending_thumbnail(&path),
+                _ => {}
             },
             ViewerMessage::Context(page) => {
                 self.context_menu_position = None;
@@ -3224,6 +3483,7 @@ impl Application for CosmicViewer {
                 }
             },
             ViewerMessage::Edit(msg) => {
+                self.pause_for_edit();
                 self.context_menu_position = None;
                 if !matches!(msg, EditMessage::ColorPicker(_)) && self.color_picker.get_is_active()
                 {
@@ -4095,6 +4355,9 @@ impl Application for CosmicViewer {
 
         Subscription::batch([
             event::listen_with(|event, _status, _id| match event {
+                iced::Event::Window(iced::window::Event::FileDropped(paths)) => {
+                    paths.into_iter().next().map(ViewerMessage::Open)
+                }
                 iced::Event::Window(iced::window::Event::Resized(size)) => {
                     Some(ViewerMessage::WindowResized(size))
                 }
@@ -4114,6 +4377,24 @@ impl Application for CosmicViewer {
     }
 }
 
+fn image_filter(label: String, extensions: &[&str]) -> FileFilter {
+    extensions
+        .iter()
+        .fold(FileFilter::new(label), |filter, extension| {
+            let pattern: String = extension
+                .chars()
+                .flat_map(|character| {
+                    if character.is_ascii_lowercase() {
+                        vec!['[', character, character.to_ascii_uppercase(), ']']
+                    } else {
+                        vec![character]
+                    }
+                })
+                .collect();
+            filter.extension(pattern)
+        })
+}
+
 // HELPER FUNCTIONS
 
 fn detail_row<'a>(label: String, value: String) -> Element<'a, ViewerMessage> {
@@ -4124,34 +4405,6 @@ fn detail_row<'a>(label: String, value: String) -> Element<'a, ViewerMessage> {
         .into()
 }
 
-fn friendly_type_name(ext: &str) -> String {
-    match ext.to_lowercase().as_str() {
-        "jpg" | "jpeg" => "JPEG image",
-        "png" => "PNG image",
-        "gif" => "GIF image",
-        "webp" => "WebP image",
-        "bmp" => "BMP image",
-        "tiff" | "tif" => "TIFF image",
-        "ico" => "ICO image",
-        "avif" => "AVIF image",
-        "hdr" => "HDR image",
-        "jxl" => "JPEG XL image",
-        "ppm" => "PPM image",
-        "pgm" => "PGM image",
-        "pbm" => "PBM image",
-        "pnm" => "PNM image",
-        "qoi" => "QOI image",
-        "ff" | "farbfeld" => "Farbfeld image",
-        "svg" => "SVG image",
-        "heif" | "heic" => "HEIF image",
-        _ => "Image",
-    }
-    .to_string()
-}
-
-// reason: file sizes never approach 2^52 bytes, so f64 represents them exactly.
-// reason: crop region is a non-negative, in-bounds pixel rectangle.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn crop_to_region(img: &DynamicImage, region: Rectangle) -> DynamicImage {
     img.crop_imm(
         region.x as u32,

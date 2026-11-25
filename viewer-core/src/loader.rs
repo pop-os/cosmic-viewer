@@ -1,24 +1,25 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+use crate::{Format, animation, color, detect, native, pages};
 use cosmic::widget::image::Handle;
 use fast_image_resize::{PixelType, ResizeAlg, ResizeOptions, Resizer, images::Image as FirImage};
-use image::{DynamicImage, RgbaImage};
-use libheif_rs::{ColorSpace as HeifColorSpace, HeifContext, LibHeif, RgbChroma};
+use image::{
+    DynamicImage, ImageDecoder, ImageFormat, ImageReader, RgbaImage, metadata::Orientation,
+};
+use libheif_rs::{ColorSpace as HeifColorSpace, HeifContext, LibHeif, RgbChroma, StreamReader};
 use resvg::{tiny_skia, usvg};
 use std::{
     fmt::{self, Debug, Formatter},
-    fs::{self, File},
-    io::{BufReader, Read, Seek, SeekFrom},
+    fs::File,
+    io::{BufReader, Read},
     path::{Path, PathBuf},
 };
 use thiserror::Error;
 use turbojpeg::{Decompressor, Image, PixelFormat, ScalingFactor};
-use zune_image::codecs::bmp::zune_core::colorspace::ColorSpace;
-use zune_image::image::Image as ZuneImage;
 
 // Cap texture uploads at 2048px on the long edge; the full-resolution image
 // is kept separately so edits and saves operate on the real pixels, not the texture.
-const MAX_TEX: u32 = 2048;
+pub(crate) const MAX_TEX: u32 = 2048;
 
 #[derive(Debug, Error)]
 pub enum LoadError {
@@ -28,6 +29,10 @@ pub enum LoadError {
     Decode(#[from] image::ImageError),
     #[error("Unsupported format: {0}")]
     UnsupportedFormat(String),
+    #[error("{0}")]
+    Invalid(String),
+    #[error("Image dimensions exceed the decode limit")]
+    Limit,
     #[error("Task cancelled")]
     Cancelled,
 }
@@ -52,9 +57,56 @@ impl Debug for LoadedImage {
     }
 }
 
-// Display texture, downscaled to MAX_TEX. The source image is left full-res.
-fn display_handle(image: &DynamicImage) -> Handle {
-    let rgba = image.to_rgba8();
+pub(crate) const MAX_FILE_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_SIDE: u32 = 32_768;
+const MAX_PIXELS: u64 = 64 * 1024 * 1024;
+
+pub(crate) fn pixel_count(w: u32, h: u32) -> Result<usize, LoadError> {
+    let count = u64::from(w) * u64::from(h);
+    if w == 0 || h == 0 || w > MAX_SIDE || h > MAX_SIDE || count > MAX_PIXELS {
+        return Err(LoadError::Limit);
+    }
+    Ok(count as usize)
+}
+
+pub(crate) fn decode_limits() -> image::Limits {
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_SIDE);
+    limits.max_image_height = Some(MAX_SIDE);
+    limits
+}
+
+pub(crate) fn bounded_file(path: &Path) -> Result<File, LoadError> {
+    let file = File::open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.len() > MAX_FILE_BYTES {
+        return Err(LoadError::Invalid(
+            "Image exceeds the 512 MiB input limit or is not a regular file".into(),
+        ));
+    }
+    Ok(file)
+}
+
+fn read_bounded(path: &Path) -> Result<Vec<u8>, LoadError> {
+    let mut data = Vec::new();
+    bounded_file(path)?
+        .take(MAX_FILE_BYTES + 1)
+        .read_to_end(&mut data)?;
+    if data.len() as u64 > MAX_FILE_BYTES {
+        return Err(LoadError::Invalid(
+            "Image exceeds the 512 MiB input limit".into(),
+        ));
+    }
+    Ok(data)
+}
+
+pub(crate) fn require_format(path: &Path) -> Result<Format, LoadError> {
+    bounded_file(path)?;
+    detect(path)?.ok_or_else(|| LoadError::UnsupportedFormat("Unknown image signature".into()))
+}
+
+pub fn display_handle(image: &DynamicImage) -> Handle {
+    let rgba = color::display_rgba(image);
     let (width, height) = rgba.dimensions();
     if (width > MAX_TEX || height > MAX_TEX)
         && let Ok((tw, th, pixels)) = fast_resize_rgba(rgba.as_raw(), width, height, MAX_TEX)
@@ -64,434 +116,126 @@ fn display_handle(image: &DynamicImage) -> Handle {
     Handle::from_rgba(width, height, rgba.into_raw())
 }
 
-/// Decode the image at `path` on a background thread.
-///
-/// # Errors
-///
-/// Returns [`LoadError`] if the file cannot be read, the format is unsupported
-/// or fails to decode, or the decode task is cancelled before completion.
-pub async fn load_image(path: PathBuf) -> Result<LoadedImage, LoadError> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-
-    rayon::spawn(move || {
-        let result = load_image_sync(&path);
-        let _ = tx.send(result);
-    });
-
-    rx.await.map_err(|_| LoadError::Cancelled)?
-}
-
-fn load_image_sync(path: &Path) -> Result<LoadedImage, LoadError> {
-    let extension = path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .map(str::to_lowercase)
-        .unwrap_or_default();
-
-    if extension == "svg" {
-        return load_svg_at(path, MAX_TEX);
-    }
-    if matches!(extension.as_str(), "heif" | "heic") {
-        return load_heif(path);
-    }
-
-    // Use turbojpeg for JPEGs (faster than zune/image crate)
-    if matches!(extension.as_str(), "jpg" | "jpeg")
-        && let Ok(img) = load_jpeg_full(path)
-    {
-        return Ok(img);
-    }
-    // Fall through to other decoders if turbojpeg fails
-
-    if is_zune_supported(&extension) {
-        match load_with_zune(path) {
-            Ok(img) => return Ok(img),
-            Err(_) => {
-                return load_with_image(path);
-            }
-        }
-    }
-
-    // Standard image formats via the 'image' crate
-    let img = image::open(path)?;
-    let (width, height) = (img.width(), img.height());
-    let handle = display_handle(&img);
-
-    Ok(LoadedImage {
-        handle,
-        image: img,
-        width,
-        height,
-        path: path.to_path_buf(),
-    })
-}
-
-/// Load full JPEG using turbojpeg (faster than zune/image crate)
-// JPEG header dimensions are far below u32::MAX, so the usize -> u32 casts
-// cannot truncate.
-#[allow(clippy::cast_possible_truncation)]
-fn load_jpeg_full(path: &Path) -> Result<LoadedImage, LoadError> {
-    let mut file = File::open(path)?;
-    let mut jpeg_data = Vec::new();
-    file.read_to_end(&mut jpeg_data)?;
-
-    let mut decompressor = Decompressor::new()
-        .map_err(|e| LoadError::UnsupportedFormat(format!("TurboJPEG init failed: {e}")))?;
-
-    let header = decompressor
-        .read_header(&jpeg_data)
-        .map_err(|e| LoadError::UnsupportedFormat(format!("JPEG header error: {e}")))?;
-
-    let width = header.width;
-    let height = header.height;
-
-    // Pre-allocate output buffer for RGBA (4 bytes per pixel)
-    let mut pixels = vec![0u8; 4 * width * height];
-
-    let mut output = Image {
-        pixels: pixels.as_mut_slice(),
-        width,
-        pitch: 4 * width,
-        height,
-        format: PixelFormat::RGBA,
-    };
-
-    decompressor
-        .decompress(&jpeg_data, output.as_deref_mut())
-        .map_err(|e| LoadError::UnsupportedFormat(format!("JPEG decode error: {e}")))?;
-
-    let rgba_image = RgbaImage::from_raw(width as u32, height as u32, pixels)
-        .expect("pixel buffer matches dimensions");
-    let image = DynamicImage::ImageRgba8(rgba_image);
-    let handle = display_handle(&image);
-
-    Ok(LoadedImage {
-        handle,
-        image,
-        width: width as u32,
-        height: height as u32,
-        path: path.to_path_buf(),
-    })
-}
-
-fn is_zune_supported(extension: &str) -> bool {
-    matches!(
-        extension,
-        "jpg"
-            | "jpeg"
-            | "png"
-            | "ppm"
-            | "pgm"
-            | "pbm"
-            | "pnm"
-            | "bmp"
-            | "qoi"
-            | "ff"
-            | "farbfeld"
-            | "hdr"
-            | "jxl"
-    )
-}
-
-// Image dimensions originate from a decoded image header and are far below
-// u32::MAX, so the usize -> u32 casts cannot truncate.
-#[allow(clippy::cast_possible_truncation)]
-fn load_with_zune(path: &Path) -> Result<LoadedImage, LoadError> {
-    let mut img = ZuneImage::open(path).map_err(|e| LoadError::UnsupportedFormat(e.to_string()))?;
-
-    img.convert_color(ColorSpace::RGBA)
-        .map_err(|e| LoadError::UnsupportedFormat(e.to_string()))?;
-
-    let (width, height) = img.dimensions();
-
-    let pixels = img
-        .flatten_to_u8()
-        .into_iter()
-        .next()
-        .ok_or_else(|| LoadError::UnsupportedFormat("No pixel data".into()))?;
-
-    let rgba_image = RgbaImage::from_raw(width as u32, height as u32, pixels)
-        .expect("pixel buffer matches dimensions");
-    let image = DynamicImage::ImageRgba8(rgba_image);
-    let handle = display_handle(&image);
-
-    Ok(LoadedImage {
-        handle,
-        image,
-        width: width as u32,
-        height: height as u32,
-        path: path.to_path_buf(),
-    })
-}
-
-fn load_with_image(path: &Path) -> Result<LoadedImage, LoadError> {
-    let img = image::open(path)?;
-    let (width, height) = (img.width(), img.height());
-    let handle = display_handle(&img);
-
-    Ok(LoadedImage {
-        handle,
-        image: img,
-        width,
-        height,
-        path: path.to_path_buf(),
-    })
-}
-
-/// Decode the image at `path` and downscale it to fit `max_size` on its longest
-/// edge, on a background thread.
-///
-/// # Errors
-///
-/// Returns [`LoadError`] if the file cannot be read, the format is unsupported
-/// or fails to decode, or the decode task is cancelled before completion.
-pub async fn load_thumbnail(path: PathBuf, max_size: u32) -> Result<LoadedImage, LoadError> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-
-    rayon::spawn(move || {
-        let result = load_thumbnail_sync(&path, max_size);
-        let _ = tx.send(result);
-    });
-
-    rx.await.map_err(|_| LoadError::Cancelled)?
-}
-
-fn load_thumbnail_sync(path: &Path, max_size: u32) -> Result<LoadedImage, LoadError> {
-    let extension = path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .map(str::to_lowercase)
-        .unwrap_or_default();
-
-    if extension == "svg" {
-        return load_svg_at(path, max_size);
-    }
-    if matches!(extension.as_str(), "heif" | "heic") {
-        let loaded = load_heif(path)?;
-        if loaded.width <= max_size && loaded.height <= max_size {
-            return Ok(loaded);
-        }
-        let pixels = loaded.image.to_rgba8().into_raw();
-        let (w, h, resized) = fast_resize_rgba(&pixels, loaded.width, loaded.height, max_size)?;
-        let handle = Handle::from_rgba(w, h, resized.clone());
-        let rgba_image =
-            RgbaImage::from_raw(w, h, resized).expect("pixel buffer matches dimensions");
-        return Ok(LoadedImage {
-            handle,
-            image: DynamicImage::ImageRgba8(rgba_image),
-            width: w,
-            height: h,
+impl LoadedImage {
+    pub(crate) fn new(path: &Path, image: DynamicImage) -> Self {
+        Self {
+            handle: display_handle(&image),
+            width: image.width(),
+            height: image.height(),
             path: path.to_path_buf(),
-        });
-    }
-
-    // 1. For JPEGs, try EXIF thumbnail extraction (no full decode)
-    if matches!(extension.as_str(), "jpg" | "jpeg") {
-        if let Ok((width, height, pixels)) = extract_exif_thumbnail(path, max_size) {
-            let handle = Handle::from_rgba(width, height, pixels.clone());
-
-            let rgba_image = RgbaImage::from_raw(width, height, pixels)
-                .expect("pixel buffer matches dimensions");
-            let dynamic_image = DynamicImage::ImageRgba8(rgba_image);
-
-            return Ok(LoadedImage {
-                handle,
-                image: dynamic_image,
-                width,
-                height,
-                path: path.to_path_buf(),
-            });
-        }
-
-        // 2. For JPEGs without EXIF, use turbojpeg with DCT scaling (4-8x faster)
-        if let Ok((width, height, pixels)) = decode_jpeg_scaled(path, max_size) {
-            let handle = Handle::from_rgba(width, height, pixels.clone());
-
-            let rgba_image = RgbaImage::from_raw(width, height, pixels)
-                .expect("pixel buffer matches dimensions");
-            let dynamic_image = DynamicImage::ImageRgba8(rgba_image);
-
-            return Ok(LoadedImage {
-                handle,
-                image: dynamic_image,
-                width,
-                height,
-                path: path.to_path_buf(),
-            });
+            image,
         }
     }
+}
 
-    // 3. Fall back to full decode + resize (non-JPEGs or if turbojpeg fails)
-    let (width, height, pixels) = if is_zune_supported(&extension) {
-        match decode_and_resize_zune(path, max_size) {
-            Ok(result) => result,
-            Err(_) => decode_and_resize_image(path, max_size)?,
+pub(crate) async fn decode_background<T: Send + 'static>(
+    operation: impl FnOnce() -> Result<T, LoadError> + Send + 'static,
+) -> Result<T, LoadError> {
+    static WORKERS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+    let permit = WORKERS.acquire().await.map_err(|_| LoadError::Cancelled)?;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    rayon::spawn(move || {
+        let _permit = permit;
+        if !tx.is_closed() {
+            let _ = tx.send(operation());
         }
-    } else {
-        decode_and_resize_image(path, max_size)?
-    };
+    });
+    rx.await.map_err(|_| LoadError::Cancelled)?
+}
 
-    let handle = Handle::from_rgba(width, height, pixels.clone());
-
-    let rgba_image =
-        RgbaImage::from_raw(width, height, pixels).expect("pixel buffer matches dimensions");
-    let dynamic_image = DynamicImage::ImageRgba8(rgba_image);
-
-    Ok(LoadedImage {
-        handle,
-        image: dynamic_image,
-        width,
-        height,
-        path: path.to_path_buf(),
+pub async fn load_image(path: PathBuf) -> Result<LoadedImage, LoadError> {
+    decode_background(move || {
+        let format = require_format(&path)?;
+        let image = decode_first(&path, format, MAX_TEX)?;
+        Ok(LoadedImage::new(&path, image))
     })
+    .await
 }
 
-/// Extract embedded EXIF thumbnail from JPEG files.
-/// Reads only a small portion of the file rather than decoding it fully.
-fn extract_exif_thumbnail(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u8>), LoadError> {
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-
-    let exif = exif::Reader::new()
-        .read_from_container(&mut reader)
-        .map_err(|e| LoadError::UnsupportedFormat(format!("No EXIF data: {e}")))?;
-
-    // Get the thumbnail data
-    let thumbnail = exif
-        .get_field(exif::Tag::JPEGInterchangeFormat, exif::In::THUMBNAIL)
-        .zip(exif.get_field(exif::Tag::JPEGInterchangeFormatLength, exif::In::THUMBNAIL));
-
-    if thumbnail.is_none() {
-        return Err(LoadError::UnsupportedFormat("No EXIF thumbnail".into()));
-    }
-
-    // The exif crate doesn't directly expose thumbnail bytes; re-read the
-    // file and extract the thumbnail using the offset/length.
-    let thumb_bytes = extract_thumbnail_bytes(path, &exif)?;
-
-    // Decode the embedded JPEG thumbnail
-    let img = image::load_from_memory_with_format(&thumb_bytes, image::ImageFormat::Jpeg)
-        .map_err(LoadError::Decode)?;
-
-    let rgba = img.to_rgba8();
-    let (width, height) = rgba.dimensions();
-
-    // If thumbnail is already small enough, return it
-    if width <= max_size && height <= max_size {
-        return Ok((width, height, rgba.into_raw()));
-    }
-
-    // Resize if thumbnail is larger than requested
-    let pixels = rgba.into_raw();
-    fast_resize_rgba(&pixels, width, height, max_size)
+pub async fn load_thumbnail(path: PathBuf, max_size: u32) -> Result<LoadedImage, LoadError> {
+    decode_background(move || {
+        let format = require_format(&path)?;
+        let max_size = max_size.clamp(1, MAX_TEX);
+        if format == Format::Raster(ImageFormat::Jpeg)
+            && !jpeg_needs_metadata(&path)?
+            && let Ok((w, h, pixels)) = decode_jpeg_scaled(&path, max_size)
+        {
+            let image = RgbaImage::from_raw(w, h, pixels).expect("packed JPEG pixels");
+            return Ok(LoadedImage::new(&path, DynamicImage::ImageRgba8(image)));
+        }
+        let image = decode_first(&path, format, max_size)?;
+        let rgba = color::display_rgba(&image);
+        let (w, h) = rgba.dimensions();
+        let rgba = if w > max_size || h > max_size {
+            let (w, h, bytes) = fast_resize_rgba(rgba.as_raw(), w, h, max_size)?;
+            RgbaImage::from_raw(w, h, bytes).expect("packed thumbnail pixels")
+        } else {
+            rgba
+        };
+        Ok(LoadedImage::new(&path, DynamicImage::ImageRgba8(rgba)))
+    })
+    .await
 }
 
-/// Extract raw thumbnail bytes from JPEG using EXIF offset/length
-fn extract_thumbnail_bytes(path: &Path, exif: &exif::Exif) -> Result<Vec<u8>, LoadError> {
-    let offset = exif
-        .get_field(exif::Tag::JPEGInterchangeFormat, exif::In::THUMBNAIL)
-        .and_then(|f| f.value.get_uint(0))
-        .ok_or_else(|| LoadError::UnsupportedFormat("No thumbnail offset".into()))?;
-
-    let length = exif
-        .get_field(exif::Tag::JPEGInterchangeFormatLength, exif::In::THUMBNAIL)
-        .and_then(|f| f.value.get_uint(0))
-        .ok_or_else(|| LoadError::UnsupportedFormat("No thumbnail length".into()))?;
-
-    // Sanity check - thumbnails shouldn't be huge
-    if length > 1_000_000 {
-        return Err(LoadError::UnsupportedFormat("Thumbnail too large".into()));
+pub(crate) fn decode_first(
+    path: &Path,
+    format: Format,
+    svg_size: u32,
+) -> Result<DynamicImage, LoadError> {
+    if let Some(frame) = animation::first_frame(path, format)? {
+        return Ok(frame);
     }
-
-    let mut file = File::open(path)?;
-
-    // EXIF data starts after APP1 marker, typically at offset 12 from file start
-    // The offset in EXIF is relative to the TIFF header, which is inside APP1;
-    // resolve it to the actual file offset.
-
-    // Read the APP1 segment to find the TIFF header offset
-    let mut header = [0u8; 12];
-    file.read_exact(&mut header)?;
-
-    // JPEG starts with FFD8, then APP1 marker FFE1, then 2-byte length, then "Exif\0\0"
-    // TIFF header starts after "Exif\0\0"
-    let tiff_offset = if &header[0..2] == b"\xFF\xD8" && &header[2..4] == b"\xFF\xE1" {
-        // APP1 starts at offset 2, length is at 4-5, "Exif\0\0" is at 6-11
-        // TIFF header is at offset 12
-        12u64
-    } else {
-        // Fallback: scan for APP1 marker
-        file.seek(SeekFrom::Start(0))?;
-        find_tiff_header_offset(&mut file)?
-    };
-
-    // Seek to thumbnail position (TIFF header offset + thumbnail offset in EXIF)
-    file.seek(SeekFrom::Start(tiff_offset + u64::from(offset)))?;
-
-    let mut thumb_data = vec![0u8; length as usize];
-    file.read_exact(&mut thumb_data)?;
-
-    Ok(thumb_data)
+    decode_still(path, format, svg_size)
 }
 
-/// Scan JPEG file to find the TIFF header offset within APP1
-fn find_tiff_header_offset(file: &mut File) -> Result<u64, LoadError> {
-    file.seek(SeekFrom::Start(0))?;
-
-    let mut marker = [0u8; 2];
-    file.read_exact(&mut marker)?;
-
-    if marker != [0xFF, 0xD8] {
-        return Err(LoadError::UnsupportedFormat("Not a JPEG file".into()));
+pub(crate) fn decode_still(
+    path: &Path,
+    format: Format,
+    svg_size: u32,
+) -> Result<DynamicImage, LoadError> {
+    match format {
+        Format::Svg => load_svg_at(path, svg_size),
+        Format::Jpeg2000 => native::decode(path, Some(false)),
+        Format::Jpeg2000Codestream => native::decode(path, Some(true)),
+        Format::Raw => native::decode(path, None),
+        Format::Heif => decode_heif(path, 0),
+        Format::Dib => decode_image(image::codecs::bmp::BmpDecoder::new_without_file_header(
+            BufReader::new(bounded_file(path)?),
+        )?),
+        Format::Raster(ImageFormat::Hdr) => decode_image(
+            image::codecs::hdr::HdrDecoder::new_nonstrict(BufReader::new(bounded_file(path)?))?,
+        ),
+        Format::JpegXl => Err(LoadError::Invalid("JPEG XL contains no image".into())),
+        Format::Avif => Err(LoadError::Invalid("AVIF contains no image".into())),
+        Format::Raster(ImageFormat::Tiff) => {
+            pages::decode_tiff(path, 0).or_else(|_| load_raster(path, ImageFormat::Tiff))
+        }
+        Format::Raster(ImageFormat::Ico) => pages::decode_ico(path, 0),
+        Format::Raster(format) => load_raster(path, format),
     }
+}
 
-    loop {
-        file.read_exact(&mut marker)?;
+fn jpeg_needs_metadata(path: &Path) -> Result<bool, LoadError> {
+    let mut decoder = image::codecs::jpeg::JpegDecoder::new(BufReader::new(bounded_file(path)?))?;
+    pixel_count(decoder.dimensions().0, decoder.dimensions().1)?;
+    Ok(decoder.icc_profile()?.is_some() || decoder.orientation()? != Orientation::NoTransforms)
+}
 
-        if marker[0] != 0xFF {
-            return Err(LoadError::UnsupportedFormat("Invalid JPEG marker".into()));
-        }
+pub(crate) fn load_raster(path: &Path, format: ImageFormat) -> Result<DynamicImage, LoadError> {
+    let mut reader = ImageReader::with_format(BufReader::new(bounded_file(path)?), format);
+    reader.limits(decode_limits());
+    decode_image(reader.into_decoder()?)
+}
 
-        // Skip padding FF bytes
-        while marker[1] == 0xFF {
-            file.read_exact(&mut marker[1..2])?;
-        }
-
-        // Read segment length
-        let mut len_bytes = [0u8; 2];
-        file.read_exact(&mut len_bytes)?;
-        let segment_len = u64::from(u16::from_be_bytes(len_bytes));
-
-        if marker[1] == 0xE1 {
-            // APP1 segment - check for EXIF
-            let mut exif_header = [0u8; 6];
-            file.read_exact(&mut exif_header)?;
-
-            if &exif_header[0..4] == b"Exif" {
-                // TIFF header starts here
-                return Ok(file.stream_position()?);
-            }
-
-            // Non-EXIF APP1 - already consumed 6 bytes after len_bytes,
-            // so remaining = segment_len - 2 (len) - 6 (header read) = segment_len - 8
-            let current_pos = file.stream_position()?;
-            file.seek(SeekFrom::Start(current_pos + segment_len - 8))?;
-            continue;
-        }
-
-        // Skip to next segment
-        let current_pos = file.stream_position()?;
-        file.seek(SeekFrom::Start(current_pos + segment_len - 2))?;
-
-        // End of image
-        if marker[1] == 0xD9 {
-            break;
-        }
-    }
-
-    Err(LoadError::UnsupportedFormat(
-        "No EXIF APP1 segment found".into(),
-    ))
+fn decode_image(mut decoder: impl ImageDecoder) -> Result<DynamicImage, LoadError> {
+    decoder.set_limits(decode_limits())?;
+    pixel_count(decoder.dimensions().0, decoder.dimensions().1)?;
+    let icc = decoder.icc_profile()?;
+    let orientation = decoder.orientation()?;
+    let mut image = DynamicImage::from_decoder(decoder)?;
+    image.apply_orientation(orientation);
+    color::to_srgb(&mut image, icc.as_deref());
+    Ok(image)
 }
 
 /// Decode JPEG with DCT scaling using turbojpeg (4-8x faster than full decode)
@@ -501,9 +245,7 @@ fn find_tiff_header_offset(file: &mut File) -> Result<u64, LoadError> {
 #[allow(clippy::cast_possible_truncation)]
 fn decode_jpeg_scaled(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u8>), LoadError> {
     // Read the JPEG file
-    let mut file = File::open(path)?;
-    let mut jpeg_data = Vec::new();
-    file.read_to_end(&mut jpeg_data)?;
+    let jpeg_data = read_bounded(path)?;
 
     // Create decompressor
     let mut decompressor = Decompressor::new()
@@ -515,6 +257,7 @@ fn decode_jpeg_scaled(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u8>),
         .map_err(|e| LoadError::UnsupportedFormat(format!("JPEG header error: {e}")))?;
 
     let (orig_width, orig_height) = (header.width as u32, header.height as u32);
+    pixel_count(orig_width, orig_height)?;
 
     // Calculate the best scaling factor
     let scaling = calculate_jpeg_scale(orig_width, orig_height, max_size);
@@ -592,47 +335,6 @@ fn calculate_jpeg_scale(width: u32, height: u32, target: u32) -> ScalingFactor {
 // Image dimensions originate from a decoded image header and are far below
 // u32::MAX, so the usize -> u32 casts cannot truncate.
 #[allow(clippy::cast_possible_truncation)]
-fn decode_and_resize_zune(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u8>), LoadError> {
-    let mut img = ZuneImage::open(path).map_err(|e| LoadError::UnsupportedFormat(e.to_string()))?;
-
-    img.convert_color(ColorSpace::RGBA)
-        .map_err(|e| LoadError::UnsupportedFormat(e.to_string()))?;
-
-    let (width, height) = img.dimensions();
-
-    let pixels = img
-        .flatten_to_u8()
-        .into_iter()
-        .next()
-        .ok_or_else(|| LoadError::UnsupportedFormat("No pixel data".into()))?;
-
-    // If already small enough, return directly
-    if width <= max_size as usize && height <= max_size as usize {
-        return Ok((width as u32, height as u32, pixels));
-    }
-
-    fast_resize_rgba(&pixels, width as u32, height as u32, max_size)
-}
-
-/// Decode and resize using image crate, returns (width, height, `rgba_pixels`)
-fn decode_and_resize_image(path: &Path, max_size: u32) -> Result<(u32, u32, Vec<u8>), LoadError> {
-    let img = image::open(path)?;
-    let rgba = img.to_rgba8();
-    let (width, height) = rgba.dimensions();
-
-    // If already small enough, return directly
-    if width <= max_size && height <= max_size {
-        return Ok((width, height, rgba.into_raw()));
-    }
-
-    let pixels = rgba.into_raw();
-    fast_resize_rgba(&pixels, width, height, max_size)
-}
-
-/// Fast RGBA image resize using SIMD-optimized `fast_image_resize` crate
-// Source dimensions are positive image sizes and `ratio` is in (0, 1], so the
-// scaled product is non-negative and within u32 range after rounding; the f32
-// round-trip is exact for realistic image sizes.
 #[allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
@@ -725,85 +427,123 @@ fn render_svg(tree: &usvg::Tree, w: u32, h: u32) -> Result<Vec<u8>, LoadError> {
     Ok(pixels)
 }
 
-fn load_svg_at(path: &Path, max: u32) -> Result<LoadedImage, LoadError> {
-    let data = fs::read(path)?;
-    let tree = usvg::Tree::from_data(&data, &usvg::Options::default())
-        .map_err(|e| LoadError::UnsupportedFormat(format!("SVG: {e}")))?;
-
-    let (w, h) = svg_fit_dimensions(&tree, max);
-    let pixels = render_svg(&tree, w, h)?;
-
-    let handle = Handle::from_rgba(w, h, pixels.clone());
-    let rgba_image = RgbaImage::from_raw(w, h, pixels).expect("pixel buffer matches dimensions");
-
-    Ok(LoadedImage {
-        handle,
-        image: DynamicImage::ImageRgba8(rgba_image),
-        width: w,
-        height: h,
-        path: path.to_path_buf(),
-    })
+fn load_svg_at(path: &Path, max: u32) -> Result<DynamicImage, LoadError> {
+    let data = read_bounded(path)?;
+    let options = usvg::Options {
+        image_href_resolver: usvg::ImageHrefResolver {
+            resolve_string: Box::new(|_, _| None),
+            resolve_data: Box::new(|mime, data, options| {
+                matches!(
+                    mime,
+                    "image/png" | "image/jpeg" | "image/webp" | "image/gif"
+                )
+                .then(|| usvg::ImageHrefResolver::default_data_resolver()(mime, data, options))
+                .flatten()
+            }),
+        },
+        ..usvg::Options::default()
+    };
+    let tree = usvg::Tree::from_data(&data, &options)
+        .map_err(|e| LoadError::Invalid(format!("SVG: {e}")))?;
+    let (width, height) = svg_fit_dimensions(&tree, max);
+    let pixels = render_svg(&tree, width, height)?;
+    Ok(DynamicImage::ImageRgba8(
+        RgbaImage::from_raw(width, height, pixels).expect("packed SVG pixels"),
+    ))
 }
 
-fn load_heif(path: &Path) -> Result<LoadedImage, LoadError> {
-    let name = path
-        .to_str()
-        .ok_or_else(|| LoadError::UnsupportedFormat("HEIF: non-UTF-8 path".into()))?;
+pub(crate) fn heif_context(path: &Path) -> Result<HeifContext<'static>, LoadError> {
+    let file = bounded_file(path)?;
+    let size = file.metadata()?.len();
+    HeifContext::read_from_reader(Box::new(StreamReader::new(BufReader::new(file), size)))
+        .map_err(|error| LoadError::Invalid(format!("HEIF: {error}")))
+}
 
+pub(crate) fn decode_heif(path: &Path, index: usize) -> Result<DynamicImage, LoadError> {
     let lib = LibHeif::new();
-    let ctx = HeifContext::read_from_file(name)
-        .map_err(|e| LoadError::UnsupportedFormat(format!("HEIF: {e}")))?;
-
-    let handle = ctx
-        .primary_image_handle()
-        .map_err(|e| LoadError::UnsupportedFormat(format!("HEIF: {e}")))?;
-
+    let ctx = heif_context(path)?;
+    let error = |error| LoadError::Invalid(format!("HEIF: {error}"));
+    let primary = ctx.primary_image_handle().map_err(error)?;
+    let handle = if index == 0 {
+        primary
+    } else {
+        let id = ctx
+            .image_ids()
+            .into_iter()
+            .filter(|id| *id != primary.item_id())
+            .nth(index - 1)
+            .ok_or_else(|| LoadError::Invalid("HEIF image index is out of range".into()))?;
+        ctx.image_handle(id).map_err(error)?
+    };
+    pixel_count(handle.width(), handle.height())?;
+    let chroma = if handle.luma_bits_per_pixel() > 8 {
+        RgbChroma::HdrRgbaLe
+    } else {
+        RgbChroma::Rgba
+    };
     let img = lib
-        .decode(&handle, HeifColorSpace::Rgb(RgbChroma::Rgba), None)
-        .map_err(|e| LoadError::UnsupportedFormat(format!("HEIF: {e}")))?;
-
+        .decode(&handle, HeifColorSpace::Rgb(chroma), None)
+        .map_err(error)?;
     let plane = img
         .planes()
         .interleaved
-        .ok_or_else(|| LoadError::UnsupportedFormat("HEIF: no interleaved plane".into()))?;
+        .ok_or_else(|| LoadError::Invalid("HEIF: missing RGB pixel data".into()))?;
 
-    // Use the DECODED image's dimensions, not the handle's: libheif applies
-    // rotation/mirror (irot/imir) during decode, so a phone photo's handle reports
-    // the pre-transform (ispe) size while the plane data is the post-transform size.
-    // Copying with the handle's size then reads the wrong bytes (or out of bounds).
-    let width = img.width();
-    let height = img.height();
-    if width == 0 || height == 0 {
-        return Err(LoadError::UnsupportedFormat(
-            "HEIF: invalid dimensions".into(),
-        ));
-    }
-
+    let (width, height) = (img.width(), img.height());
+    let count = pixel_count(width, height)?;
+    let bytes_per_pixel = if chroma == RgbChroma::Rgba { 4 } else { 8 };
+    let row_bytes = width as usize * bytes_per_pixel;
     let stride = plane.stride;
-    let row_bytes = width as usize * 4;
-    if stride < row_bytes || plane.data.len() < stride * height as usize {
-        return Err(LoadError::UnsupportedFormat(
-            "HEIF: truncated pixel data".into(),
-        ));
+    if stride < row_bytes || plane.data.len() < stride.saturating_mul(height as usize) {
+        return Err(LoadError::Invalid("HEIF: truncated pixel data".into()));
     }
-    // Copy row-by-row: the plane stride may exceed the packed row width.
-    let mut pixels = Vec::with_capacity(row_bytes * height as usize);
-    for y in 0..height as usize {
-        let row_start = y * stride;
-        pixels.extend_from_slice(&plane.data[row_start..row_start + row_bytes]);
+    let rows = plane
+        .data
+        .chunks_exact(stride)
+        .take(height as usize)
+        .map(|row| &row[..row_bytes]);
+    let mut image = if bytes_per_pixel == 4 {
+        let mut pixels = Vec::with_capacity(count * 4);
+        for row in rows {
+            pixels.extend_from_slice(row);
+        }
+        DynamicImage::ImageRgba8(
+            RgbaImage::from_raw(width, height, pixels).expect("packed HEIF pixels"),
+        )
+    } else {
+        let depth = plane.bits_per_pixel;
+        if !(9..=16).contains(&depth) {
+            return Err(LoadError::Invalid(
+                "HEIF: invalid high-bit-depth plane".into(),
+            ));
+        }
+        let max = (1u32 << depth) - 1;
+        let mut pixels = Vec::with_capacity(count * 4);
+        for row in rows {
+            pixels.extend(row.chunks_exact(2).map(|b| {
+                let value = u32::from(u16::from_le_bytes([b[0], b[1]])).min(max);
+                ((value * 65535 + max / 2) / max) as u16
+            }));
+        }
+        DynamicImage::ImageRgba16(
+            image::ImageBuffer::from_raw(width, height, pixels).expect("packed HEIF pixels"),
+        )
+    };
+    let icc = handle.color_profile_raw();
+    let icc = icc.as_ref().map(|profile| profile.data.as_slice());
+    if let Some(nclx) = handle.color_profile_nclx() {
+        let primaries = nclx.color_primaries() as u32;
+        let transfer = nclx.transfer_characteristics() as u32;
+        if matches!(transfer, 16 | 18) || (icc.is_none() && !matches!(primaries, 0..=2)) {
+            image = DynamicImage::ImageRgba16(image.into_rgba16());
+            color::convert_cicp(&mut image, icc, primaries, transfer);
+        } else {
+            color::to_srgb(&mut image, icc);
+        }
+    } else {
+        color::to_srgb(&mut image, icc);
     }
-
-    let handle_rgba = Handle::from_rgba(width, height, pixels.clone());
-    let rgba_image =
-        RgbaImage::from_raw(width, height, pixels).expect("pixel buffer matches dimensions");
-
-    Ok(LoadedImage {
-        handle: handle_rgba,
-        image: DynamicImage::ImageRgba8(rgba_image),
-        width,
-        height,
-        path: path.to_path_buf(),
-    })
+    Ok(image)
 }
 
 /// Read DPI from EXIF data (JPEG/TIFF only)

@@ -21,7 +21,10 @@
         >COSMIC Viewer opens a wide range of formats and provides quick navigation, non-destructive editing, and markup tools</p>
         <ul>
             <li
-            >Opens JPEG, PNG, GIF, WebP, BMP, TIFF, ICO, AVIF, HEIF/HEIC, JPEG XL, SVG and the netpbm and Farbfeld families</li>
+            >Opens JPEG, PNG, GIF, WebP, BMP, TIFF, ICO, AVIF, HEIF/HEIC, JPEG XL, SVG,
+             JPEG 2000, QOI, TGA, DDS, OpenEXR, Radiance HDR, Netpbm, Farbfeld and supported camera RAW files</li>
+            <li>Plays GIF, WebP, APNG, AVIF and JPEG XL animations</li>
+            <li>Browses multiple images in TIFF, ICO and HEIF files</li>
             <li>Zoom, pan, and fit-to-window viewer with EXIF-aware display</li>
             <li>Thumbnail navigation through a folder</li>
             <li>Crop and rotate</li>
@@ -80,12 +83,12 @@
         </screenshot>
     </screenshots>
     <releases>
-        <release version="1.0.0" date="2026-07-06">
+        <release version="1.9.0" date="2026-09-23">
             <description>
                 <p>Initial release.</p>
             </description>
         </release>
-                <release version="1.9.0" date="2026-09-23">
+        <release version="1.0.0" date="2026-07-06">
             <description>
                 <p>Initial release.</p>
             </description>

@@ -8,11 +8,6 @@ use std::{
 use tokio::task::spawn_blocking;
 use viewer_config::{SortMode, SortOrder};
 
-pub const EXTENSIONS: &[&str] = &[
-    "jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "tif", "ico", "avif", "ppm", "pgm", "pbm",
-    "pnm", "qoi", "ff", "farbfeld", "hdr", "jxl", "svg", "heif", "heic",
-];
-
 #[derive(Debug, Clone, Default)]
 pub struct NavState {
     dir: Option<PathBuf>,
@@ -201,9 +196,7 @@ fn scan_dir_sync(
 
 #[must_use]
 pub fn is_supported_image(path: &Path) -> bool {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| EXTENSIONS.contains(&ext.to_lowercase().as_str()))
+    crate::detect(path).is_ok_and(|format| format.is_some())
 }
 
 fn natural_cmp(a: &str, b: &str) -> Ordering {
@@ -245,7 +238,7 @@ fn collect_number(chars: &mut std::iter::Peekable<std::str::Chars>) -> u64 {
 
     while let Some(&c) = chars.peek() {
         if c.is_ascii_digit() {
-            num = num * 10 + (c as u64 - '0' as u64);
+            num = num.saturating_mul(10).saturating_add(c as u64 - '0' as u64);
             chars.next();
         } else {
             break;
