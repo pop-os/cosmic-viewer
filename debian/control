@@ -17,5 +17,5 @@ Homepage: https://github.com/pop-os/cosmic-viewer
 
 Package: cosmic-viewer
 Architecture: amd64 arm64
-Depends: ${misc:Depends}, ${shlibs:Depends}
+Depends: ${misc:Depends}, ${shlibs:Depends}, libheif-plugin-libde265
 Description: COSMIC Image Viewer
