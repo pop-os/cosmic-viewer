@@ -40,10 +40,7 @@ image = { version = "0.25.9", features = [
   "avif",
 ] }
 kamadak-exif = "0.6.1"
-libheif-rs = { version = "2.7.0", default-features = false, features = [
-  "embedded-libheif",
-  "v1_17",
-] }
+libheif-rs = { version = "2.7.0", default-features = false, features = ["v1_17"] }
 lru = "0.16.3"
 rayon = "1.11.0"
 resvg = "0.47.0"
